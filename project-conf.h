@@ -19,10 +19,6 @@
 #ifndef PROJECT_CONF_H_
 #define PROJECT_CONF_H_
 
-#include "radio-driver.h"
-
-#define RTIMER_ARCH_SECOND 96000
-
 #if BUILD_WITH_SERIAL_SNIFFER
 #undef LLSEC802154_CONF_ENABLED
 /* Disable Link Layer security */
@@ -36,7 +32,6 @@
 #define RADIO_HW_CSMA 1
 #define RADIO_SNIFF_MODE 0
 #define RADIO_ADDRESS_FILTERING 1
-#define CONTIKI_VERSION_STRING "Contiki-NG"
 #define MCU_LOW_POWER 0
 #define RADIO_LOW_POWER 0
 #define RADIO_LONG_PREAMBLE 0

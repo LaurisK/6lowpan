@@ -446,6 +446,15 @@ static int8_t Radio_init(void) {
 	radio_status = radio_on;
 
 	TRice("msg:Radio init done\n");
+	{
+#warning "this seems to be added to mac init, or maybe some hook in it..."
+		uint8_t node_mac[8];
+		(*(uint32_t*)node_mac) = HAL_GetUIDw1();
+		(*(((uint32_t*)node_mac)+1)) = HAL_GetUIDw2();
+		(*(((uint32_t*)node_mac)+1)) += HAL_GetUIDw0();
+		TRice("msg:MCU uid %08X %08X %08X to %08X %08X MAC.\n", HAL_GetUIDw0(), HAL_GetUIDw1(), HAL_GetUIDw2(), (*(uint32_t*)node_mac), (*(((uint32_t*)node_mac)+1)));
+		linkaddr_set_node_addr((linkaddr_t*)node_mac);
+	}
 	return 0;
 }
 
