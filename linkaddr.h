@@ -53,6 +53,10 @@
 #ifndef LINKADDR_H_
 #define LINKADDR_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 
 #ifdef LINKADDR_CONF_SIZE
@@ -69,6 +73,30 @@ typedef union {
   uint16_t u16[LINKADDR_SIZE/2];
 #endif /* LINKADDR_SIZE == 2 */
 } linkaddr_t;
+
+/**
+ * \brief      The link-layer address of the node
+ *
+ *             This variable contains the link-layer address of the
+ *             node. This variable should not be changed directly;
+ *             rather, the linkaddr_set_node_addr() function should be
+ *             used.
+ *
+ */
+extern linkaddr_t linkaddr_node_addr;
+
+/**
+ * \brief      The null link-layer address
+ *
+ *             This variable contains the null link-layer address. The null
+ *             address is used in route tables to indicate that the
+ *             table entry is unused. Nodes with no configured address
+ *             has the null address. Nodes with their node address set
+ *             to the null address will have problems communicating
+ *             with other nodes.
+ *
+ */
+extern const linkaddr_t linkaddr_null;
 
 /**
  * \brief      Copy a link-layer address
@@ -105,29 +133,9 @@ int linkaddr_cmp(const linkaddr_t *addr1, const linkaddr_t *addr2);
  */
 void linkaddr_set_node_addr(linkaddr_t *addr);
 
-/**
- * \brief      The link-layer address of the node
- *
- *             This variable contains the link-layer address of the
- *             node. This variable should not be changed directly;
- *             rather, the linkaddr_set_node_addr() function should be
- *             used.
- *
- */
-extern linkaddr_t linkaddr_node_addr;
-
-/**
- * \brief      The null link-layer address
- *
- *             This variable contains the null link-layer address. The null
- *             address is used in route tables to indicate that the
- *             table entry is unused. Nodes with no configured address
- *             has the null address. Nodes with their node address set
- *             to the null address will have problems communicating
- *             with other nodes.
- *
- */
-extern const linkaddr_t linkaddr_null;
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* LINKADDR_H_ */
 /** @} */

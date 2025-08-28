@@ -65,6 +65,10 @@
 #ifndef FRAME_802154_H
 #define FRAME_802154_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "../../linkaddr.h"
 
 #ifdef IEEE802154_CONF_PANID
@@ -232,6 +236,10 @@ int frame802154_is_broadcast_addr(uint8_t mode, uint8_t *addr);
 int frame802154_extract_linkaddr(frame802154_t *frame, linkaddr_t *source_address, linkaddr_t *dest_address);
 
 /** @} */
+#ifdef __cplusplus
+}
+#endif
+
 #endif /* FRAME_802154_H */
 /** @} */
 /** @} */

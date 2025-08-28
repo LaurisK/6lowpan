@@ -19,22 +19,22 @@
 /*---------------------------------------------------------------------------*/
 #ifndef RADIO_DRIVER_H__
 #define RADIO_DRIVER_H__
-/*---------------------------------------------------------------------------*/
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include "s2lp.h"
 #include "api_radio.h"
 #include "RTE_Components.h"
 #include "project-conf.h"
-/*---------------------------------------------------------------------------*/
-extern const struct radio_driver subGHz_radio_driver;
-/*---------------------------------------------------------------------------*/
+
 /**
  * @addtogroup ST_Radio
  * @ingroup Contiki-NG_STM32_Library
  * @{
  * @file subGHz radio configuration file for Contiki
  */
-/*---------------------------------------------------------------------------*/
 #if (defined S2868A1) || (defined S2868A2)
   #define USE_RADIO_868MHz
 #elif defined(S2915A1)
@@ -42,8 +42,6 @@ extern const struct radio_driver subGHz_radio_driver;
 #else /*!X_NUCLEO_S2868A1 && !X_NUCLEO_S2915A1*/
 #error RADIO Nucleo Shield undefined or unsupported
 #endif /*X_NUCLEO_S2868A1 || X_NUCLEO_S2915A1*/
-
-/* Exported constants --------------------------------------------------------*/
 
 /*  Radio configuration parameters  */
 #define XTAL_OFFSET_PPM             0
@@ -84,8 +82,8 @@ extern const struct radio_driver subGHz_radio_driver;
 #define FREQ_DEVIATION              20e3
 #define BANDWIDTH                   100.0e3
 
-#define RADIO_POWER_DBM_MAX      14
-#define RADIO_POWER_DBM_MIN      -31
+#define RADIO_POWER_DBM_MAX         14
+#define RADIO_POWER_DBM_MIN        -31
 
 #define POWER_DBM                   12.0
 #define POWER_INDEX                 7
@@ -121,8 +119,8 @@ extern const struct radio_driver subGHz_radio_driver;
 #define EN_FILT_BROADCAST_ADDRESS   S_ENABLE
 #define BROADCAST_ADDRESS           0xFF
 
-#define PREAMBLE_BYTE(v)           (4*v)
-#define SYNC_BYTE(v)               (8*v)
+#define PREAMBLE_BYTE(v)            (4*v)
+#define SYNC_BYTE(v)                (8*v)
 
 #if RADIO_SNIFF_MODE
 #define MIN_PERIOD_WAKEUP_MS ((8000*((PREAMBLE_LENGTH/4)-2))/DATARATE)
@@ -139,11 +137,17 @@ extern const struct radio_driver subGHz_radio_driver;
  */
 #define MAX_PACKET_LEN              S2LP_RX_FIFO_SIZE
 
-uint8_t Radio_process_is_pending(void);
-void Radio_process(void);
+/*---------------------------------------------------------------------------*/
+extern const struct radio_driver subGHz_radio_driver;
+/*---------------------------------------------------------------------------*/
+
 void Radio_process_irq_cb(void);
 
 /*---------------------------------------------------------------------------*/
+#ifdef __cplusplus
+}
+#endif
+
 #endif /* RADIO_DRIVER_H__ */
 /*---------------------------------------------------------------------------*/
 /** @} */

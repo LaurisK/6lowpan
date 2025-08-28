@@ -12,6 +12,7 @@
 #else
 #include "App/common.h"
 #endif
+#include "Middlewares/Third_Party/6lowpan/evt_radio.h"
 
 /* Private defines ----------------------------------------------------------*/
 #if RADIO_ADDRESS_FILTERING
@@ -19,12 +20,6 @@
 #endif /*RADIO_ADDRESS_FILTERING*/
 
 #define RADIO_WAIT_TIMEOUT (100)
-#define BUSYWAIT_UNTIL(cond, max_time)          \
-do {                                            \
-  uint32_t t0;                                  \
-  t0 = HAL_GetTick();                           \
-  while(!(cond) && TICK_TMO(t0, (max_time)));   \
-} while(0)
 
 #if RADIO_HW_CSMA
 #define PERSISTENT_MODE_EN              S_DISABLE
@@ -45,43 +40,26 @@ typedef enum {
   radio_on
 } eRadioStatus;
 
-/* Private functions prototypes for Radio API -------------------------------*/
-static int8_t Radio_init(void);
-static eTransmitRes Radio_prepare(const void *payload, uint16_t payload_len);
-static eTransmitRes Radio_transmit(uint16_t payload_len);
-static eTransmitRes Radio_send(const void *data, uint16_t len);
-static int16_t Radio_read(void *buf, uint16_t bufsize);
-static int8_t Radio_channel_clear(void);
-static int8_t Radio_receiving_packet(void);
-static int8_t Radio_pending_packet(void);
-static int8_t Radio_on(void);
-static int8_t Radio_off(void);
-static eRadioRes Radio_get_value(radio_param_t parameter, radio_value_t *ret_value);
-static eRadioRes Radio_set_value(radio_param_t parameter, radio_value_t input_value);
-static eRadioRes Radio_get_object(radio_param_t parameter, void *destination, size_t size);
-static eRadioRes Radio_set_object(radio_param_t parameter, const void *source, size_t size);
-
 /* Pseudo global variables --------------------------------------------------*/
 static sRadioInfo radioInfo = {.operatingChannel = CHANNEL_NUMBER};
 /* The buffer which holds incoming data. */
 static uint16_t rx_num_bytes = 0;
-static uint8_t radio_rxbuf[MAX_PACKET_LEN];
+//static uint8_t radio_rxbuf[MAX_PACKET_LEN];
 
 static volatile eRadioStatus radio_status = radio_off;
 static volatile uint8_t receiving_packet = 0;
 static volatile uint8_t transmitting_packet = 0;
 static volatile uint8_t pending_packet = 0;
 static volatile uint8_t packet_is_prepared = 0;
-static radio_value_t last_packet_rssi = 0;
-static packetbuf_attr_t last_packet_lqi = 0;
-static uint8_t pending_process = 0;
+static uint16_t last_packet_rssi = 0;
+static uint16_t last_packet_lqi = 0;
 
 static volatile uint32_t last_packet_timestamp = 0;
 
 static int csma_tx_threshold = RSSI_TX_THRESHOLD;
 
 /* Poll mode disabled by default */
-/*static*/uint8_t polling_mode = 0;
+/*static*///uint8_t polling_mode = 0;
 
 /* (Software) frame filtering enabled by default */
 #if RADIO_ADDRESS_FILTERING
@@ -115,22 +93,8 @@ SCsmaInit xCsmaInit = { PERSISTENT_MODE_EN, CS_PERIOD, CS_TIMEOUT, MAX_NB, BU_CO
 SRssiInit xSRssiInit = { .cRssiFlt = 14, .xRssiMode = RSSI_STATIC_MODE, .cRssiThreshdBm = RSSI_TX_THRESHOLD };
 #endif /*RADIO_HW_CSMA*/
 
-const struct radio_driver subGHz_radio_driver = {
-		Radio_init,
-		Radio_prepare,
-		Radio_transmit,
-		Radio_send,
-		Radio_read,
-		Radio_channel_clear,
-		Radio_receiving_packet,
-		Radio_pending_packet,
-		Radio_on,
-		Radio_off,
-		Radio_get_value,
-		Radio_set_value,
-		Radio_get_object,
-		Radio_set_object };
-
+static uint16_t radioEvtIdOffset;
+void (*radioIrq2Task)(uint16_t, void(*cbFunc)(void));
 /* Private functions --------------------------------------------------------*/
 /**
  * @brief  radio_refresh_status	refresh and returns S2-LP status
@@ -147,26 +111,25 @@ static S2LPState radio_refresh_status(void) {
  * @param bufsize - size of a buffer for data storage
  * @retval bytes count filled to buffer
  */
-static int16_t Radio_read_from_fifo(uint8_t *buf, uint16_t bufSize) {
+static int16_t Radio_read_from_fifo(sPacket *packet) {
 	uint8_t rx_bytes, retval = 0;
 
 	rx_bytes = S2LP_FIFO_ReadNumberBytesRxFifo();
 
-	if (rx_bytes <= bufSize) {
-		S2LP_ReadFIFO(rx_bytes, (uint8_t*) buf);
+	if (rx_bytes <= packetbuf_totlen(packet)) {
+		S2LP_ReadFIFO(rx_bytes, (uint8_t*)packetbuf_hdrptr(packet));
 		retval = rx_bytes;
 		last_packet_timestamp = HAL_GetTick(); //@TODO: validate
-		last_packet_rssi = (radio_value_t) S2LP_RADIO_QI_GetRssidBm();
-		//last_packet_lqi  = (packetbuf_attr_t) S2LP_RADIO_QI_GetLqi();
-		packetbuf_set_attr(PACKETBUF_ATTR_RSSI,
-				(packetbuf_attr_t) last_packet_rssi);
-		packetbuf_set_attr(PACKETBUF_ATTR_LINK_QUALITY, last_packet_lqi);
+		last_packet_rssi = (uint16_t) S2LP_RADIO_QI_GetRssidBm();
+		//last_packet_lqi  = (uint16_t) S2LP_RADIO_QI_GetLqi();
+		packetbuf_set_attr(packet, PACKETBUF_ATTR_RSSI, last_packet_rssi);
+		packetbuf_set_attr(packet, PACKETBUF_ATTR_LINK_QUALITY, last_packet_lqi);
 	} else {
-		TRice("msg:Buf too small (%d bytes to hold %d bytes)\n", bufSize, rx_bytes);
+		TRice("msg:Buf too small (%d bytes to hold %d bytes)\n", packetbuf_totlen(packet), rx_bytes);
 	}
-	if (polling_mode) {
+//	if (polling_mode) {
 		S2LP_CMD_StrobeFlushRxFifo();
-	}
+//	}
 
 	return retval;
 }
@@ -174,22 +137,22 @@ static int16_t Radio_read_from_fifo(uint8_t *buf, uint16_t bufSize) {
  * @brief radio_set_polling_mode is for control of pooling mode.
  * @param buf     - pointer to buffer where data needs to be stored
  */
-static void radio_set_polling_mode(uint8_t enable) {
-	/* Polling Mode  must be fully validated. */
-	TRiceS("msg:POLLING MODE is %s.\r\n", enable?"ENABLED":"DISABLED");
-	polling_mode = enable;
-	if (polling_mode) {
-		/* Disable interrupts */
-		S2LP_GPIO_IrqConfig(RX_DATA_READY, S_DISABLE);
-		S2LP_GPIO_IrqConfig(TX_DATA_SENT, S_DISABLE);
-		S2LP_GPIO_IrqConfig(VALID_SYNC, S_DISABLE);
-	} else {
-		/* Initialize and enable interrupts */
-		S2LP_GPIO_IrqConfig(RX_DATA_READY, S_ENABLE);
-		S2LP_GPIO_IrqConfig(TX_DATA_SENT, S_ENABLE);
-		S2LP_GPIO_IrqConfig(VALID_SYNC, S_ENABLE);
-	}
-}
+//static void radio_set_polling_mode(uint8_t enable) {
+//	/* Polling Mode  must be fully validated. */
+//	TRiceS("msg:POLLING MODE is %s.\r\n", enable?"ENABLED":"DISABLED");
+//	polling_mode = enable;
+//	if (polling_mode) {
+//		/* Disable interrupts */
+//		S2LP_GPIO_IrqConfig(RX_DATA_READY, S_DISABLE);
+//		S2LP_GPIO_IrqConfig(TX_DATA_SENT, S_DISABLE);
+//		S2LP_GPIO_IrqConfig(VALID_SYNC, S_DISABLE);
+//	} else {
+//		/* Initialize and enable interrupts */
+//		S2LP_GPIO_IrqConfig(RX_DATA_READY, S_ENABLE);
+//		S2LP_GPIO_IrqConfig(TX_DATA_SENT, S_ENABLE);
+//		S2LP_GPIO_IrqConfig(VALID_SYNC, S_ENABLE);
+//	}
+//}
 
 /**
  * @brief  radio_print_status prints to the UART the status of the radio
@@ -342,10 +305,77 @@ static uint32_t radio_get_packet_timestamp(void) {
 	return last_packet_timestamp;
 }
 
-/* Radio Driver API Functions -----------------------------------------------*/
-static int8_t Radio_init(void) {
-	TRice("msg:RADIO INIT IN\n");
+/* API Realization ----------------------------------------------------------*/
+static int8_t Radio_on(void) {
+	TRice("msg:Radio: on\n");
 
+	if (radio_off == radio_status) {
+#if RADIO_SNIFF_MODE
+    S2LP_TIM_LdcrMode(S_ENABLE);
+    S2LP_TIM_FastRxTermTimer(S_ENABLE);
+#endif /*RADIO_SNIFF_MODE*/
+		radio_set_ready_state();
+		S2LP_FIFO_MuxRxFifoIrqEnable(S_ENABLE);
+		S2LP_CMD_StrobeRx();
+		radio_status = radio_on;
+		RADIO_IRQ_ENABLE(); //--> Coming from OFF, IRQ ARE DISABLED.
+	}
+	return 0;
+}
+
+static int8_t Radio_off(void) {
+	TRice("msg:Radio: ->off\n");
+
+	if (radio_on == radio_status) {
+		/* Disables the mcu to get IRQ from the RADIO */
+		RADIO_IRQ_DISABLE();  //Mind that it will be enabled only in the ON
+
+#if RADIO_SNIFF_MODE
+    S2LP_TIM_LdcrMode(S_DISABLE);
+    S2LP_TIM_FastRxTermTimer(S_DISABLE);
+    S2LP_CMD_StrobeReady();
+    S2LP_CMD_StrobeRx();
+#endif /*RADIO_SNIFF_MODE*/
+
+		/* first stop rx/tx */
+		S2LP_CMD_StrobeSabort();
+
+		/* Clear any pending irqs */
+		S2LP_GPIO_IrqClearStatus();
+
+#if RADIO_SNIFF_MODE
+    S2LP_CMD_StrobeReady();
+#endif /*RADIO_SNIFF_MODE*/
+		BUSYWAIT_UNTIL(radio_refresh_status() == MC_STATE_READY,
+				RADIO_WAIT_TIMEOUT);
+
+		if (radio_refresh_status() != MC_STATE_READY) {
+			TRice("Radio: failed off->ready\n");
+			return 1;
+		}
+		/* Puts the Radio in STANDBY */
+		S2LP_CMD_StrobeStandby();
+		BUSYWAIT_UNTIL(radio_refresh_status() == MC_STATE_STANDBY,
+				RADIO_WAIT_TIMEOUT);
+
+		if (radio_refresh_status() != MC_STATE_STANDBY) {
+			TRice("err:Radio: failed off->stdby\n");
+			return 1;
+		}
+
+		radio_status = radio_off;
+		rx_num_bytes = 0;
+	}
+
+	TRice("msg:Radio: off.\n");
+	//radio_print_status();
+	return 0;
+}
+
+static int8_t Radio_init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void))) {
+	TRice("msg:RADIO INIT IN\n");
+	radioEvtIdOffset = evtOffset;
+	radioIrq2Task = packedEvtHndl;
 	S2LPInterfaceInit();
 
 	/* Configures the Radio library */
@@ -439,7 +469,7 @@ static int8_t Radio_init(void) {
 	/* Configure the radio to route the IRQ signal to its GPIO 3 */
 	S2LP_GPIO_Init(&xGpioIRQ);
 
-	radio_set_polling_mode(polling_mode);
+//	radio_set_polling_mode(polling_mode);
 
 	/* This is ok for normal or SNIFF (RX command triggers the LDC in fast RX termination mode) */
 	S2LP_CMD_StrobeRx();
@@ -458,13 +488,13 @@ static int8_t Radio_init(void) {
 	return 0;
 }
 
-static eTransmitRes Radio_prepare(const void *payload, uint16_t payloadLen) {
-	TRice("msg:Radio: prepare %u\n", payloadLen);
+static eTransmitRes Radio_prepare(sPacket *packet) {
+	TRice("msg:Radio: prepare %u\n", packetbuf_totlen(packet));
 	uint8_t tmpbuff[PACKETBUF_SIZE]; //@TODO: see below
 	packet_is_prepared = 0;
 
 	/* Checks if the payload length is supported: actually this can't happen, by system design, but it is safer to have this for sanity check. */
-	if (payloadLen > PACKETBUF_SIZE) {
+	if (PACKETBUF_SIZE < packetbuf_totlen(packet)) {
 		TRice("msg:Payload len too big (> %d), error.\n", PACKETBUF_SIZE);
 		return tx_err;
 	}
@@ -491,29 +521,28 @@ static eTransmitRes Radio_prepare(const void *payload, uint16_t payloadLen) {
 #if RADIO_ADDRESS_FILTERING
 	const linkaddr_t *addr;
 	if (auto_pkt_filter) {
-		if (payloadLen == ACK_LEN || packetbuf_holds_broadcast()) {
+		if ((packetbuf_totlen(packet) == ACK_LEN) || packetbuf_holds_broadcast(packet)) {
 			TRice("msg:Preparing to send to broadcast (%02X) address\n", BROADCAST_ADDRESS);
 			S2LP_PCKT_HNDL_SetRxSourceReferenceAddress(BROADCAST_ADDRESS);
 		} else {
-			addr = packetbuf_addr(PACKETBUF_ADDR_RECEIVER);
+			addr = packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER);
 			TRice("msg:Preparing to send to %2X address\n", addr->u8[LINKADDR_SIZE-1]);
-			S2LP_PCKT_HNDL_SetRxSourceReferenceAddress(
-					addr->u8[LINKADDR_SIZE-1]);
+			S2LP_PCKT_HNDL_SetRxSourceReferenceAddress(addr->u8[LINKADDR_SIZE-1]);
 		}
 	}
 #endif /*RADIO_ADDRESS_FILTERING*/
 
 	S2LP_CMD_StrobeCommand(CMD_FLUSHTXFIFO);
 
-	S2LP_PCKT_BASIC_SetPayloadLength(payloadLen);
+	S2LP_PCKT_BASIC_SetPayloadLength(packetbuf_datalen(packet));
 	//@TODO change IO implementation to avoid the copy here
-	memcpy(tmpbuff, payload, payloadLen);
+	memcpy(tmpbuff, packetbuf_hdrptr(packet), packetbuf_totlen(packet));
 
 	/* Currently does no happen since S2LP_RX_FIFO_SIZE == MAX_PACKET_LEN also note that S2LP_RX_FIFO_SIZE == S2LP_TX_FIFO_SIZE */
-	if (payloadLen > S2LP_TX_FIFO_SIZE) {
+	if (packetbuf_totlen(packet) > S2LP_TX_FIFO_SIZE) {
 		TRice("msg:Payload bigger than FIFO size.'n");
 	} else {
-		S2LP_WriteFIFO(payloadLen, (uint8_t*) tmpbuff);
+		S2LP_WriteFIFO(packetbuf_totlen(packet), (uint8_t*) tmpbuff);
 //    S2LP_WriteFIFO(payload_len, (uint8_t *)payload);
 		packet_is_prepared = 1;
 	}
@@ -557,21 +586,21 @@ static eTransmitRes Radio_transmit(uint16_t payloadLen) {
 	xTxDoneFlag = RESET;
 	S2LP_CMD_StrobeTx();
 	/* wait for TX done */
-	if (polling_mode) { //@TODO: To be validated
-		while (!xTxDoneFlag) {
-			uint8_t tmp;
-			BUSYWAIT_UNTIL(0, 2);
-			S2LP_ReadRegister(TX_FIFO_STATUS_ADDR, 1, &tmp);
-			if ((tmp & NELEM_TXFIFO_REGMASK) == 0) {
-				xTxDoneFlag = SET;
-				transmitting_packet = 0;
-			}
-		}
-		BUSYWAIT_UNTIL(0, 2); //@TODO: we need a delay here, validate.
-	} else {
+//	if (polling_mode) { //@TODO: To be validated
+//		while (!xTxDoneFlag) {
+//			uint8_t tmp;
+//			BUSYWAIT_UNTIL(0, 2);
+//			S2LP_ReadRegister(TX_FIFO_STATUS_ADDR, 1, &tmp);
+//			if ((tmp & NELEM_TXFIFO_REGMASK) == 0) {
+//				xTxDoneFlag = SET;
+//				transmitting_packet = 0;
+//			}
+//		}
+//		BUSYWAIT_UNTIL(0, 2); //@TODO: we need a delay here, validate.
+//	} else {
 		/*To be on the safe side we put a timeout. */
 		BUSYWAIT_UNTIL(xTxDoneFlag, 10* RADIO_WAIT_TIMEOUT);
-	}
+//	}
 	if (transmitting_packet) {
 		S2LP_CMD_StrobeSabort();
 		if (xTxDoneFlag == RESET) {
@@ -628,10 +657,10 @@ static eTransmitRes Radio_transmit(uint16_t payloadLen) {
 	return retval;
 }
 
-static eTransmitRes Radio_send(const void *payload, uint16_t payloadLen) {
+static eTransmitRes Radio_send(sPacket *packet) {
 	TRice("msg:Radio Send\r\n");
 
-	if (tx_ok != Radio_prepare(payload, payloadLen)) {
+	if (tx_ok != Radio_prepare(packet)) {
 #if RADIO_SNIFF_MODE
     S2LP_TIM_LdcrMode(S_ENABLE);
     S2LP_TIM_FastRxTermTimer(S_ENABLE);
@@ -640,26 +669,26 @@ static eTransmitRes Radio_send(const void *payload, uint16_t payloadLen) {
 		S2LP_CMD_StrobeRx(); TRice("msg:PREPARE FAILED\n");
 		return tx_err;
 	}
-	return Radio_transmit(payloadLen);
+	return Radio_transmit(packetbuf_totlen(packet));
 }
 
-static int16_t Radio_read(void *buf, uint16_t bufSize) {
+static int16_t Radio_read(sPacket *packet) {
 	int16_t retval = 0;
-	S2LPIrqs x_irq_status;
-
-	if (polling_mode) {
-		S2LP_GPIO_IrqGetStatus(&x_irq_status);
-		if (x_irq_status.IRQ_RX_DATA_READY)
-			retval = Radio_read_from_fifo(buf, bufSize);
-	} else if (pending_packet && (rx_num_bytes != 0)) {
-		if (rx_num_bytes <= bufSize) {
-			memcpy(buf, radio_rxbuf, rx_num_bytes);
-			retval = rx_num_bytes;
+//	S2LPIrqs x_irq_status;
+//
+//	if (polling_mode) {
+//		S2LP_GPIO_IrqGetStatus(&x_irq_status);
+//		if (x_irq_status.IRQ_RX_DATA_READY)
+//			retval = Radio_read_from_fifo(packet);
+//	} else if (pending_packet && (rx_num_bytes != 0)) {
+		if (rx_num_bytes <= packetbuf_totlen(packet)) {
+			//memcpy(packet->buffer, radio_rxbuf, rx_num_bytes);
+			retval = Radio_read_from_fifo(packet);
 		} else {
-			TRice("msg:Buf too small (%d bytes to hold %u bytes)\n", bufSize, rx_num_bytes);
+			TRice("msg:Buf too small (%d bytes to hold %u bytes)\n", packetbuf_totlen(packet), rx_num_bytes);
 		}
 		pending_packet = 0;
-	}
+//	}
 	/* RX command - to ensure the device will be ready for the next reception */
 #if RADIO_SNIFF_MODE
       S2LP_CMD_StrobeSleep();
@@ -694,95 +723,28 @@ static int8_t Radio_channel_clear(void) {
 }
 
 static int8_t Radio_receiving_packet(void) {
-	S2LPIrqs x_irq_status;
+//	S2LPIrqs x_irq_status;
 
-	if (polling_mode) {
-		S2LP_GPIO_IrqGetStatus(&x_irq_status);
-		receiving_packet = (x_irq_status.IRQ_VALID_SYNC);
-	}
+//	if (polling_mode) {
+//		S2LP_GPIO_IrqGetStatus(&x_irq_status);
+//		receiving_packet = (x_irq_status.IRQ_VALID_SYNC);
+//	}
 
 	return receiving_packet;
 }
 
 static int8_t Radio_pending_packet(void) {
-	S2LPIrqs x_irq_status;
-	TRice("msg:RADIO PENDING PACKET\n");
-	if (polling_mode) {
-		S2LP_GPIO_IrqGetStatus(&x_irq_status);
-		pending_packet = (x_irq_status.IRQ_RX_DATA_READY);
-	}
+//	S2LPIrqs x_irq_status;
+	TRice("msg:RADIO PENDING PACKET(%d)\n", pending_packet);
+//	if (polling_mode) {
+//		S2LP_GPIO_IrqGetStatus(&x_irq_status);
+//		pending_packet = (x_irq_status.IRQ_RX_DATA_READY);
+//	}
 
 	return pending_packet;
 }
 
-static int8_t Radio_on(void) {
-	TRice("msg:Radio: on\n");
-
-	if (radio_off == radio_status) {
-#if RADIO_SNIFF_MODE
-    S2LP_TIM_LdcrMode(S_ENABLE);
-    S2LP_TIM_FastRxTermTimer(S_ENABLE);
-#endif /*RADIO_SNIFF_MODE*/
-		radio_set_ready_state();
-		S2LP_FIFO_MuxRxFifoIrqEnable(S_ENABLE);
-		S2LP_CMD_StrobeRx();
-		radio_status = radio_on;
-		RADIO_IRQ_ENABLE(); //--> Coming from OFF, IRQ ARE DISABLED.
-	}
-	return 0;
-}
-
-static int8_t Radio_off(void) {
-	TRice("msg:Radio: ->off\n");
-
-	if (radio_on == radio_status) {
-		/* Disables the mcu to get IRQ from the RADIO */
-		RADIO_IRQ_DISABLE();  //Mind that it will be enabled only in the ON
-
-#if RADIO_SNIFF_MODE
-    S2LP_TIM_LdcrMode(S_DISABLE);
-    S2LP_TIM_FastRxTermTimer(S_DISABLE);
-    S2LP_CMD_StrobeReady();
-    S2LP_CMD_StrobeRx();
-#endif /*RADIO_SNIFF_MODE*/
-
-		/* first stop rx/tx */
-		S2LP_CMD_StrobeSabort();
-
-		/* Clear any pending irqs */
-		S2LP_GPIO_IrqClearStatus();
-
-#if RADIO_SNIFF_MODE
-    S2LP_CMD_StrobeReady();
-#endif /*RADIO_SNIFF_MODE*/
-		BUSYWAIT_UNTIL(radio_refresh_status() == MC_STATE_READY,
-				RADIO_WAIT_TIMEOUT);
-
-		if (radio_refresh_status() != MC_STATE_READY) {
-			TRice("Radio: failed off->ready\n");
-			return 1;
-		}
-		/* Puts the Radio in STANDBY */
-		S2LP_CMD_StrobeStandby();
-		BUSYWAIT_UNTIL(radio_refresh_status() == MC_STATE_STANDBY,
-				RADIO_WAIT_TIMEOUT);
-
-		if (radio_refresh_status() != MC_STATE_STANDBY) {
-			TRice("err:Radio: failed off->stdby\n");
-			return 1;
-		}
-
-		radio_status = radio_off;
-		rx_num_bytes = 0;
-	}
-
-	TRice("msg:Radio: off.\n");
-	//radio_print_status();
-	return 0;
-}
-
-static eRadioRes Radio_get_value(radio_param_t parameter,
-		radio_value_t *ret_value) {
+static eRadioRes Radio_get_value(radio_param_t parameter, radio_value_t *ret_value) {
 	eRadioRes get_value_result;
 	get_value_result = radio_notSupported;
 
@@ -802,9 +764,9 @@ static eRadioRes Radio_get_value(radio_param_t parameter,
 		get_value_result = radio_ok;
 	} else if (parameter == RADIO_PARAM_RX_MODE) {
 		*ret_value = 0x00;
-		if (polling_mode) {
-			*ret_value |= RADIO_RX_MODE_POLL_MODE;
-		}
+//		if (polling_mode) {
+//			*ret_value |= RADIO_RX_MODE_POLL_MODE;
+//		}
 		if (radio_send_auto_ack) {
 			*ret_value |= RADIO_RX_MODE_AUTOACK;
 		}
@@ -841,6 +803,9 @@ static eRadioRes Radio_get_value(radio_param_t parameter,
 		get_value_result = radio_ok;
 	} else if (parameter == RADIO_CONST_TXPOWER_MAX) {
 		*ret_value = RADIO_POWER_DBM_MAX;
+		get_value_result = radio_ok;
+	} else if (RADIO_PARAM_MAX_BACKOFF_NR == parameter) {
+		*ret_value = xCsmaInit.cMaxNb;
 		get_value_result = radio_ok;
 	} else if (parameter == RADIO_CONST_MAX_PAYLOAD_LEN) {
 		/*TODO: check if this value is correct.*/
@@ -883,7 +848,7 @@ static eRadioRes Radio_set_value(radio_param_t parameter, radio_value_t input_va
 		} else {
 			radio_set_auto_pkt_filter((input_value & RADIO_RX_MODE_ADDRESS_FILTER) != 0);
 			radio_set_auto_ack((input_value & RADIO_RX_MODE_AUTOACK) != 0);
-			radio_set_polling_mode((input_value & RADIO_RX_MODE_POLL_MODE) != 0);
+//			radio_set_polling_mode((input_value & RADIO_RX_MODE_POLL_MODE) != 0);
 			set_value_result = radio_ok;
 		}
 	} else if (parameter == RADIO_PARAM_TX_MODE) {
@@ -905,6 +870,14 @@ static eRadioRes Radio_set_value(radio_param_t parameter, radio_value_t input_va
 		//TODO: this value is not currently taken into account, only RSSI_TX_THRESHOLD macro is used
 		csma_tx_threshold = input_value;
 		set_value_result = radio_ok;
+	} else if (RADIO_PARAM_MAX_BACKOFF_NR == parameter) {
+		if (8 > input_value) {
+			xCsmaInit.cMaxNb = input_value;
+			S2LPCsmaSetMaxNumberBackoff(xCsmaInit.cMaxNb);
+			set_value_result = radio_ok;
+		} else {
+			set_value_result = radio_invalidArgument;
+		}
 	}
 
 	return set_value_result;
@@ -935,6 +908,22 @@ static eRadioRes Radio_set_object(radio_param_t parameter, const void *source, s
 
 	return radio_notSupported;
 }
+
+const struct radio_driver subGHz_radio_driver = {
+		Radio_init,
+		Radio_prepare,
+		Radio_transmit,
+		Radio_send,
+		Radio_read,
+		Radio_channel_clear,
+		Radio_receiving_packet,
+		Radio_pending_packet,
+		Radio_on,
+		Radio_off,
+		Radio_get_value,
+		Radio_set_value,
+		Radio_get_object,
+		Radio_set_object };
 
 /* Functions ----------------------------------------------------------------*/
 /**
@@ -976,12 +965,12 @@ void Radio_process_irq_cb(void) {
 	if (x_irq_status.IRQ_RX_DATA_READY && !(transmitting_packet)) {
 		receiving_packet = 0;
 
-		(void) Radio_read_from_fifo(radio_rxbuf, sizeof(radio_rxbuf));
+//		rx_num_bytes = Radio_read_from_fifo(radio_rxbuf, sizeof(radio_rxbuf));
 		rx_num_bytes = S2LP_PCKT_BASIC_GetReceivedPktLength();
 
-		S2LP_CMD_StrobeFlushRxFifo();
+//		S2LP_CMD_StrobeFlushRxFifo();
 		pending_packet = 1;
-		pending_process = 1;
+		radioIrq2Task(radioEvtIdOffset + radio_incomingData, NULL);
 		return;
 	}
 
@@ -995,37 +984,5 @@ void Radio_process_irq_cb(void) {
 		}
 	}
 #endif /*!RADIO_SNIFF_MODE*/
-}
-
-/**
- * @brief function for checking if any processes for radio are pending to be handled
- * @retval returns 1 if Radio process is waiting to be handled
- */
-uint8_t Radio_process_is_pending(void) {
-	return pending_process;
-}
-
-/**
- * @brief function for handling radio processes
- */
-void Radio_process(void) {
-	int len;
-	pending_process = 0;
-	packetbuf_clear();
-	len = Radio_read(packetbuf_dataptr(), PACKETBUF_SIZE);
-
-	if (len > 0) {
-		packetbuf_set_datalen(len);
-
-		TRice("msg:Calling MAC.Input(%d)\n", len);
-		TRice8B("%02X\n", packetbuf_dataptr(), len);
-#warning "NETSTACK_MAC attaches here"
-		//NETSTACK_MAC.input();
-	}
-
-	if (!(rx_num_bytes == 0)) {
-		TRice("msg:After MAC.input, RX BUF is not empty.\r\n");
-		pending_process = 1;
-	}
 }
 

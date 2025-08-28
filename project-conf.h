@@ -19,6 +19,10 @@
 #ifndef PROJECT_CONF_H_
 #define PROJECT_CONF_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #if BUILD_WITH_SERIAL_SNIFFER
 #undef LLSEC802154_CONF_ENABLED
 /* Disable Link Layer security */
@@ -82,6 +86,10 @@
 #define COAP_DTLS_PSK_DEFAULT_IDENTITY "0123456789ABCDEF"
 #define COAP_DTLS_PSK_DEFAULT_KEY      "stm32nucleo" //-> 73746d33326e75636c656f
 #define DTLS_MAX_BUF 400
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif /* PROJECT_CONF_H_ */

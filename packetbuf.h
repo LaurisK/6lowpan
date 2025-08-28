@@ -52,6 +52,10 @@
 #ifndef PACKETBUF_H_
 #define PACKETBUF_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include "linkaddr.h"
 
@@ -64,147 +68,11 @@
 #define PACKETBUF_SIZE 128
 #endif
 
-/**
- * \brief      Clear and reset the packetbuf
- *
- *             This function clears the packetbuf and resets all
- *             internal state pointers (header size, header pointer,
- *             external data pointer). It is used before preparing a
- *             packet in the packetbuf.
- *
- */
-void packetbuf_clear(void);
+#define PACKETBUF_NUM_ADDRS 2
+#define PACKETBUF_NUM_ATTRS (PACKETBUF_ATTR_MAX - PACKETBUF_NUM_ADDRS)
+#define PACKETBUF_ADDR_FIRST PACKETBUF_ADDR_SENDER
 
-/**
- * \brief      Get a pointer to the data in the packetbuf
- * \return     Pointer to the packetbuf data
- *
- *             This function is used to get a pointer to the data in
- *             the packetbuf. The data is either stored in the packetbuf,
- *             or referenced to an external location.
- *
- */
-void *packetbuf_dataptr(void);
-
-/**
- * \brief      Get a pointer to the header in the packetbuf, for outbound packets
- * \return     Pointer to the packetbuf header
- *
- */
-void *packetbuf_hdrptr(void);
-
-/**
- * \brief      Get the length of the header in the packetbuf
- * \return     Length of the header in the packetbuf
- *
- */
-uint8_t packetbuf_hdrlen(void);
-
-
-/**
- * \brief      Get the length of the data in the packetbuf
- * \return     Length of the data in the packetbuf
- *
- */
-uint16_t packetbuf_datalen(void);
-
-/**
- * \brief      Get the total length of the header and data in the packetbuf
- * \return     Length of data and header in the packetbuf
- *
- */
-uint16_t packetbuf_totlen(void);
-
-/**
- * \brief      Get the total length of the remaining space in the packetbuf
- * \return     Length of the remaining space in the packetbuf
- *
- */
-uint16_t packetbuf_remaininglen(void);
-
-/**
- * \brief      Set the length of the data in the packetbuf
- * \param len  The length of the data
- */
-void packetbuf_set_datalen(uint16_t len);
-
-/**
- * \brief      Copy from external data into the packetbuf
- * \param from A pointer to the data from which to copy
- * \param len  The size of the data to copy
- * \retval     The number of bytes that was copied into the packetbuf
- *
- *             This function copies data from a pointer into the
- *             packetbuf. If the data that is to be copied is larger
- *             than the packetbuf, only the data that fits in the
- *             packetbuf is copied. The number of bytes that could be
- *             copied into the rimbuf is returned.
- *
- */
-int packetbuf_copyfrom(const void *from, uint16_t len);
-
-/**
- * \brief      Copy the entire packetbuf to an external buffer
- * \param to   A pointer to the buffer to which the data is to be copied
- * \retval     The number of bytes that was copied to the external buffer
- *
- *             This function copies the packetbuf to an external
- *             buffer. Both the data portion and the header portion of
- *             the packetbuf is copied.
- *
- *             The external buffer to which the packetbuf is to be
- *             copied must be able to accomodate at least
- *             PACKETBUF_SIZE bytes. The number of
- *             bytes that was copied to the external buffer is
- *             returned.
- *
- */
-int packetbuf_copyto(void *to);
-
-/**
- * \brief      Extend the header of the packetbuf, for outbound packets
- * \param size The number of bytes the header should be extended
- * \retval     Non-zero if the header could be extended, zero otherwise
- *
- *             This function is used to allocate extra space in the
- *             header portion in the packetbuf, when preparing outbound
- *             packets for transmission. If the function is unable to
- *             allocate sufficient header space, the function returns
- *             zero and does not allocate anything.
- *
- */
-int packetbuf_hdralloc(int size);
-
-/**
- * \brief      Reduce the header in the packetbuf, for incoming packets
- * \param size The number of bytes the header should be reduced
- * \retval     Non-zero if the header could be reduced, zero otherwise
- *
- *             This function is used to remove the first part of the
- *             header in the packetbuf, when processing incoming
- *             packets. If the function is unable to remove the
- *             requested amount of header space, the function returns
- *             zero and does not allocate anything.
- *
- */
-int packetbuf_hdrreduce(int size);
-
-/* Packet attributes stuff below: */
-
-typedef uint16_t packetbuf_attr_t;
-
-struct packetbuf_attr {
-  packetbuf_attr_t val;
-};
-struct packetbuf_addr {
-  linkaddr_t addr;
-};
-
-#define PACKETBUF_ATTR_PACKET_TYPE_DATA      0
-#define PACKETBUF_ATTR_PACKET_TYPE_ACK       1
-#define PACKETBUF_ATTR_PACKET_TYPE_STREAM    2
-#define PACKETBUF_ATTR_PACKET_TYPE_STREAM_END 3
-#define PACKETBUF_ATTR_PACKET_TYPE_TIMESTAMP 4
+#define PACKETBUF_IS_ADDR(type) ((type) >= PACKETBUF_ADDR_FIRST)
 
 enum {
   PACKETBUF_ATTR_NONE,
@@ -250,43 +118,183 @@ enum {
   PACKETBUF_ATTR_MAX
 };
 
-#define PACKETBUF_NUM_ADDRS 2
-#define PACKETBUF_NUM_ATTRS (PACKETBUF_ATTR_MAX - PACKETBUF_NUM_ADDRS)
-#define PACKETBUF_ADDR_FIRST PACKETBUF_ADDR_SENDER
+typedef struct {
+	linkaddr_t addresses[PACKETBUF_NUM_ADDRS];
+	uint16_t   attributes[PACKETBUF_NUM_ATTRS];
+	uint16_t   buffLen;
+	uint16_t   buffPtr;
+	uint16_t   hdrLen;
+	uint32_t   buffer[(PACKETBUF_SIZE + 3) / 4];
+} sPacket;
 
-#define PACKETBUF_IS_ADDR(type) ((type) >= PACKETBUF_ADDR_FIRST)
 
-int               packetbuf_set_attr(uint8_t type, const packetbuf_attr_t val);
-packetbuf_attr_t packetbuf_attr(uint8_t type);
-int               packetbuf_set_addr(uint8_t type, const linkaddr_t *addr);
-const linkaddr_t *packetbuf_addr(uint8_t type);
+/**
+ * \brief      Clear and reset the packetbuf
+ *
+ *             This function clears the packetbuf and resets all
+ *             internal state pointers (header size, header pointer,
+ *             external data pointer). It is used before preparing a
+ *             packet in the packetbuf.
+ *
+ */
+void packetbuf_clear(sPacket *);
+
+/**
+ * \brief      Get a pointer to the data in the packetbuf
+ * \return     Pointer to the packetbuf data
+ *
+ *             This function is used to get a pointer to the data in
+ *             the packetbuf. The data is either stored in the packetbuf,
+ *             or referenced to an external location.
+ *
+ */
+void *packetbuf_dataptr(sPacket *);
+
+/**
+ * \brief      Get a pointer to the header in the packetbuf, for outbound packets
+ * \return     Pointer to the packetbuf header
+ *
+ */
+void *packetbuf_hdrptr(sPacket *);
+
+/**
+ * \brief      Get the length of the header in the packetbuf
+ * \return     Length of the header in the packetbuf
+ *
+ */
+uint8_t packetbuf_hdrlen(sPacket *);
+
+
+/**
+ * \brief      Get the length of the data in the packetbuf
+ * \return     Length of the data in the packetbuf
+ *
+ */
+uint16_t packetbuf_datalen(sPacket *);
+
+/**
+ * \brief      Get the total length of the header and data in the packetbuf
+ * \return     Length of data and header in the packetbuf
+ *
+ */
+uint16_t packetbuf_totlen(sPacket *);
+
+/**
+ * \brief      Get the total length of the remaining space in the packetbuf
+ * \return     Length of the remaining space in the packetbuf
+ *
+ */
+uint16_t packetbuf_remaininglen(sPacket *);
+
+/**
+ * \brief      Set the length of the data in the packetbuf
+ * \param len  The length of the data
+ */
+void packetbuf_set_datalen(sPacket *, uint16_t len);
+
+/**
+ * \brief      Copy from external data into the packetbuf
+ * \param from A pointer to the data from which to copy
+ * \param len  The size of the data to copy
+ * \retval     The number of bytes that was copied into the packetbuf
+ *
+ *             This function copies data from a pointer into the
+ *             packetbuf. If the data that is to be copied is larger
+ *             than the packetbuf, only the data that fits in the
+ *             packetbuf is copied. The number of bytes that could be
+ *             copied into the rimbuf is returned.
+ *
+ */
+int packetbuf_copyfrom(sPacket *, const void *from, uint16_t len);
+
+/**
+ * \brief      Copy the entire packetbuf to an external buffer
+ * \param to   A pointer to the buffer to which the data is to be copied
+ * \retval     The number of bytes that was copied to the external buffer
+ *
+ *             This function copies the packetbuf to an external
+ *             buffer. Both the data portion and the header portion of
+ *             the packetbuf is copied.
+ *
+ *             The external buffer to which the packetbuf is to be
+ *             copied must be able to accomodate at least
+ *             PACKETBUF_SIZE bytes. The number of
+ *             bytes that was copied to the external buffer is
+ *             returned.
+ *
+ */
+int packetbuf_copyto(sPacket *, void *to);
+
+/**
+ * \brief      Extend the header of the packetbuf, for outbound packets
+ * \param size The number of bytes the header should be extended
+ * \retval     Non-zero if the header could be extended, zero otherwise
+ *
+ *             This function is used to allocate extra space in the
+ *             header portion in the packetbuf, when preparing outbound
+ *             packets for transmission. If the function is unable to
+ *             allocate sufficient header space, the function returns
+ *             zero and does not allocate anything.
+ *
+ */
+int packetbuf_hdralloc(sPacket *, int size);
+
+/**
+ * \brief      Reduce the header in the packetbuf, for incoming packets
+ * \param size The number of bytes the header should be reduced
+ * \retval     Non-zero if the header could be reduced, zero otherwise
+ *
+ *             This function is used to remove the first part of the
+ *             header in the packetbuf, when processing incoming
+ *             packets. If the function is unable to remove the
+ *             requested amount of header space, the function returns
+ *             zero and does not allocate anything.
+ *
+ */
+int packetbuf_hdrreduce(sPacket *, int size);
+
+/* Packet attributes stuff below: */
+
+
+//#define PACKETBUF_ATTR_PACKET_TYPE_DATA      0
+//#define PACKETBUF_ATTR_PACKET_TYPE_ACK       1
+//#define PACKETBUF_ATTR_PACKET_TYPE_STREAM    2
+//#define PACKETBUF_ATTR_PACKET_TYPE_STREAM_END 3
+//#define PACKETBUF_ATTR_PACKET_TYPE_TIMESTAMP 4
+
+int      packetbuf_set_attr(sPacket *, uint8_t type, const uint16_t val);
+uint16_t packetbuf_attr(sPacket *, uint8_t type);
+int      packetbuf_set_addr(sPacket *, uint8_t type, const linkaddr_t *addr);
+const linkaddr_t *packetbuf_addr(sPacket *, uint8_t type);
 
 /**
  * \brief      Checks whether the current packet is a broadcast.
  * \retval 0   iff current packet is not a broadcast
  */
-int               packetbuf_holds_broadcast(void);
+int  packetbuf_holds_broadcast(sPacket *);
 
-void              packetbuf_attr_clear(void);
+void packetbuf_attr_clear(sPacket *);
 
-void              packetbuf_attr_copyto(struct packetbuf_attr *attrs,
-                                        struct packetbuf_addr *addrs);
-void              packetbuf_attr_copyfrom(struct packetbuf_attr *attrs,
-                                          struct packetbuf_addr *addrs);
+void packetbuf_attr_copyto(sPacket *, uint16_t *attrs, linkaddr_t *addrs);
+void packetbuf_attr_copyfrom(sPacket *, uint16_t *attrs, linkaddr_t *addrs);
 
-#define PACKETBUF_ATTRIBUTES(...) { __VA_ARGS__ PACKETBUF_ATTR_LAST }
-#define PACKETBUF_ATTR_LAST { PACKETBUF_ATTR_NONE, 0 }
+//#define PACKETBUF_ATTRIBUTES(...) { __VA_ARGS__ PACKETBUF_ATTR_LAST }
+//#define PACKETBUF_ATTR_LAST { PACKETBUF_ATTR_NONE, 0 }
 
-#define PACKETBUF_ATTR_BIT  1
-#define PACKETBUF_ATTR_BYTE 8
-#define PACKETBUF_ADDRSIZE (LINKADDR_SIZE * PACKETBUF_ATTR_BYTE)
+//#define PACKETBUF_ATTR_BIT  1
+//#define PACKETBUF_ATTR_BYTE 8
+//#define PACKETBUF_ADDRSIZE (LINKADDR_SIZE * PACKETBUF_ATTR_BYTE)
 
 #define PACKETBUF_ATTR_SECURITY_LEVEL_DEFAULT 0xffff
 
-struct packetbuf_attrlist {
-  uint8_t type;
-  uint8_t len;
-};
+//struct packetbuf_attrlist {
+//  uint8_t type;
+//  uint8_t len;
+//};
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* PACKETBUF_H_ */
 /** @} */

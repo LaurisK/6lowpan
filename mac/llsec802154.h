@@ -51,6 +51,10 @@
 #ifndef LLSEC802154_H_
 #define LLSEC802154_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 //#include "net/mac/framer/frame802154.h"
 //#include "net/ipv6/uip.h"
 
@@ -92,6 +96,10 @@
 #define LLSEC802154_PACKETBUF_MIC_LEN() LLSEC802154_MIC_LEN(packetbuf_attr(PACKETBUF_ATTR_SECURITY_LEVEL))
 #else
 #define LLSEC802154_PACKETBUF_MIC_LEN() 0
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif /* LLSEC802154_H_ */

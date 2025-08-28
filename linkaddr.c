@@ -42,9 +42,14 @@
  * @{
  */
 
+/* Includes -----------------------------------------------------------------*/
 #include "linkaddr.h"
 #include <string.h>
 
+/* Private defines ----------------------------------------------------------*/
+/* Private types ------------------------------------------------------------*/
+/* Global variables ---------------------------------------------------------*/
+#warning "make them non global"
 linkaddr_t linkaddr_node_addr;
 #if LINKADDR_SIZE == 2
 const linkaddr_t linkaddr_null = { { 0, 0 } };
@@ -57,23 +62,20 @@ const linkaddr_t linkaddr_null = { { 0, 0, 0, 0, 0, 0 } };
 #endif /*LINKADDR_SIZE == 6*/
 #endif /*LINKADDR_SIZE == 2*/
 
-
+/* Private functions --------------------------------------------------------*/
+/* Functions ----------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
-void
-linkaddr_copy(linkaddr_t *dest, const linkaddr_t *src)
-{
+void linkaddr_copy(linkaddr_t *dest, const linkaddr_t *src) {
 	memcpy(dest, src, LINKADDR_SIZE);
 }
+
 /*---------------------------------------------------------------------------*/
-int
-linkaddr_cmp(const linkaddr_t *addr1, const linkaddr_t *addr2)
-{
+int linkaddr_cmp(const linkaddr_t *addr1, const linkaddr_t *addr2) {
 	return (memcmp(addr1, addr2, LINKADDR_SIZE) == 0);
 }
+
 /*---------------------------------------------------------------------------*/
-void
-linkaddr_set_node_addr(linkaddr_t *t)
-{
+void linkaddr_set_node_addr(linkaddr_t *t) {
   linkaddr_copy(&linkaddr_node_addr, t);
 }
 /*---------------------------------------------------------------------------*/

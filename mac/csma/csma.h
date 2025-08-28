@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009, Swedish Institute of Computer Science.
+ * Copyright (c) 2007, Swedish Institute of Computer Science.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,39 +26,73 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
+ * This file is part of the Contiki operating system.
+ *
  */
+/**
+ * \addtogroup link-layer
+ * @{
+ *
+ * \defgroup csma Implementation of the 802.15.4 standard CSMA protocol
+ * @{
+*/
 
 /**
  * \file
- *         A MAC framer is responsible for constructing and parsing
- *         the header in MAC frames. At least the sender and receiver
- *         are required to be encoded in the MAC frame headers.
+ *         The 802.15.4 standard CSMA protocol (nonbeacon-enabled)
  * \author
- *         Niclas Finne <nfi@sics.se>
- *         Joakim Eriksson <joakime@sics.se>
+ *         Adam Dunkels <adam@sics.se>
+ *         Simon Duquennoy <simon.duquennoy@inria.fr>
  */
 
-#ifndef FRAMER_H_
-#define FRAMER_H_
+#ifndef CSMA_H_
+#define CSMA_H_
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include "../../packetbuf.h"
+#include "../mac.h"
+#include <stdint.h>
 
-#define FRAMER_FAILED -1
+#ifdef CSMA_CONF_SEND_SOFT_ACK
+#define CSMA_SEND_SOFT_ACK CSMA_CONF_SEND_SOFT_ACK
+#else /* CSMA_CONF_SEND_SOFT_ACK */
+#define CSMA_SEND_SOFT_ACK 0
+#endif /* CSMA_CONF_SEND_SOFT_ACK */
 
-struct framer {
+#ifdef CSMA_CONF_ACK_WAIT_TIME
+#define CSMA_ACK_WAIT_TIME CSMA_CONF_ACK_WAIT_TIME
+#else /* CSMA_CONF_ACK_WAIT_TIME */
+#define CSMA_ACK_WAIT_TIME                      4
+#endif /* CSMA_CONF_ACK_WAIT_TIME */
 
-  int (* length)(sPacket*);
-  int (* create)(sPacket*);
-  int (* parse)(sPacket*);
+#ifdef CSMA_CONF_AFTER_ACK_DETECTED_WAIT_TIME
+#define CSMA_AFTER_ACK_DETECTED_WAIT_TIME CSMA_CONF_AFTER_ACK_DETECTED_WAIT_TIME
+#else /* CSMA_CONF_AFTER_ACK_DETECTED_WAIT_TIME */
+#define CSMA_AFTER_ACK_DETECTED_WAIT_TIME       2
+#endif /* CSMA_CONF_AFTER_ACK_DETECTED_WAIT_TIME */
 
-};
+#define CSMA_ACK_LEN 3
+
+/* just a default - with LLSEC, etc */
+#define CSMA_MAC_MAX_HEADER 21
+
+extern const struct mac_driver csma_driver;
+
+/* CSMA security framer functions */
+int csma_security_create_frame(void);
+int csma_security_parse_frame(void);
+
+/* key management for CSMA */
+int csma_security_set_key(uint8_t index, const uint8_t *key);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* FRAMER_H_ */
+#endif /* CSMA_H_ */
+/**
+ * @}
+ * @}
+ */

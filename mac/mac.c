@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009, Swedish Institute of Computer Science.
+ * Copyright (c) 2010, Swedish Institute of Computer Science.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,39 +26,21 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
+ * This file is part of the Contiki operating system.
+ *
  */
 
-/**
- * \file
- *         A MAC framer is responsible for constructing and parsing
- *         the header in MAC frames. At least the sender and receiver
- *         are required to be encoded in the MAC frame headers.
- * \author
- *         Niclas Finne <nfi@sics.se>
- *         Joakim Eriksson <joakime@sics.se>
- */
+/* Includes -----------------------------------------------------------------*/
+#include "mac.h"
 
-#ifndef FRAMER_H_
-#define FRAMER_H_
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#include "../../packetbuf.h"
-
-#define FRAMER_FAILED -1
-
-struct framer {
-
-  int (* length)(sPacket*);
-  int (* create)(sPacket*);
-  int (* parse)(sPacket*);
-
-};
-
-#ifdef __cplusplus
+/* Private defines ----------------------------------------------------------*/
+/* Private types ------------------------------------------------------------*/
+/* Pseudo global variables --------------------------------------------------*/
+/* Private functions --------------------------------------------------------*/
+/* Functions ----------------------------------------------------------------*/
+void mac_call_sent_callback(mac_callback_t sent, void *ptr, int status, int num_tx) {
+  if(sent) {
+    sent(ptr, status, num_tx);
+  }
 }
-#endif
 
-#endif /* FRAMER_H_ */

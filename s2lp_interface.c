@@ -27,9 +27,6 @@
 #include "s2lp_interface.h"
 #include "s2lp_management.h"
 #include "radio-driver.h"
-#if (false == defined(STM32H753xx))
-#include "App/Transport/radio.h"
-#endif
 #include "s2868a2.h"
 #include "s2lp.h"
 
@@ -49,16 +46,16 @@
 static GpioIrqHandler *GpioIrq[] = {
 
 #if (USE_S2868A2_RADIO_GPIO_0 == 1)
-  Radio_interrupt_callback,
+		Radio_process_irq_cb,
 #endif
 #if (USE_S2868A2_RADIO_GPIO_1 == 1)
-  Radio_interrupt_callback,
+		Radio_process_irq_cb,
 #endif
 #if (USE_S2868A2_RADIO_GPIO_2 == 1)
-  Radio_interrupt_callback,
+		Radio_process_irq_cb,
 #endif
 #if (USE_S2868A2_RADIO_GPIO_3 == 1)
-  Radio_interrupt_callback,
+		Radio_process_irq_cb,
 #endif
 };
 /* Global variables ----------------------------------------------------------*/

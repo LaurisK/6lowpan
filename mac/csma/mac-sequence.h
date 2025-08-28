@@ -1,5 +1,9 @@
 /*
- * Copyright (c) 2009, Swedish Institute of Computer Science.
+ * Copyright (c) 2010, Swedish Institute of Computer Science.
+ * All rights reserved.
+ *
+ * Copyright (c) 2013, ADVANSEE - http://www.advansee.com/
+ * Benoît Thébaudeau <benoit.thebaudeau@advansee.com>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,39 +30,47 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
+ * This file is part of the Contiki operating system.
+ *
  */
 
 /**
  * \file
- *         A MAC framer is responsible for constructing and parsing
- *         the header in MAC frames. At least the sender and receiver
- *         are required to be encoded in the MAC frame headers.
+ *         Header file for MAC sequence numbers management
  * \author
- *         Niclas Finne <nfi@sics.se>
- *         Joakim Eriksson <joakime@sics.se>
+ *         Adam Dunkels <adam@sics.se>
+ *         Benoît Thébaudeau <benoit.thebaudeau@advansee.com>
  */
 
-#ifndef FRAMER_H_
-#define FRAMER_H_
+#ifndef MAC_SEQUENCE_H
+#define MAC_SEQUENCE_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include "../../packetbuf.h"
+#include "../../linkaddr.h"
 
-#define FRAMER_FAILED -1
+/**
+ * \brief      Tell whether the packetbuf is a duplicate packet
+ * \return     Non-zero if the packetbuf is a duplicate packet, zero otherwise
+ *
+ *             This function is used to check for duplicate packet by comparing
+ *             the sequence number of the incoming packet with the last few ones
+ *             we saw, filtering with the link-layer address.
+ */
+int mac_sequence_is_duplicate(const linkaddr_t*, const uint8_t);
 
-struct framer {
-
-  int (* length)(sPacket*);
-  int (* create)(sPacket*);
-  int (* parse)(sPacket*);
-
-};
+/**
+ * \brief      Register the sequence number of the packetbuf
+ *
+ *             This function is used to add the sequence number of the incoming
+ *             packet to the history.
+ */
+void mac_sequence_register_seqno(const linkaddr_t*, const uint8_t);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* FRAMER_H_ */
+#endif /* MAC_SEQUENCE_H */

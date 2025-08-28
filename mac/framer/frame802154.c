@@ -63,16 +63,13 @@
  *   @{
  */
 
+/* Includes -----------------------------------------------------------------*/
 #include "frame802154.h"
 #include "../llsec802154.h"
 #include <string.h>
 
-/**  \brief The 16-bit identifier of the PAN on which the device is
- *   operating.  If this value is 0xffff, the device is not
- *   associated.
- */
-static uint16_t mac_pan_id = IEEE802154_PANID;
-
+/* Private defines ----------------------------------------------------------*/
+/* Private types ------------------------------------------------------------*/
 /**
  *  \brief Structure that contains the lengths of the various addressing and security fields
  *  in the 802.15.4 header.  This structure is used in \ref frame802154_create()
@@ -86,9 +83,18 @@ typedef struct {
   uint8_t aux_sec_len;     /**<  Length (in bytes) of aux security header field */
 } field_length_t;
 
-/*----------------------------------------------------------------------------*/
-static uint8_t addr_len(uint8_t mode)
-{
+/* Pseudo global variables --------------------------------------------------*/
+/**  \brief The 16-bit identifier of the PAN on which the device is
+ *   operating.  If this value is 0xffff, the device is not
+ *   associated.
+ */
+static uint16_t mac_pan_id = IEEE802154_PANID;
+
+/* Private functions --------------------------------------------------------*/
+/**
+ *
+ */
+static uint8_t addr_len(uint8_t mode) {
   switch(mode) {
   case FRAME802154_SHORTADDRMODE:  /* 16-bit address */
     return 2;
@@ -98,10 +104,12 @@ static uint8_t addr_len(uint8_t mode)
     return 0;
   }
 }
-/*----------------------------------------------------------------------------*/
+
 #if LLSEC802154_USES_AUX_HEADER && LLSEC802154_USES_EXPLICIT_KEYS
-static uint8_t get_key_id_len(uint8_t key_id_mode)
-{
+/**
+ *
+ */
+static uint8_t get_key_id_len(uint8_t key_id_mode) {
   switch(key_id_mode) {
   case FRAME802154_1_BYTE_KEY_ID_MODE:
     return 1;
@@ -114,23 +122,25 @@ static uint8_t get_key_id_len(uint8_t key_id_mode)
   }
 }
 #endif /* LLSEC802154_USES_AUX_HEADER && LLSEC802154_USES_EXPLICIT_KEYS */
-/*---------------------------------------------------------------------------*/
-/* Get current PAN ID */
-uint16_t frame802154_get_pan_id(void)
-{
+
+/**
+ *  Get current PAN ID
+ */
+uint16_t frame802154_get_pan_id(void) {
   return mac_pan_id;
 }
-/*---------------------------------------------------------------------------*/
-/* Set current PAN ID */
-void frame802154_set_pan_id(uint16_t pan_id)
-{
+
+/**
+ * Set current PAN ID
+ */
+void frame802154_set_pan_id(uint16_t pan_id) {
   mac_pan_id = pan_id;
 }
-/*----------------------------------------------------------------------------*/
-/* Tells whether a given Frame Control Field indicates a frame with
- * source PANID and/or destination PANID */
-void frame802154_has_panid(frame802154_fcf_t *fcf, int *has_src_pan_id, int *has_dest_pan_id)
-{
+
+/**
+ * Tells whether a given Frame Control Field indicates a frame with source PANID and/or destination PANID
+ */
+void frame802154_has_panid(frame802154_fcf_t *fcf, int *has_src_pan_id, int *has_dest_pan_id) {
   int src_pan_id = 0;
   int dest_pan_id = 0;
 
@@ -180,10 +190,11 @@ void frame802154_has_panid(frame802154_fcf_t *fcf, int *has_src_pan_id, int *has
     *has_dest_pan_id = dest_pan_id;
   }
 }
-/*---------------------------------------------------------------------------*/
-/* Check if the destination PAN ID, if any, matches ours */
-int frame802154_check_dest_panid(frame802154_t *frame)
-{
+
+/**
+ * Check if the destination PAN ID, if any, matches ours
+ */
+int frame802154_check_dest_panid(frame802154_t *frame) {
   int has_dest_panid = 0;
 
   if(frame == NULL) {
@@ -196,10 +207,11 @@ int frame802154_check_dest_panid(frame802154_t *frame)
   }
   return 1;
 }
-/*---------------------------------------------------------------------------*/
-/* Check is the address is a broadcast address, whatever its size */
-int frame802154_is_broadcast_addr(uint8_t mode, uint8_t *addr)
-{
+
+/**
+ * Check is the address is a broadcast address, whatever its size
+ */
+int frame802154_is_broadcast_addr(uint8_t mode, uint8_t *addr) {
   int i = (mode == FRAME802154_SHORTADDRMODE) ? 2 : 8;
   while(i) {
     i--;
@@ -209,10 +221,11 @@ int frame802154_is_broadcast_addr(uint8_t mode, uint8_t *addr)
   }
   return 1;
 }
-/*---------------------------------------------------------------------------*/
-/* Check and extract source and destination linkaddr from frame */
-int frame802154_extract_linkaddr(frame802154_t *frame, linkaddr_t *source_address, linkaddr_t *dest_address)
-{
+
+/**
+ * Check and extract source and destination linkaddr from frame
+ */
+int frame802154_extract_linkaddr(frame802154_t *frame, linkaddr_t *source_address, linkaddr_t *dest_address) {
   int src_addr_len;
   int dest_addr_len;
 
@@ -257,9 +270,11 @@ int frame802154_extract_linkaddr(frame802154_t *frame, linkaddr_t *source_addres
 
   return 1;
 }
-/*----------------------------------------------------------------------------*/
-static void field_len(frame802154_t *p, field_length_t *flen)
-{
+
+/**
+ *
+ */
+static void field_len(frame802154_t *p, field_length_t *flen) {
   int has_src_panid;
   int has_dest_panid;
 
@@ -315,7 +330,7 @@ static void field_len(frame802154_t *p, field_length_t *flen)
   }
 #endif /* LLSEC802154_USES_AUX_HEADER */
 }
-/*----------------------------------------------------------------------------*/
+
 /**
  *   \brief Calculates the length of the frame header.  This function is
  *   meant to be called by a higher level function, that interfaces to a MAC.
@@ -325,15 +340,16 @@ static void field_len(frame802154_t *p, field_length_t *flen)
  *
  *   \return The length of the frame header.
  */
-int frame802154_hdrlen(frame802154_t *p)
-{
+int frame802154_hdrlen(frame802154_t *p) {
   field_length_t flen;
   field_len(p, &flen);
   return 2 + flen.seqno_len + flen.dest_pid_len + flen.dest_addr_len + flen.src_pid_len + flen.src_addr_len + flen.aux_sec_len;
 }
 
-void frame802154_create_fcf(frame802154_fcf_t *fcf, uint8_t *buf)
-{
+/**
+ *
+ */
+void frame802154_create_fcf(frame802154_fcf_t *fcf, uint8_t *buf) {
   buf[0] = (fcf->frame_type & 7) |
     ((fcf->security_enabled & 1) << 3) |
     ((fcf->frame_pending & 1) << 4) |
@@ -345,7 +361,7 @@ void frame802154_create_fcf(frame802154_fcf_t *fcf, uint8_t *buf)
     ((fcf->frame_version & 3) << 4) |
     ((fcf->src_addr_mode & 3) << 6);
 }
-/*----------------------------------------------------------------------------*/
+
 /**
  *   \brief Creates a frame for transmission over the air.  This function is
  *   meant to be called by a higher level function, that interfaces to a MAC.
@@ -357,8 +373,7 @@ void frame802154_create_fcf(frame802154_fcf_t *fcf, uint8_t *buf)
  *
  *   \return The length of the frame header
  */
-int frame802154_create(frame802154_t *p, uint8_t *buf)
-{
+int frame802154_create(frame802154_t *p, uint8_t *buf) {
   int c;
   field_length_t flen;
   uint8_t pos;
@@ -433,8 +448,10 @@ int frame802154_create(frame802154_t *p, uint8_t *buf)
   return (int)pos;
 }
 
-void frame802154_parse_fcf(uint8_t *data, frame802154_fcf_t *pfcf)
-{
+/**
+ *
+ */
+void frame802154_parse_fcf(uint8_t *data, frame802154_fcf_t *pfcf) {
   frame802154_fcf_t fcf;
 
   /* decode the FCF */
@@ -453,7 +470,7 @@ void frame802154_parse_fcf(uint8_t *data, frame802154_fcf_t *pfcf)
   /* copy fcf */
   memcpy(pfcf, &fcf, sizeof(frame802154_fcf_t));
 }
-/*----------------------------------------------------------------------------*/
+
 /**
  *   \brief Parses an input frame.  Scans the input frame to find each
  *   section, and stores the information of each section in a
@@ -463,8 +480,7 @@ void frame802154_parse_fcf(uint8_t *data, frame802154_fcf_t *pfcf)
  *   \param len The size of the input data
  *   \param pf The frame802154_t struct to store the parsed frame information.
  */
-int frame802154_parse(uint8_t *data, int len, frame802154_t *pf)
-{
+int frame802154_parse(uint8_t *data, int len, frame802154_t *pf) {
   uint8_t *p;
   frame802154_fcf_t fcf;
   int c;

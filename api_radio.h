@@ -57,7 +57,44 @@
 #ifndef API_RADIO_H_
 #define API_RADIO_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
+#include "packetbuf.h"
+
+/**
+ * Enable address-based frame filtering.
+ *
+ * This will typically involve filtering based on PAN ID, Short address and
+ * long address. The filtering will consider the params RADIO_PARAM_PAN_ID,
+ * RADIO_PARAM_16BIT_ADDR and RADIO_PARAM_64BIT_ADDR respectively.
+ */
+#define RADIO_RX_MODE_ADDRESS_FILTER   (1 << 0)
+
+/**
+ * Enable automatic transmission of ACK frames
+ */
+#define RADIO_RX_MODE_AUTOACK          (1 << 1)
+
+/**
+ * Enable/disable/get the state of radio driver poll mode operation
+ */
+#define RADIO_RX_MODE_POLL_MODE        (1 << 2)
+/** @} */
+/*---------------------------------------------------------------------------*/
+/**
+ * Radio TX mode control / retrieval
+ *
+ * The radio transmission mode controls whether transmissions should
+ * be done using clear channel assessment (if supported by the
+ * radio). If send-on-CCA is enabled, the radio's send function will
+ * wait for a radio-specific time window for the channel to become
+ * clear. If this does not happen, the send function will return
+ * `tx_collision`.
+ */
+#define RADIO_TX_MODE_SEND_ON_CCA      (1 << 0)
 
 /**
  * Each radio has a set of parameters that designate the current
@@ -178,6 +215,11 @@ enum radio_param_e {
    * as a bit mask.
    */
   RADIO_PARAM_TX_MODE,
+
+  /**
+   * Max. number of back-off cycles for HW CSMA/CA algorithm.
+   */
+  RADIO_PARAM_MAX_BACKOFF_NR,
 
   /**
    * Transmission power in dBm. The values can range from
@@ -434,38 +476,6 @@ enum radio_shr_search_e {
  */
 
 /**
- * Enable address-based frame filtering.
- *
- * This will typically involve filtering based on PAN ID, Short address and
- * long address. The filtering will consider the params RADIO_PARAM_PAN_ID,
- * RADIO_PARAM_16BIT_ADDR and RADIO_PARAM_64BIT_ADDR respectively.
- */
-#define RADIO_RX_MODE_ADDRESS_FILTER   (1 << 0)
-
-/**
- * Enable automatic transmission of ACK frames
- */
-#define RADIO_RX_MODE_AUTOACK          (1 << 1)
-
-/**
- * Enable/disable/get the state of radio driver poll mode operation
- */
-#define RADIO_RX_MODE_POLL_MODE        (1 << 2)
-/** @} */
-/*---------------------------------------------------------------------------*/
-/**
- * Radio TX mode control / retrieval
- *
- * The radio transmission mode controls whether transmissions should
- * be done using clear channel assessment (if supported by the
- * radio). If send-on-CCA is enabled, the radio's send function will
- * wait for a radio-specific time window for the channel to become
- * clear. If this does not happen, the send function will return
- * `tx_collision`.
- */
-#define RADIO_TX_MODE_SEND_ON_CCA      (1 << 0)
-
-/**
  * Radio return values when setting or getting radio parameters.
  */
 typedef enum {
@@ -544,7 +554,7 @@ struct radio_driver {
    * The Contiki-NG boot sequence will put the radio in RX mode explicitly by
    * a subsequent call to `on()`.
    */
-  int8_t (* init)(void);
+  int8_t (* init)(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void)));
 
   /**
    * Prepare the radio with a packet to be sent.
@@ -569,7 +579,7 @@ struct radio_driver {
    * the packet to a location internal to the driver. Commonly this may happen
    * if the latter is occupied by a previous packet which has yet to be sent.
    */
-  eTransmitRes (* prepare)(const void *payload, uint16_t payload_len);
+  eTransmitRes (* prepare)(sPacket *payload);
 
   /**
    * Send the packet that has previously been prepared.
@@ -620,7 +630,7 @@ struct radio_driver {
    * This function shall behave exactly as a call to `prepare()`, immediately
    * followed by a call to `transmit()`.
    */
-  eTransmitRes (* send)(const void *payload, uint16_t payload_len);
+  eTransmitRes (* send)(sPacket *payload);
 
   /**
    * Read a received packet into a buffer.
@@ -644,7 +654,7 @@ struct radio_driver {
    * MAC payload, but it will _not_ contain the physical header or the MAC
    * footer (MFR).
    */
-  int16_t (* read)(void *buf, uint16_t buf_len);
+  int16_t (* read)(sPacket *payload);
 
   /**
    * Perform a Clear-Channel Assessment (CCA) to find out if there is
@@ -779,6 +789,10 @@ struct radio_driver {
   eRadioRes (* set_object)(radio_param_t param, const void *src, size_t size);
 };
 /** @} */
+#ifdef __cplusplus
+}
+#endif
+
 /*---------------------------------------------------------------------------*/
 #endif /* API_RADIO_H_ */
 /*---------------------------------------------------------------------------*/
