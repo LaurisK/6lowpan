@@ -72,7 +72,7 @@ struct mac_driver {
   void (* send)(mac_callback_t, void*, sPacket*);
 
   /** Callback for getting notified of incoming packet. */
-  void (* input)(void);
+  void (* input)(sPacket*);
 
   /** Turn the MAC layer on. */
   int (* on)(void);
