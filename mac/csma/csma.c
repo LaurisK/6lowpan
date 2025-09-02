@@ -47,6 +47,7 @@
 #include "../llsec802154.h"
 #if defined(STM32H753xx)
 #include "trice.h"
+#include "main.h"
 #else
 #include "App/common.h"
 #endif
