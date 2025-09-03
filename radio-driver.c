@@ -742,18 +742,20 @@ static eRadioRes Radio_get_value(radio_param_t parameter, radio_value_t *ret_val
 	if (ret_value == NULL) {
 		return radio_invalidArgument;
 	}
-
-	if (parameter == RADIO_PARAM_POWER_MODE) {
+	switch (parameter) {
+	case RADIO_PARAM_POWER_MODE:
 		if (radio_on == radio_status) {
 			*ret_value = RADIO_POWER_MODE_ON;
 		} else {
 			*ret_value = RADIO_POWER_MODE_OFF;
 		}
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_PARAM_CHANNEL) {
+		break;
+	case RADIO_PARAM_CHANNEL:
 		*ret_value = radio_get_channel();
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_PARAM_RX_MODE) {
+		break;
+	case RADIO_PARAM_RX_MODE:
 		*ret_value = 0x00;
 //		if (polling_mode) {
 //			*ret_value |= RADIO_RX_MODE_POLL_MODE;
@@ -765,43 +767,61 @@ static eRadioRes Radio_get_value(radio_param_t parameter, radio_value_t *ret_val
 			*ret_value |= RADIO_RX_MODE_ADDRESS_FILTER;
 		}
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_PARAM_TX_MODE) {
+		break;
+	case RADIO_PARAM_TX_MODE:
 		*ret_value = 0x00;
 		if (csma_enabled) {
 			*ret_value |= RADIO_TX_MODE_SEND_ON_CCA;
 		}
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_PARAM_TXPOWER) {
+		break;
+	case RADIO_PARAM_TXPOWER:
 		*ret_value = radio_get_txpower();
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_PARAM_RSSI) {
+		break;
+	case RADIO_PARAM_RSSI:
 		*ret_value = S2LP_RADIO_QI_GetRssidBm();
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_PARAM_LAST_RSSI) {
+		break;
+	case RADIO_PARAM_LAST_RSSI:
 		*ret_value = last_packet_rssi;
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_PARAM_CCA_THRESHOLD) {
+		break;
+	case RADIO_PARAM_CCA_THRESHOLD:
 		*ret_value = csma_tx_threshold;
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_CONST_CHANNEL_MIN) {
+		break;
+	case RADIO_CONST_CHANNEL_MIN:
 		*ret_value = CHANNEL_NUMBER_MIN;
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_CONST_CHANNEL_MAX) {
+		break;
+	case RADIO_CONST_CHANNEL_MAX:
 		*ret_value = CHANNEL_NUMBER_MAX;
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_CONST_TXPOWER_MIN) {
+		break;
+	case RADIO_CONST_TXPOWER_MIN:
 		*ret_value = RADIO_POWER_DBM_MIN;
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_CONST_TXPOWER_MAX) {
+		break;
+	case RADIO_CONST_TXPOWER_MAX:
 		*ret_value = RADIO_POWER_DBM_MAX;
 		get_value_result = radio_ok;
-	} else if (RADIO_PARAM_MAX_BACKOFF_NR == parameter) {
-		*ret_value = xCsmaInit.cMaxNb;
+		break;
+	case RADIO_PARAM_MAX_BACKOFF_NR:
+	{
+		uint8_t testas = xCsmaInit.cMaxNb;
+		TRice("RADIO_PARAM_MAX_BACKOFF_NR - %d|%d\n", testas, xCsmaInit.cMaxNb);
+		*ret_value = testas;
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_CONST_MAX_PAYLOAD_LEN) {
+		break;
+	}
+	case RADIO_CONST_MAX_PAYLOAD_LEN:
 		/*TODO: check if this value is correct.*/
 		*ret_value = MAX_PACKET_LEN;
 		get_value_result = radio_ok;
+		break;
+	default:
+		TRice("dbg:Radio_get_value(%d) - radio_notSupported.\n", parameter);
 	}
 
 	return get_value_result;
