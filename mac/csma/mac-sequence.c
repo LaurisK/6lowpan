@@ -81,7 +81,14 @@ static struct seqno received_seqnos[MAX_SEQNOS];
 int mac_sequence_is_duplicate(const linkaddr_t *addr, const uint8_t seqNr)
 {
   int i;
+#if defined(STM32H753xx)
 	uint32_t  nowTs = GetUptime();
+#else
+	sDateTime nowDt    = {0};
+	uint32_t  nowTs;
+	Time_Get(time_local, &nowDt);
+	nowTs = Time_GetTimeStamp(&nowDt);
+#endif
 
   /*
    * Check for duplicate packet by comparing the sequence number of the incoming
@@ -111,6 +118,10 @@ int mac_sequence_is_duplicate(const linkaddr_t *addr, const uint8_t seqNr)
 void mac_sequence_register_seqno(const linkaddr_t *addr, const uint8_t seqNr)
 {
   int i, j;
+#if !defined(STM32H753xx)
+  	sDateTime nowDt = {0};
+  	Time_Get(time_local, &nowDt);
+#endif
 
   /* Locate possible previous sequence number for this address. */
   for(i = 0; i < MAX_SEQNOS; ++i) {
@@ -125,7 +136,11 @@ void mac_sequence_register_seqno(const linkaddr_t *addr, const uint8_t seqNr)
     memcpy(&received_seqnos[j], &received_seqnos[j - 1], sizeof(struct seqno));
   }
   received_seqnos[0].seqno = seqNr;
+#if defined(STM32H753xx)
   received_seqnos[0].timestamp = GetUptime();
+#else
+  received_seqnos[0].timestamp = Time_GetTimeStamp(&nowDt);
+#endif
   linkaddr_copy(&received_seqnos[0].sender, addr);
 }
 
