@@ -116,8 +116,9 @@ static int16_t Radio_read_from_fifo(sPacket *packet) {
 
 	rx_bytes = S2LP_FIFO_ReadNumberBytesRxFifo();
 
-	if (rx_bytes <= packetbuf_totlen(packet)) {
+	if (rx_bytes <= packetbuf_remaininglen(packet)) {
 		S2LP_ReadFIFO(rx_bytes, (uint8_t*)packetbuf_hdrptr(packet));
+		packetbuf_set_datalen(packet, rx_bytes);
 		retval = rx_bytes;
 		last_packet_timestamp = HAL_GetTick(); //@TODO: validate
 		last_packet_rssi = (uint16_t) S2LP_RADIO_QI_GetRssidBm();
@@ -125,7 +126,7 @@ static int16_t Radio_read_from_fifo(sPacket *packet) {
 		packetbuf_set_attr(packet, PACKETBUF_ATTR_RSSI, last_packet_rssi);
 		packetbuf_set_attr(packet, PACKETBUF_ATTR_LINK_QUALITY, last_packet_lqi);
 	} else {
-		TRice("msg:Buf too small (%d bytes to hold %d bytes)\n", packetbuf_totlen(packet), rx_bytes);
+		TRice("msg:Buf too small (%d bytes to hold %d bytes)\n", packetbuf_remaininglen(packet), rx_bytes);
 	}
 //	if (polling_mode) {
 		S2LP_CMD_StrobeFlushRxFifo();
@@ -649,8 +650,8 @@ static eTransmitRes Radio_transmit(uint16_t payloadLen) {
 }
 
 static eTransmitRes Radio_send(sPacket *packet) {
-	TRice("msg:Radio Send\r\n");
-
+	TRice("msg:Radio Send\n >> ");
+	TRice8B("%02X\n", packetbuf_hdrptr(packet), packetbuf_totlen(packet));
 	if (tx_ok != Radio_prepare(packet)) {
 #if RADIO_SNIFF_MODE
     S2LP_TIM_LdcrMode(S_ENABLE);
@@ -672,7 +673,7 @@ static int16_t Radio_read(sPacket *packet) {
 //		if (x_irq_status.IRQ_RX_DATA_READY)
 //			retval = Radio_read_from_fifo(packet);
 //	} else if (pending_packet && (rx_num_bytes != 0)) {
-		if (rx_num_bytes <= packetbuf_totlen(packet)) {
+		if (rx_num_bytes <= packetbuf_remaininglen(packet)) {
 			//memcpy(packet->buffer, radio_rxbuf, rx_num_bytes);
 			retval = Radio_read_from_fifo(packet);
 		} else {
@@ -687,7 +688,8 @@ static int16_t Radio_read(sPacket *packet) {
 	S2LP_CMD_StrobeRx();
 #endif /*RADIO_SNIFF_MODE*/
 	rx_num_bytes = 0;
-	TRice("msg:READ OUT: %d\n", retval);
+	TRice("msg:READ OUT: %d\n << ", retval);
+	TRice8B("%02X\n", packetbuf_hdrptr(packet), packetbuf_totlen(packet));
 	return retval;
 }
 
@@ -809,7 +811,7 @@ static eRadioRes Radio_get_value(radio_param_t parameter, radio_value_t *ret_val
 		break;
 	case RADIO_PARAM_MAX_BACKOFF_NR:
 	{
-		uint8_t testas = xCsmaInit.cMaxNb;
+		int testas = xCsmaInit.cMaxNb;
 		TRice("RADIO_PARAM_MAX_BACKOFF_NR - %d|%d\n", testas, xCsmaInit.cMaxNb);
 		*ret_value = testas;
 		get_value_result = radio_ok;

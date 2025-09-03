@@ -206,8 +206,8 @@ static void HandleTransferEnd(uint8_t transfRes, uint8_t packetPos) {
  */
 static void TransmitFromQueue(void) {
 	//config CSMA/CA (Maximum number of re-transmissions attampts is NBACKOFF_MAX)
-	uint8_t maxBackoff = 0;
-	subGHz_radio_driver.get_value(RADIO_PARAM_MAX_BACKOFF_NR, (radio_value_t*)&maxBackoff);
+	radio_value_t maxBackoff = 0;
+	subGHz_radio_driver.get_value(RADIO_PARAM_MAX_BACKOFF_NR, &maxBackoff);
 	if (CSMA_MAX_BACKOFF != maxBackoff) {
 		TRice("msg:Setting max. backoff value to %u.\n", maxBackoff);
 		subGHz_radio_driver.set_value(RADIO_PARAM_MAX_BACKOFF_NR, MIN(7, CSMA_MAX_BACKOFF));
@@ -243,7 +243,6 @@ static void TransmitFromQueue(void) {
   //send it
 				uint8_t isBroadcast = packetbuf_holds_broadcast(packet);
 				uint8_t dsn = ((uint8_t *)packetbuf_hdrptr(packet))[2] & 0xff;
-
 				switch (subGHz_radio_driver.send(packet)) {
 				case tx_ok:
 			        if(isBroadcast) {

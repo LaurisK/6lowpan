@@ -157,6 +157,7 @@ static int create_frame(sPacket* packet, int do_create) {
   int hdr_len;
 
   if(frame802154_get_pan_id() == 0xffff) {
+	  TRice("wrn:framer-802154: invalid PAD id!\n");
     return -1;
   }
 
@@ -187,10 +188,12 @@ static int create_frame(sPacket* packet, int do_create) {
   framer_802154_setup_params(packet, &params);
 
   if(packetbuf_holds_broadcast(packet)) {
+    TRice("msg:Frame is broadcast.\n");
     params.dest_addr[0] = 0xFF;
     params.dest_addr[1] = 0xFF;
   } else {
     linkaddr_copy((linkaddr_t *)&params.dest_addr, packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER));
+    TRice("msg:Frame is for %016X.\n", packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER));
   }
 
   linkaddr_copy((linkaddr_t *)&params.src_addr, packetbuf_addr(packet, PACKETBUF_ADDR_SENDER));
@@ -244,7 +247,7 @@ static int parse(sPacket* packet) {
     if(frame.fcf.dest_addr_mode) {
       if(frame.dest_pid != frame802154_get_pan_id() && frame.dest_pid != FRAME802154_BROADCASTPANDID) {
         /* Packet to another PAN */
-    	  TRice("wrn:15.4: for another pan %u\n", frame.dest_pid);
+    	TRice("wrn:15.4: for another pan %u\n", frame.dest_pid);
         return FRAMER_FAILED;
       }
       if(!frame802154_is_broadcast_addr(frame.fcf.dest_addr_mode, frame.dest_addr)) {
@@ -278,6 +281,10 @@ static int parse(sPacket* packet) {
     TRice("msg:In: %2X %016X %016X %d %u (%u)\n", frame.fcf.frame_type, (const linkaddr_t *)packetbuf_addr(packet, PACKETBUF_ADDR_SENDER), (const linkaddr_t *)packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER), hdr_len, packetbuf_datalen(packet), packetbuf_totlen(packet));
 
     return hdr_len;
+  } else if (0 == hdr_len) {
+	  TRice("wrn:frame802154_parse() failed!\n");
+  } else {
+	  TRice("wrn:packetbuf_hdrreduce() failed!\n");
   }
   return FRAMER_FAILED;
 }
