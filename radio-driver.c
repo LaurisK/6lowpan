@@ -482,7 +482,7 @@ static int8_t Radio_init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, voi
 
 static eTransmitRes Radio_prepare(sPacket *packet) {
 	TRice("msg:Radio: prepare %u\n", packetbuf_totlen(packet));
-	uint8_t tmpbuff[PACKETBUF_SIZE]; //@TODO: see below
+	//uint8_t tmpbuff[PACKETBUF_SIZE]; //@TODO: see below
 	packet_is_prepared = 0;
 
 	/* Checks if the payload length is supported: actually this can't happen, by system design, but it is safer to have this for sanity check. */
@@ -526,15 +526,15 @@ static eTransmitRes Radio_prepare(sPacket *packet) {
 
 	S2LP_CMD_StrobeCommand(CMD_FLUSHTXFIFO);
 
-	S2LP_PCKT_BASIC_SetPayloadLength(packetbuf_datalen(packet));
+	S2LP_PCKT_BASIC_SetPayloadLength(packetbuf_totlen(packet));
 	//@TODO change IO implementation to avoid the copy here
-	memcpy(tmpbuff, packetbuf_hdrptr(packet), packetbuf_totlen(packet));
+	//memcpy(tmpbuff, packetbuf_hdrptr(packet), packetbuf_totlen(packet));
 
 	/* Currently does no happen since S2LP_RX_FIFO_SIZE == MAX_PACKET_LEN also note that S2LP_RX_FIFO_SIZE == S2LP_TX_FIFO_SIZE */
 	if (packetbuf_totlen(packet) > S2LP_TX_FIFO_SIZE) {
 		TRice("msg:Payload bigger than FIFO size.'n");
 	} else {
-		S2LP_WriteFIFO(packetbuf_totlen(packet), (uint8_t*) tmpbuff);
+		S2LP_WriteFIFO(packetbuf_totlen(packet), (uint8_t*)packetbuf_hdrptr(packet));
 //    S2LP_WriteFIFO(payload_len, (uint8_t *)payload);
 		packet_is_prepared = 1;
 	}
@@ -673,12 +673,12 @@ static int16_t Radio_read(sPacket *packet) {
 //		if (x_irq_status.IRQ_RX_DATA_READY)
 //			retval = Radio_read_from_fifo(packet);
 //	} else if (pending_packet && (rx_num_bytes != 0)) {
-		if (rx_num_bytes <= packetbuf_remaininglen(packet)) {
+	//	if (rx_num_bytes <= packetbuf_remaininglen(packet)) {
 			//memcpy(packet->buffer, radio_rxbuf, rx_num_bytes);
 			retval = Radio_read_from_fifo(packet);
-		} else {
-			TRice("msg:Buf too small (%d bytes to hold %u bytes)\n", packetbuf_totlen(packet), rx_num_bytes);
-		}
+	//	} else {
+	//		TRice("msg:Buf too small (%d bytes to hold %u bytes)\n", packetbuf_totlen(packet), rx_num_bytes);
+	//	}
 		pending_packet = 0;
 //	}
 	/* RX command - to ensure the device will be ready for the next reception */
@@ -960,7 +960,6 @@ void Radio_process_irq_cb(void) {
 #if !RADIO_SNIFF_MODE
 	/* The IRQ_VALID_SYNC is used to notify a new packet is coming */
 	if (x_irq_status.IRQ_VALID_SYNC && !transmitting_packet) {
-		TRice("dbg:IRQ_VALID_SYNC\n");
 		receiving_packet = 1;
 		S2LP_CMD_StrobeRx();
 	}
@@ -969,6 +968,7 @@ void Radio_process_irq_cb(void) {
 #if RADIO_HW_CSMA
 	if (x_irq_status.IRQ_MAX_BO_CCA_REACH) {
 		/* Send a Tx command: i.e. keep on trying */
+		TRice("dbg:IRQ_MAX_BO_CCA_REACH\n");
 		S2LP_CMD_StrobeTx();
 		return;
 	}
@@ -979,7 +979,7 @@ void Radio_process_irq_cb(void) {
 		receiving_packet = 0;
 
 //		rx_num_bytes = Radio_read_from_fifo(radio_rxbuf, sizeof(radio_rxbuf));
-		rx_num_bytes = S2LP_PCKT_BASIC_GetReceivedPktLength();
+	//	rx_num_bytes = S2LP_PCKT_BASIC_GetReceivedPktLength();
 
 //		S2LP_CMD_StrobeFlushRxFifo();
 		pending_packet = 1;
