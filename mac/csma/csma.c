@@ -268,8 +268,11 @@ static void TransmitFromQueue(void) {
 			              } else {
 			                /* Not an ack or ack not for us: collision */
 			            	  res = MAC_TX_COLLISION;
+			            	  TRice("wrn:ACK not received - collision\n");
 			              }
 			            }
+			          } else {
+		            	  TRice("wrn:ACK not received - no RX data\n");
 			          }
 			        }
 					break;
@@ -374,9 +377,6 @@ static void send_packet(mac_callback_t sent, void *ptr, sPacket *packet) {
  */
 static void input_packet(sPacket *rxPacket)
 {
-#if CSMA_SEND_SOFT_ACK
-  uint8_t ackdata[CSMA_ACK_LEN];
-#endif
   subGHz_radio_driver.read(rxPacket);
   if(packetbuf_datalen(rxPacket) == CSMA_ACK_LEN) {
     /* Ignore ack packets */
@@ -401,11 +401,14 @@ static void input_packet(sPacket *rxPacket)
     }
 
 #if CSMA_SEND_SOFT_ACK
-    if(packetbuf_attr(&rxPacket, PACKETBUF_ATTR_MAC_ACK)) {
-      ackdata[0] = FRAME802154_ACKFRAME;
-      ackdata[1] = 0;
-      ackdata[2] = ((uint8_t *)packetbuf_hdrptr(rxPacket))[2];
-      subGHz_radio_driver.send(rxPacket, ackdata, CSMA_ACK_LEN);
+    if(packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_ACK)) {
+      uint8_t *buff = (uint8_t*)packetbuf_hdrptr(&ackPacket);
+      packetbuf_clear(&ackPacket);
+      buff[0] = FRAME802154_ACKFRAME;
+      buff[1] = 0;
+      buff[2] = ((uint8_t *)packetbuf_hdrptr(rxPacket))[2];
+      packetbuf_set_datalen(&ackPacket, CSMA_ACK_LEN);
+      subGHz_radio_driver.send(&ackPacket);
     }
 #endif /* CSMA_SEND_SOFT_ACK */
     if(!duplicate) {

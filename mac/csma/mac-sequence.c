@@ -45,6 +45,7 @@
 /* Includes -----------------------------------------------------------------*/
 #include <string.h>
 #if defined(STM32H753xx)
+#include "trice.h"
 #include "main.h"
 #else
 #include "App/Time/time.h"
@@ -149,4 +150,3 @@ void mac_sequence_register_seqno(const linkaddr_t *addr, const uint8_t seqNr)
 #endif
   linkaddr_copy(&received_seqnos[0].sender, addr);
 }
-
