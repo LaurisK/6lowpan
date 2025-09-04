@@ -278,8 +278,10 @@ static int parse(sPacket* packet) {
     }
 #endif /* LLSEC802154_USES_AUX_HEADER */
 
-    TRice("msg:In: %2X %016X %016X %d %u (%u)\n", frame.fcf.frame_type, (const linkaddr_t *)packetbuf_addr(packet, PACKETBUF_ADDR_SENDER), (const linkaddr_t *)packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER), hdr_len, packetbuf_datalen(packet), packetbuf_totlen(packet));
-
+    TRice("msg:In: %2X ", frame.fcf.frame_type);
+    trice8B("%02X>", (void*)packetbuf_addr(packet, PACKETBUF_ADDR_SENDER), 8);
+    trice8B("%02X ", (void*)packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER), 8);
+    TRice("msg:%d %u (%u)\n", hdr_len, packetbuf_datalen(packet), packetbuf_totlen(packet));
     return hdr_len;
   } else if (0 == hdr_len) {
 	  TRice("wrn:frame802154_parse() failed!\n");

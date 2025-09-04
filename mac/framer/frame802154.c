@@ -578,7 +578,7 @@ int frame802154_parse(uint8_t *data, int len, frame802154_t *pf) {
         pf->dest_addr[c] = p[7 - c];
       }
       p += 8;
-      TRice("msg:long destination addr: %02X %02X %02X %02X %02X %02X %02X %02X.\n", pf->dest_addr[7], pf->dest_addr[6], pf->dest_addr[5], pf->dest_addr[4], pf->dest_addr[3], pf->dest_addr[2], pf->dest_addr[1], pf->dest_addr[0]);
+      TRice("msg:long destination addr: %02X%02X%02X%02X %02X%02X%02X%02X.\n", pf->dest_addr[3], pf->dest_addr[2], pf->dest_addr[1], pf->dest_addr[0], pf->dest_addr[7], pf->dest_addr[6], pf->dest_addr[5], pf->dest_addr[4]);
     }
   } else {
     linkaddr_copy((linkaddr_t *)&(pf->dest_addr), &linkaddr_null);
@@ -617,7 +617,7 @@ int frame802154_parse(uint8_t *data, int len, frame802154_t *pf) {
         pf->src_addr[c] = p[7 - c];
       }
       p += 8;
-      TRice("msg:long source addr: %02X %02X %02X %02X %02X %02X %02X %02X.\n", pf->src_addr[7], pf->src_addr[6], pf->src_addr[5], pf->src_addr[4], pf->src_addr[3], pf->src_addr[2], pf->src_addr[1], pf->src_addr[0]);
+      TRice("msg:long source addr: %02X%02X%02X%02X %02X%02X%02X%02X.\n", pf->src_addr[3], pf->src_addr[2], pf->src_addr[1], pf->src_addr[0], pf->src_addr[7], pf->src_addr[6], pf->src_addr[5], pf->src_addr[4]);
     }
   } else {
     linkaddr_copy((linkaddr_t *)&(pf->src_addr), &linkaddr_null);

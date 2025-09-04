@@ -89,16 +89,19 @@ int mac_sequence_is_duplicate(const linkaddr_t *addr, const uint8_t seqNr)
 	Time_Get(time_local, &nowDt);
 	nowTs = Time_GetTimeStamp(&nowDt);
 #endif
-
+	TRice("msg:mac_sequence_is_duplicate(%d) - ", seqNr);
+	TRice8B("%02X\n", (void*)addr, 8);
   /*
    * Check for duplicate packet by comparing the sequence number of the incoming
    * packet with the last few ones we saw.
    */
   for(i = 0; i < MAX_SEQNOS; ++i) {
     if(linkaddr_cmp(addr, &received_seqnos[i].sender)) {
+    	TRice8B("dbg:%02X\n", (void*)&received_seqnos[i].sender, 8);
       if(seqNr == received_seqnos[i].seqno) {
 #if SEQNO_MAX_AGE > 0
         if(nowTs - received_seqnos[i].timestamp <= SEQNO_MAX_AGE) {
+        	TRice("msg:duplicate %d|%d (%d - %d = %d)\n", seqNr, received_seqnos[i].seqno, nowTs, received_seqnos[i].timestamp, (nowTs - received_seqnos[i].timestamp));
           /* Duplicate packet. */
           return 1;
         }
@@ -107,6 +110,8 @@ int mac_sequence_is_duplicate(const linkaddr_t *addr, const uint8_t seqNr)
 #endif /* SEQNO_MAX_AGE > 0 */
       }
       break;
+    } else {
+    	TRice8B("msg:%02X\n", (void*)&received_seqnos[i].sender, 8);
     }
   }
   return 0;
@@ -122,7 +127,8 @@ void mac_sequence_register_seqno(const linkaddr_t *addr, const uint8_t seqNr)
   	sDateTime nowDt = {0};
   	Time_Get(time_local, &nowDt);
 #endif
-
+	TRice("msg:mac_sequence_register_seqno(%d) - ", seqNr);
+	TRice8B("%02X\n", (void*)addr, 8);
   /* Locate possible previous sequence number for this address. */
   for(i = 0; i < MAX_SEQNOS; ++i) {
     if(linkaddr_cmp(addr, &received_seqnos[i].sender)) {
