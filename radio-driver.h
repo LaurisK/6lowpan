@@ -142,6 +142,7 @@ extern const struct radio_driver subGHz_radio_driver;
 /*---------------------------------------------------------------------------*/
 
 void Radio_process_irq_cb(void);
+void RadioOverrideRxCb(void (*overRxCb)(void));
 
 /*---------------------------------------------------------------------------*/
 #ifdef __cplusplus

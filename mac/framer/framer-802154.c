@@ -49,10 +49,6 @@
 /* Private defines ----------------------------------------------------------*/
 /* Private types ------------------------------------------------------------*/
 /* Pseudo global variables --------------------------------------------------*/
-static uint8_t mac_dsn;
-
-static uint8_t initialized = 0;
-
 /* Private functions --------------------------------------------------------*/
 /**
  *
@@ -164,12 +160,6 @@ static int create_frame(sPacket* packet, int do_create) {
   /* init to zeros */
   memset(&params, 0, sizeof(params));
 
-  if(!initialized) {
-    initialized = 1;
-#warning "for now just hardcoded random random number."
-    mac_dsn = /*random_rand() & 0xff*/0xa5;
-  }
-
   /*
    * Before setting up "params", make sure we won't use 0 as the sequence number
    * of a newly created frame.
@@ -178,11 +168,7 @@ static int create_frame(sPacket* packet, int do_create) {
    * calculation. No sequence number is needed and should not be consumed.
    */
   if(do_create != 0 && packetbuf_attr(packet, PACKETBUF_ATTR_MAC_SEQNO) == 0) {
-    if(mac_dsn == 0) {
-      mac_dsn++;
-    }
-    packetbuf_set_attr(packet, PACKETBUF_ATTR_MAC_SEQNO, mac_dsn);
-    mac_dsn++;
+    packetbuf_set_attr(packet, PACKETBUF_ATTR_MAC_SEQNO, 0xa5);
   }
 
   framer_802154_setup_params(packet, &params);
@@ -193,7 +179,8 @@ static int create_frame(sPacket* packet, int do_create) {
     params.dest_addr[1] = 0xFF;
   } else {
     linkaddr_copy((linkaddr_t *)&params.dest_addr, packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER));
-    TRice("msg:Frame is for %016X.\n", *(uint64_t*)packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER));
+    TRice("msg:Frame is for \n");
+    linkaddr_print(packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER));
   }
 
   linkaddr_copy((linkaddr_t *)&params.src_addr, packetbuf_addr(packet, PACKETBUF_ADDR_SENDER));
@@ -207,7 +194,9 @@ static int create_frame(sPacket* packet, int do_create) {
   } else if(packetbuf_hdralloc(packet, hdr_len)) {
     frame802154_create(&params, packetbuf_hdrptr(packet));
 
-    TRice("msg:Out: %2X %016X %d %u (%u)\n", params.fcf.frame_type, *(uint64_t*)params.dest_addr, hdr_len, packetbuf_datalen(packet), packetbuf_totlen(packet));
+    TRice("msg:Out: %2X ", params.fcf.frame_type);
+    linkaddr_print((linkaddr_t*)params.dest_addr);
+    TRice("msg: %d %u (%u)\n", hdr_len, packetbuf_datalen(packet), packetbuf_totlen(packet));
 
     return hdr_len;
   } else {
@@ -278,7 +267,11 @@ static int parse(sPacket* packet) {
     }
 #endif /* LLSEC802154_USES_AUX_HEADER */
 
-    TRice("msg:In: %2X %016X %016X %d %u (%u)\n", frame.fcf.frame_type, *(uint64_t*)packetbuf_addr(packet, PACKETBUF_ADDR_SENDER), *(uint64_t*)packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER), hdr_len, packetbuf_datalen(packet), packetbuf_totlen(packet));
+    TRice("msg:In: %2X ", frame.fcf.frame_type);
+    linkaddr_print(packetbuf_addr(packet, PACKETBUF_ADDR_SENDER));
+    TRice("msg: %u(%u) to ", packetbuf_totlen(packet), packetbuf_datalen(packet));
+    linkaddr_print(packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER));
+    TRice("\n");
 
     return hdr_len;
   } else if (0 == hdr_len) {

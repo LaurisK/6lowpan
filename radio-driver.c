@@ -13,6 +13,7 @@
 #include "App/common.h"
 #endif
 #include "Middlewares/Third_Party/6lowpan/evt_radio.h"
+#include "cmsis_os.h"
 
 /* Private defines ----------------------------------------------------------*/
 #if RADIO_ADDRESS_FILTERING
@@ -95,6 +96,7 @@ SRssiInit xSRssiInit = { .cRssiFlt = 14, .xRssiMode = RSSI_STATIC_MODE, .cRssiTh
 
 static uint16_t radioEvtIdOffset;
 void (*radioIrq2Task)(uint16_t, void(*cbFunc)(void));
+void (*overridenRxCb)(void);
 /* Private functions --------------------------------------------------------*/
 /**
  * @brief  radio_refresh_status	refresh and returns S2-LP status
@@ -591,6 +593,7 @@ static eTransmitRes Radio_transmit(uint16_t payloadLen) {
 //		BUSYWAIT_UNTIL(0, 2); //@TODO: we need a delay here, validate.
 //	} else {
 		/*To be on the safe side we put a timeout. */
+	osDelay(10);
 		BUSYWAIT_UNTIL(xTxDoneFlag, 10* RADIO_WAIT_TIMEOUT);
 //	}
 	if (transmitting_packet) {
@@ -983,7 +986,13 @@ void Radio_process_irq_cb(void) {
 
 //		S2LP_CMD_StrobeFlushRxFifo();
 		pending_packet = 1;
-		radioIrq2Task(radioEvtIdOffset + radio_incomingData, NULL);
+		if (NULL == overridenRxCb) {
+			TRice("dbg:radio request to task(radio_incomingData)\n");
+			radioIrq2Task(radioEvtIdOffset + radio_incomingData, NULL);
+		} else {
+			overridenRxCb();
+			overridenRxCb = NULL;
+		}
 		return;
 	}
 
@@ -999,3 +1008,6 @@ void Radio_process_irq_cb(void) {
 #endif /*!RADIO_SNIFF_MODE*/
 }
 
+void RadioOverrideRxCb(void (*overRxCb)(void)) {
+	overridenRxCb = overRxCb;
+}

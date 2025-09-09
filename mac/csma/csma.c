@@ -98,6 +98,7 @@ sNeighbor *neighborList = NULL;
 static sPacket ackPacket;
 static uint16_t csmaEvtIdOffset;
 void (*csmaIrq2Task)(uint16_t, void(*cbFunc)(void));
+static volatile uint8_t radioDataReceived = 0;
 
 /* Private functions --------------------------------------------------------*/
 /**
@@ -133,6 +134,7 @@ static sNeighbor* GetNeighborForAddr(const linkaddr_t *addr) {
  *
  */
 static uint8_t GetSeqNr(void) {
+#warning "for now just hardcoded random random number."
 	static uint8_t seqNr = 0xA5;
 	seqNr++;
 	/* PACKETBUF_ATTR_MAC_SEQNO cannot be zero, due to a pecuilarity in framer-802154.c. */
@@ -170,6 +172,7 @@ static void KickTranferQueue(void) {
  */
 static void HandleTransferEnd(uint8_t transfRes, uint8_t packetPos) {
 	sPacket *packet = neighborList->transmit[packetPos].packet;
+	TRice("msg:HandleTransferEnd(%d, %d)\n", transfRes, packetPos);
 	if(NULL == packet) {
 		TRice("err:packet sent: missing packet.\n");
 	    return;
@@ -199,10 +202,31 @@ static void HandleTransferEnd(uint8_t transfRes, uint8_t packetPos) {
 		}
 	}
 	if (NULL != neighborList) {
+		TRice("dbg:csma request to task(radio_taskCall)\n");
 		csmaIrq2Task(csmaEvtIdOffset + radio_taskCall, KickTranferQueue);
 	}
 }
 
+static uint8_t FormPayload(sPacket *packet) {
+  uint8_t seqNr = GetSeqNr();
+  packetbuf_set_attr(packet, PACKETBUF_ATTR_MAC_SEQNO, seqNr);
+  packetbuf_set_attr(packet, PACKETBUF_ATTR_FRAME_TYPE, FRAME802154_DATAFRAME);
+  packetbuf_set_addr(packet, PACKETBUF_ADDR_SENDER, &linkaddr_node_addr);
+  packetbuf_set_attr(packet, PACKETBUF_ATTR_MAC_ACK, 1);
+#if LLSEC802154_ENABLED
+#if LLSEC802154_USES_EXPLICIT_KEYS
+	/* This should possibly be taken from upper layers in the future */
+  packetbuf_set_attr(packet, PACKETBUF_ATTR_KEY_ID_MODE, CSMA_LLSEC_KEY_ID_MODE);
+#endif /* LLSEC802154_USES_EXPLICIT_KEYS */
+#endif /* LLSEC802154_ENABLED */
+#warning "for now csma security is disabled - will need to be ported/implemented also..."
+  packetbuf_set_attr(packet, PACKETBUF_ATTR_FRAME_TYPE, FRAME802154_DATAFRAME);
+  return (/*csma_security_create_frame()*/framer_802154.create(packet) < 0)?MAC_TX_ERR_FATAL:MAC_TX_OK;
+}
+
+static void MarkDataReceived(void) {
+	radioDataReceived = 1;
+}
 /**
  *
  */
@@ -225,65 +249,57 @@ static void TransmitFromQueue(void) {
 			  break;
 		  }
 		}
+		TRice("msg:packet at pos(%d) for transmit.\n", packetPos);
 		if (NULL != packet) {
-			uint8_t res;
-			packetbuf_set_addr(packet, PACKETBUF_ADDR_SENDER, &linkaddr_node_addr);
-			packetbuf_set_attr(packet, PACKETBUF_ATTR_MAC_ACK, 1);
-#if LLSEC802154_ENABLED
-#if LLSEC802154_USES_EXPLICIT_KEYS
-			/* This should possibly be taken from upper layers in the future */
-			packetbuf_set_attr(packet, PACKETBUF_ATTR_KEY_ID_MODE, CSMA_LLSEC_KEY_ID_MODE);
-#endif /* LLSEC802154_USES_EXPLICIT_KEYS */
-#endif /* LLSEC802154_ENABLED */
-#warning "for now csma security is disabled - will need to be ported/implemented also..."
-			packetbuf_set_attr(packet, PACKETBUF_ATTR_FRAME_TYPE, FRAME802154_DATAFRAME);
-			if(/*csma_security_create_frame()*/framer_802154.create(packet) < 0) {
-				/* Failed to allocate space for headers */
-				TRice("wrn:failed to create packet, seqno: %d\n", packetbuf_attr(packet, PACKETBUF_ATTR_MAC_SEQNO));
-				res = MAC_TX_ERR_FATAL;
-			} else {
-  //send it
-				uint8_t isBroadcast = packetbuf_holds_broadcast(packet);
-				uint8_t dsn = ((uint8_t *)packetbuf_hdrptr(packet))[2] & 0xff;
-				switch (subGHz_radio_driver.send(packet)) {
-				case tx_ok:
-			        if(isBroadcast) {
-			        	res = MAC_TX_OK;
-			        } else {
-			          /* Check for ack */
-
-			          /* Wait for max CSMA_ACK_WAIT_TIME */
-			        	BUSYWAIT_UNTIL(subGHz_radio_driver.pending_packet(), CSMA_ACK_WAIT_TIME);
-			        	TRice("msg:finished waiting.\n");
-			        	res = MAC_TX_NOACK;
-			          if(subGHz_radio_driver.receiving_packet() || subGHz_radio_driver.pending_packet() || subGHz_radio_driver.channel_clear() == 0) {
-			            /* Wait an additional CSMA_AFTER_ACK_DETECTED_WAIT_TIME to complete reception */
-			            TRice("msg:looks like we got or are getting something.\n");
-			            BUSYWAIT_UNTIL(subGHz_radio_driver.pending_packet(), CSMA_AFTER_ACK_DETECTED_WAIT_TIME);
-			            if(subGHz_radio_driver.pending_packet()) {
-			              int16_t len = subGHz_radio_driver.read(&ackPacket);
-			              uint8_t *ackbuf = packetbuf_dataptr(&ackPacket);
-			              if((len == CSMA_ACK_LEN) && (ackbuf[2] == dsn)) {
-			                /* Ack received */
-			            	  res = MAC_TX_OK;
-			              } else {
-			                /* Not an ack or ack not for us: collision */
-			            	  res = MAC_TX_COLLISION;
-			            	  TRice("wrn:ACK not received - collision\n");
-			              }
+			uint8_t res = MAC_TX_ERR_FATAL;
+			uint8_t isBroadcast = packetbuf_holds_broadcast(packet);
+			uint8_t dsn = ((uint8_t *)packetbuf_hdrptr(packet))[2] & 0xff;
+			uint8_t tempDly;
+			TRice("msg:packet is framed and off to sending.\n");
+			switch (subGHz_radio_driver.send(packet)) {
+			case tx_ok:
+				TRice("msg:send(tx_ok)\n");
+		        if(isBroadcast) {
+		        	TRice("msg:This is broadcast - do not wait for ACK.\n");
+		        	res = MAC_TX_OK;
+		        } else {
+		          /* Check for ack */
+		        	radioDataReceived = 0;
+		        	RadioOverrideRxCb(MarkDataReceived);
+		          /* Wait for max CSMA_ACK_WAIT_TIME */
+		        	tempDly = CSMA_ACK_WAIT_TIME;
+		        	while ((tempDly) && (0 == subGHz_radio_driver.pending_packet())) {
+		        		tempDly--;
+		        		osDelay(1);
+		        	}
+		        	TRice("msg:finished waiting.\n");
+		        	if (subGHz_radio_driver.pending_packet()) {
+			            int16_t len = subGHz_radio_driver.read(&ackPacket);
+			            uint8_t *ackbuf = packetbuf_dataptr(&ackPacket);
+			            if((len == CSMA_ACK_LEN) && (ackbuf[2] == dsn)) {
+			              /* Ack received */
+			          	  res = MAC_TX_OK;
+			            } else {
+			              /* Not an ack or ack not for us: collision */
+			          	  res = MAC_TX_COLLISION;
+			          	  TRice("wrn:ACK not received - collision\n");
 			            }
-			          } else {
-		            	  TRice("wrn:ACK not received - no RX data\n");
-			          }
-			        }
-					break;
-				case tx_collision:
-					res = MAC_TX_COLLISION;
-					break;
-				default:
-					res = MAC_TX_ERR;
-					break;
-				}
+		        	} else {
+		        		res = MAC_TX_NOACK;
+		        	}
+		          radioDataReceived = 0;
+		          RadioOverrideRxCb(NULL);
+		        }
+				break;
+			case tx_collision:
+				TRice("msg:send(tx_collision)\n");
+				res = MAC_TX_COLLISION;
+				break;
+			default:
+				TRice("msg:send(default)\n");
+				res = MAC_TX_ERR;
+				break;
+			}
 	// now sending is blocking - so wait for completion.
 	//else if broadcast - do transmit OK stuff
 	//else - do waiting for ACK stuff
@@ -292,7 +308,6 @@ static void TransmitFromQueue(void) {
 	//if no ACK received - do retransmit stuff
 	//else - do transmit OK stuff
 
-			}
 			HandleTransferEnd(res, packetPos);
 	  } else {
 			TRice("err:could not transmit from queue - packet is missing\n");
@@ -311,11 +326,8 @@ static void EnqueuePacket(mac_callback_t sent, void *ptr, sPacket *packet) {
 	  TRice("wrn:could not allocate neighbor, dropping packet\n");
   } else if ((MAX_QUEUED_PACKETS - 1) == targetNeighbor->queuedTransmits) {
 	  TRice("wrn:could not attach packet to neighbor (neighbor packet queue is full), dropping packet\n");
-  } else {
-	  uint8_t seqNr = GetSeqNr();
+  } else if (MAC_TX_OK == FormPayload(packet)) {
 	  uint8_t packetPos = MAX_QUEUED_PACKETS;
-	  packetbuf_set_attr(packet, PACKETBUF_ATTR_MAC_SEQNO, seqNr);
-	  packetbuf_set_attr(packet, PACKETBUF_ATTR_FRAME_TYPE, FRAME802154_DATAFRAME);
 	  while (packetPos) {
 		  packetPos--;
 		  if (0 == ((1 << packetPos) & targetNeighbor->queuedTransmits)) {
@@ -331,13 +343,17 @@ static void EnqueuePacket(mac_callback_t sent, void *ptr, sPacket *packet) {
 	  targetNeighbor->transmit[packetPos].sentCb = sent;
 	  targetNeighbor->transmit[packetPos].cptr = ptr;
 	  targetNeighbor->transmit[packetPos].packet = packet;
-	  TRice("msg:Enqueue message seqNr(%u) %uB to %016X for transmit\n", seqNr, packetbuf_datalen(packet), *(uint64_t*)targetNeighbor->addr.u8);
+	  TRice("msg:Enqueue message seqNr(%u) %uB to ", packetbuf_attr(packet, PACKETBUF_ATTR_MAC_SEQNO), packetbuf_datalen(packet));
+	  linkaddr_print(&targetNeighbor->addr);
+	  TRice("msg: for transmit\n");
 	  if (NULL != neighborList->next) {
 		  /* More neighbors are being processed - print some info about them */
 		  sNeighbor *walker = neighborList;
 		  while (NULL != walker) {
 			  //print neighbor info
-			  TRice("msg:\t neighbor %016X have %u packets in queue.\n", *(uint64_t*)walker->addr.u8, GetQueueLenOfNeighbor(walker));
+			  TRice("msg:\t neighbor ");
+			  linkaddr_print(&walker->addr);
+			  TRice("msg: have %u packets in queue.\n", GetQueueLenOfNeighbor(walker));
 			  walker = walker->next;
 		  }
 	  } else if ((1 << packetPos) != targetNeighbor->queuedTransmits) { // targetNeighbor here is always neighborList and we already checked if no other neighbors are present
@@ -349,6 +365,9 @@ static void EnqueuePacket(mac_callback_t sent, void *ptr, sPacket *packet) {
 		  TransmitFromQueue();
 	  }
 	  return;
+  } else {
+	  /* Failed to allocate space for headers */
+	  TRice("wrn:could form payload for neighbor, dropping packet\n");
   }
   // this is failure catching
   mac_call_sent_callback(sent, ptr, MAC_TX_ERR, 1);

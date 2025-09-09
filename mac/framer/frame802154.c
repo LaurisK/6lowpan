@@ -531,8 +531,6 @@ int frame802154_parse(uint8_t *data, int len, frame802154_t *pf) {
   if(len < 2) {
 	  TRice("wrn:frame802154_parse(frame too short - %d)!\n", len);
     return 0;
-  } else {
-	  TRice8B("Frame: %02X\n", data, len);
   }
 
   p = data;
