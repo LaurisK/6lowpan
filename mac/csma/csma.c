@@ -161,6 +161,7 @@ static uint8_t GetQueueLenOfNeighbor(const sNeighbor *neighbor) {
  *
  */
 static void KickTranferQueue(void) {
+	TRice("msg:kick -TransmitFromQueue().\n");
 	TransmitFromQueue();
 }
 
@@ -253,12 +254,12 @@ static void TransmitFromQueue(void) {
 
 			          /* Wait for max CSMA_ACK_WAIT_TIME */
 			        	BUSYWAIT_UNTIL(subGHz_radio_driver.pending_packet(), CSMA_ACK_WAIT_TIME);
-
+			        	TRice("msg:finished waiting.\n");
 			        	res = MAC_TX_NOACK;
 			          if(subGHz_radio_driver.receiving_packet() || subGHz_radio_driver.pending_packet() || subGHz_radio_driver.channel_clear() == 0) {
 			            /* Wait an additional CSMA_AFTER_ACK_DETECTED_WAIT_TIME to complete reception */
+			            TRice("msg:looks like we got or are getting something.\n");
 			            BUSYWAIT_UNTIL(subGHz_radio_driver.pending_packet(), CSMA_AFTER_ACK_DETECTED_WAIT_TIME);
-
 			            if(subGHz_radio_driver.pending_packet()) {
 			              int16_t len = subGHz_radio_driver.read(&ackPacket);
 			              uint8_t *ackbuf = packetbuf_dataptr(&ackPacket);
@@ -344,6 +345,7 @@ static void EnqueuePacket(mac_callback_t sent, void *ptr, sPacket *packet) {
 		  TRice("msg:\t total of %u packets are queued for this neighbor\n", GetQueueLenOfNeighbor(targetNeighbor));
 	  } else {
 		  /* Only one packet is in queue and only for this neighbor - start transmission of it*/
+			TRice("msg:start -TransmitFromQueue().\n");
 		  TransmitFromQueue();
 	  }
 	  return;
