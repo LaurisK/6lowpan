@@ -81,6 +81,11 @@ void linkaddr_set_node_addr(linkaddr_t *t) {
 }
 
 /*---------------------------------------------------------------------------*/
+void linkaddr_get_node_addr(linkaddr_t *addr) {
+  linkaddr_copy(addr, &linkaddr_node_addr);
+}
+
+/*---------------------------------------------------------------------------*/
 void linkaddr_print(const linkaddr_t *addr) {
 	TRice("%04X:%04X:%04X:%04X", addr->u16[0], addr->u16[1], addr->u16[2], addr->u16[3]);
 }

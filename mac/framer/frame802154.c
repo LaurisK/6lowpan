@@ -97,36 +97,36 @@ static uint16_t mac_pan_id = IEEE802154_PANID;
 
 /* Private functions --------------------------------------------------------*/
 static void Print_fcf(frame802154_fcf_t *fcf) {
-	TRice("msg:Frame bitfield of the frame control field (FCF)\n");
-	switch (fcf->frame_type) {
-	case FRAME802154_BEACONFRAME:	TRice("msg:\t frame_type: \t FRAME802154_BEACONFRAME\n"); 		break;
-	case FRAME802154_DATAFRAME: 	TRice("msg:\t frame_type: \t FRAME802154_DATAFRAME\n"); 		break;
-	case FRAME802154_ACKFRAME: 		TRice("msg:\t frame_type: \t FRAME802154_ACKFRAME\n"); 			break;
-	case FRAME802154_CMDFRAME: 		TRice("msg:\t frame_type: \t FRAME802154_CMDFRAME\n"); 			break;
-	case FRAME802154_BEACONREQ: 	TRice("msg:\t frame_type: \t FRAME802154_BEACONREQ\n"); 		break;
-	default:						TRice("msg:\t frame_type: \t undefined(%d)\n",fcf->frame_type);	break;
-	}
-	if (0 != fcf->security_enabled) 			TRice("msg:\t security_enabled\n");
-	if (0 != fcf->frame_pending) 				TRice("msg:\t frame_pending\n");
-	if (0 != fcf->ack_required) 				TRice("msg:\t ack_required\n");
-	if (0 != fcf->panid_compression) 			TRice("msg:\t panid_compression\n");
-	if (0 != fcf->sequence_number_suppression) 	TRice("msg:\t sequence_number_suppression\n");
-	if (0 != fcf->ie_list_present) 				TRice("msg:\t ie_list_present\n");
-	switch (fcf->dest_addr_mode) {
-	case FRAME802154_NOADDR: 		TRice("msg:\t dest_addr_mode: \t FRAME802154_NOADDR\n"); 		break;
-	case FRAME802154_SHORTADDRMODE: TRice("msg:\t dest_addr_mode: \t FRAME802154_SHORTADDRMODE\n"); break;
-	case FRAME802154_LONGADDRMODE: 	TRice("msg:\t dest_addr_mode: \t FRAME802154_LONGADDRMODE\n"); 	break;
-	}
-	switch (fcf->src_addr_mode) {
-	case FRAME802154_NOADDR: 		TRice("msg:\t src_addr_mode: \t FRAME802154_NOADDR\n"); 		break;
-	case FRAME802154_SHORTADDRMODE: TRice("msg:\t src_addr_mode: \t FRAME802154_SHORTADDRMODE\n"); 	break;
-	case FRAME802154_LONGADDRMODE: 	TRice("msg:\t src_addr_mode: \t FRAME802154_LONGADDRMODE\n"); 	break;
-	}
-	switch (fcf->frame_version) {
-	case FRAME802154_IEEE802154_2003:	TRice("msg:\t frame_version: \t FRAME802154_IEEE802154_2003\n"); 	break;
-	case FRAME802154_IEEE802154_2006: 	TRice("msg:\t frame_version: \t FRAME802154_IEEE802154_2006\n"); 	break;
-	case FRAME802154_IEEE802154_2015: 	TRice("msg:\t frame_version: \t FRAME802154_IEEE802154_2015\n"); 	break;
-	}
+//	TRice("msg:Frame bitfield of the frame control field (FCF)\n");
+//	switch (fcf->frame_type) {
+//	case FRAME802154_BEACONFRAME:	TRice("msg:\t frame_type: \t FRAME802154_BEACONFRAME\n"); 		break;
+//	case FRAME802154_DATAFRAME: 	TRice("msg:\t frame_type: \t FRAME802154_DATAFRAME\n"); 		break;
+//	case FRAME802154_ACKFRAME: 		TRice("msg:\t frame_type: \t FRAME802154_ACKFRAME\n"); 			break;
+//	case FRAME802154_CMDFRAME: 		TRice("msg:\t frame_type: \t FRAME802154_CMDFRAME\n"); 			break;
+//	case FRAME802154_BEACONREQ: 	TRice("msg:\t frame_type: \t FRAME802154_BEACONREQ\n"); 		break;
+//	default:						TRice("msg:\t frame_type: \t undefined(%d)\n",fcf->frame_type);	break;
+//	}
+//	if (0 != fcf->security_enabled) 			TRice("msg:\t security_enabled\n");
+//	if (0 != fcf->frame_pending) 				TRice("msg:\t frame_pending\n");
+//	if (0 != fcf->ack_required) 				TRice("msg:\t ack_required\n");
+//	if (0 != fcf->panid_compression) 			TRice("msg:\t panid_compression\n");
+//	if (0 != fcf->sequence_number_suppression) 	TRice("msg:\t sequence_number_suppression\n");
+//	if (0 != fcf->ie_list_present) 				TRice("msg:\t ie_list_present\n");
+//	switch (fcf->dest_addr_mode) {
+//	case FRAME802154_NOADDR: 		TRice("msg:\t dest_addr_mode: \t FRAME802154_NOADDR\n"); 		break;
+//	case FRAME802154_SHORTADDRMODE: TRice("msg:\t dest_addr_mode: \t FRAME802154_SHORTADDRMODE\n"); break;
+//	case FRAME802154_LONGADDRMODE: 	TRice("msg:\t dest_addr_mode: \t FRAME802154_LONGADDRMODE\n"); 	break;
+//	}
+//	switch (fcf->src_addr_mode) {
+//	case FRAME802154_NOADDR: 		TRice("msg:\t src_addr_mode: \t FRAME802154_NOADDR\n"); 		break;
+//	case FRAME802154_SHORTADDRMODE: TRice("msg:\t src_addr_mode: \t FRAME802154_SHORTADDRMODE\n"); 	break;
+//	case FRAME802154_LONGADDRMODE: 	TRice("msg:\t src_addr_mode: \t FRAME802154_LONGADDRMODE\n"); 	break;
+//	}
+//	switch (fcf->frame_version) {
+//	case FRAME802154_IEEE802154_2003:	TRice("msg:\t frame_version: \t FRAME802154_IEEE802154_2003\n"); 	break;
+//	case FRAME802154_IEEE802154_2006: 	TRice("msg:\t frame_version: \t FRAME802154_IEEE802154_2006\n"); 	break;
+//	case FRAME802154_IEEE802154_2015: 	TRice("msg:\t frame_version: \t FRAME802154_IEEE802154_2015\n"); 	break;
+//	}
 }
 /**
  *
@@ -543,7 +543,6 @@ int frame802154_parse(uint8_t *data, int len, frame802154_t *pf) {
   if(fcf.sequence_number_suppression == 0) {
     pf->seq = p[0];
     p++;
-    TRice("msg:no seq. nr. suppression.\n");
   }
 
   frame802154_has_panid(&fcf, &has_src_panid, &has_dest_panid);
@@ -554,7 +553,6 @@ int frame802154_parse(uint8_t *data, int len, frame802154_t *pf) {
       /* Destination PAN */
       pf->dest_pid = p[0] + (p[1] << 8);
       p += 2;
-      TRice("msg:Has destination PAN %d.\n", pf->dest_pid);
     } else {
       pf->dest_pid = 0;
     }
@@ -570,18 +568,15 @@ int frame802154_parse(uint8_t *data, int len, frame802154_t *pf) {
       pf->dest_addr[0] = p[1];
       pf->dest_addr[1] = p[0];
       p += 2;
-      TRice("msg:short destination addr: %02X %02X.\n", pf->dest_addr[1], pf->dest_addr[0]);
     } else if(fcf.dest_addr_mode == FRAME802154_LONGADDRMODE) {
       for(c = 0; c < 8; c++) {
         pf->dest_addr[c] = p[7 - c];
       }
       p += 8;
-      TRice("msg:long destination addr: %02X%02X%02X%02X %02X%02X%02X%02X.\n", pf->dest_addr[3], pf->dest_addr[2], pf->dest_addr[1], pf->dest_addr[0], pf->dest_addr[7], pf->dest_addr[6], pf->dest_addr[5], pf->dest_addr[4]);
     }
   } else {
     linkaddr_copy((linkaddr_t *)&(pf->dest_addr), &linkaddr_null);
     pf->dest_pid = 0;
-    TRice("msg:no destination addr.\n");
   }
 
   /* Source address, if any */
@@ -593,7 +588,6 @@ int frame802154_parse(uint8_t *data, int len, frame802154_t *pf) {
       if(!has_dest_panid) {
         pf->dest_pid = pf->src_pid;
       }
-      TRice("msg:Has source PAN %d.\n", pf->dest_pid);
     } else {
       pf->src_pid = pf->dest_pid;
     }
@@ -609,18 +603,15 @@ int frame802154_parse(uint8_t *data, int len, frame802154_t *pf) {
       pf->src_addr[0] = p[1];
       pf->src_addr[1] = p[0];
       p += 2;
-      TRice("msg:short source addr: %02X %02X.\n", pf->src_addr[1], pf->src_addr[0]);
     } else if(fcf.src_addr_mode == FRAME802154_LONGADDRMODE) {
       for(c = 0; c < 8; c++) {
         pf->src_addr[c] = p[7 - c];
       }
       p += 8;
-      TRice("msg:long source addr: %02X%02X%02X%02X %02X%02X%02X%02X.\n", pf->src_addr[3], pf->src_addr[2], pf->src_addr[1], pf->src_addr[0], pf->src_addr[7], pf->src_addr[6], pf->src_addr[5], pf->src_addr[4]);
     }
   } else {
     linkaddr_copy((linkaddr_t *)&(pf->src_addr), &linkaddr_null);
     pf->src_pid = 0;
-    TRice("msg:no source addr.\n");
   }
 
 #if LLSEC802154_USES_AUX_HEADER

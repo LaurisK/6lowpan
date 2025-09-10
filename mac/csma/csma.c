@@ -163,7 +163,6 @@ static uint8_t GetQueueLenOfNeighbor(const sNeighbor *neighbor) {
  *
  */
 static void KickTranferQueue(void) {
-	TRice("msg:kick -TransmitFromQueue().\n");
 	TransmitFromQueue();
 }
 
@@ -172,14 +171,11 @@ static void KickTranferQueue(void) {
  */
 static void HandleTransferEnd(uint8_t transfRes, uint8_t packetPos) {
 	sPacket *packet = neighborList->transmit[packetPos].packet;
-	TRice("msg:HandleTransferEnd(%d, %d)\n", transfRes, packetPos);
 	if(NULL == packet) {
 		TRice("err:packet sent: missing packet.\n");
 	    return;
 	}
 	neighborList->transfAttempt++;
-	TRice("msg:Message seqNr(%u) transfer(%u of %u) result - %u.\n",
-		   packetbuf_attr(packet, PACKETBUF_ATTR_MAC_SEQNO), neighborList->transfAttempt, neighborList->transmit[packetPos].max_transmissions, transfRes);
 	if ((MAC_TX_OK == transfRes) || (neighborList->transmit[packetPos].max_transmissions <= neighborList->transfAttempt)) {
 		//notify caller of completed transfer.
 		mac_call_sent_callback(neighborList->transmit[packetPos].sentCb, neighborList->transmit[packetPos].cptr, transfRes, neighborList->transfAttempt);
@@ -202,7 +198,6 @@ static void HandleTransferEnd(uint8_t transfRes, uint8_t packetPos) {
 		}
 	}
 	if (NULL != neighborList) {
-		TRice("dbg:csma request to task(radio_taskCall)\n");
 		csmaIrq2Task(csmaEvtIdOffset + radio_taskCall, KickTranferQueue);
 	}
 }
@@ -249,18 +244,14 @@ static void TransmitFromQueue(void) {
 			  break;
 		  }
 		}
-		TRice("msg:packet at pos(%d) for transmit.\n", packetPos);
 		if (NULL != packet) {
 			uint8_t res = MAC_TX_ERR_FATAL;
 			uint8_t isBroadcast = packetbuf_holds_broadcast(packet);
 			uint8_t dsn = ((uint8_t *)packetbuf_hdrptr(packet))[2] & 0xff;
 			uint8_t tempDly;
-			TRice("msg:packet is framed and off to sending.\n");
 			switch (subGHz_radio_driver.send(packet)) {
 			case tx_ok:
-				TRice("msg:send(tx_ok)\n");
 		        if(isBroadcast) {
-		        	TRice("msg:This is broadcast - do not wait for ACK.\n");
 		        	res = MAC_TX_OK;
 		        } else {
 		          /* Check for ack */
@@ -272,7 +263,6 @@ static void TransmitFromQueue(void) {
 		        		tempDly--;
 		        		osDelay(1);
 		        	}
-		        	TRice("msg:finished waiting.\n");
 		        	if (subGHz_radio_driver.pending_packet()) {
 			            int16_t len = subGHz_radio_driver.read(&ackPacket);
 			            uint8_t *ackbuf = packetbuf_dataptr(&ackPacket);
@@ -282,7 +272,6 @@ static void TransmitFromQueue(void) {
 			            } else {
 			              /* Not an ack or ack not for us: collision */
 			          	  res = MAC_TX_COLLISION;
-			          	  TRice("wrn:ACK not received - collision\n");
 			            }
 		        	} else {
 		        		res = MAC_TX_NOACK;
@@ -292,11 +281,9 @@ static void TransmitFromQueue(void) {
 		        }
 				break;
 			case tx_collision:
-				TRice("msg:send(tx_collision)\n");
 				res = MAC_TX_COLLISION;
 				break;
 			default:
-				TRice("msg:send(default)\n");
 				res = MAC_TX_ERR;
 				break;
 			}
@@ -343,9 +330,6 @@ static void EnqueuePacket(mac_callback_t sent, void *ptr, sPacket *packet) {
 	  targetNeighbor->transmit[packetPos].sentCb = sent;
 	  targetNeighbor->transmit[packetPos].cptr = ptr;
 	  targetNeighbor->transmit[packetPos].packet = packet;
-	  TRice("msg:Enqueue message seqNr(%u) %uB to ", packetbuf_attr(packet, PACKETBUF_ATTR_MAC_SEQNO), packetbuf_datalen(packet));
-	  linkaddr_print(&targetNeighbor->addr);
-	  TRice("msg: for transmit\n");
 	  if (NULL != neighborList->next) {
 		  /* More neighbors are being processed - print some info about them */
 		  sNeighbor *walker = neighborList;
@@ -361,7 +345,6 @@ static void EnqueuePacket(mac_callback_t sent, void *ptr, sPacket *packet) {
 		  TRice("msg:\t total of %u packets are queued for this neighbor\n", GetQueueLenOfNeighbor(targetNeighbor));
 	  } else {
 		  /* Only one packet is in queue and only for this neighbor - start transmission of it*/
-			TRice("msg:start -TransmitFromQueue().\n");
 		  TransmitFromQueue();
 	  }
 	  return;
@@ -433,7 +416,6 @@ static void input_packet(sPacket *rxPacket)
     }
 #endif /* CSMA_SEND_SOFT_ACK */
     if(!duplicate) {
-    	TRice("msg:received packet from  %02X, seqno %u, len %u\n", packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO), packetbuf_datalen(rxPacket));
 #warning "NETSTACK_NETWORK attaches here"
 //    NETSTACK_NETWORK.input();
     }

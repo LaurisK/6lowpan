@@ -174,13 +174,10 @@ static int create_frame(sPacket* packet, int do_create) {
   framer_802154_setup_params(packet, &params);
 
   if(packetbuf_holds_broadcast(packet)) {
-    TRice("msg:Frame is broadcast.\n");
     params.dest_addr[0] = 0xFF;
     params.dest_addr[1] = 0xFF;
   } else {
     linkaddr_copy((linkaddr_t *)&params.dest_addr, packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER));
-    TRice("msg:Frame is for \n");
-    linkaddr_print(packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER));
   }
 
   linkaddr_copy((linkaddr_t *)&params.src_addr, packetbuf_addr(packet, PACKETBUF_ADDR_SENDER));
@@ -193,11 +190,6 @@ static int create_frame(sPacket* packet, int do_create) {
     return hdr_len;
   } else if(packetbuf_hdralloc(packet, hdr_len)) {
     frame802154_create(&params, packetbuf_hdrptr(packet));
-
-    TRice("msg:Out: %2X ", params.fcf.frame_type);
-    linkaddr_print((linkaddr_t*)params.dest_addr);
-    TRice("msg: %d %u (%u)\n", hdr_len, packetbuf_datalen(packet), packetbuf_totlen(packet));
-
     return hdr_len;
   } else {
 	TRice("wrn:Out: too large header: %u\n", hdr_len);
@@ -266,12 +258,6 @@ static int parse(sPacket* packet) {
 #endif /* LLSEC802154_USES_EXPLICIT_KEYS */
     }
 #endif /* LLSEC802154_USES_AUX_HEADER */
-
-    TRice("msg:In: %2X ", frame.fcf.frame_type);
-    linkaddr_print(packetbuf_addr(packet, PACKETBUF_ADDR_SENDER));
-    TRice("msg: %u(%u) to ", packetbuf_totlen(packet), packetbuf_datalen(packet));
-    linkaddr_print(packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER));
-    TRice("\n");
 
     return hdr_len;
   } else if (0 == hdr_len) {
