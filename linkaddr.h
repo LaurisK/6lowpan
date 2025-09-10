@@ -133,6 +133,8 @@ int linkaddr_cmp(const linkaddr_t *addr1, const linkaddr_t *addr2);
  */
 void linkaddr_set_node_addr(linkaddr_t *addr);
 
+void linkaddr_get_node_addr(linkaddr_t *addr);
+void linkaddr_print(const linkaddr_t *addr);
 #ifdef __cplusplus
 }
 #endif

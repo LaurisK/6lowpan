@@ -13,6 +13,7 @@
 #include "App/common.h"
 #endif
 #include "Middlewares/Third_Party/6lowpan/evt_radio.h"
+#include "cmsis_os.h"
 
 /* Private defines ----------------------------------------------------------*/
 #if RADIO_ADDRESS_FILTERING
@@ -95,6 +96,7 @@ SRssiInit xSRssiInit = { .cRssiFlt = 14, .xRssiMode = RSSI_STATIC_MODE, .cRssiTh
 
 static uint16_t radioEvtIdOffset;
 void (*radioIrq2Task)(uint16_t, void(*cbFunc)(void));
+void (*overridenRxCb)(void);
 /* Private functions --------------------------------------------------------*/
 /**
  * @brief  radio_refresh_status	refresh and returns S2-LP status
@@ -116,8 +118,9 @@ static int16_t Radio_read_from_fifo(sPacket *packet) {
 
 	rx_bytes = S2LP_FIFO_ReadNumberBytesRxFifo();
 
-	if (rx_bytes <= packetbuf_totlen(packet)) {
+	if (rx_bytes <= packetbuf_remaininglen(packet)) {
 		S2LP_ReadFIFO(rx_bytes, (uint8_t*)packetbuf_hdrptr(packet));
+		packetbuf_set_datalen(packet, rx_bytes);
 		retval = rx_bytes;
 		last_packet_timestamp = HAL_GetTick(); //@TODO: validate
 		last_packet_rssi = (uint16_t) S2LP_RADIO_QI_GetRssidBm();
@@ -125,7 +128,7 @@ static int16_t Radio_read_from_fifo(sPacket *packet) {
 		packetbuf_set_attr(packet, PACKETBUF_ATTR_RSSI, last_packet_rssi);
 		packetbuf_set_attr(packet, PACKETBUF_ATTR_LINK_QUALITY, last_packet_lqi);
 	} else {
-		TRice("msg:Buf too small (%d bytes to hold %d bytes)\n", packetbuf_totlen(packet), rx_bytes);
+		TRice("msg:Buf too small (%d bytes to hold %d bytes)\n", packetbuf_remaininglen(packet), rx_bytes);
 	}
 //	if (polling_mode) {
 		S2LP_CMD_StrobeFlushRxFifo();
@@ -182,8 +185,6 @@ static void radio_print_status(void) {
  * @brief  radio_set_ready_state sets the state of the radio to READY
  */
 void radio_set_ready_state(void) {
-	TRice("msg:READY IN\n");
-
 	RADIO_IRQ_DISABLE();
 	S2LP_GPIO_IrqClearStatus();
 
@@ -207,9 +208,6 @@ void radio_set_ready_state(void) {
 
 	S2LP_GPIO_IrqClearStatus();
 	RADIO_IRQ_ENABLE();
-
-	//radio_print_status() ;
-	TRice("msg:READY OUT\n");
 }
 
 /**
@@ -324,8 +322,6 @@ static int8_t Radio_on(void) {
 }
 
 static int8_t Radio_off(void) {
-	TRice("msg:Radio: ->off\n");
-
 	if (radio_on == radio_status) {
 		/* Disables the mcu to get IRQ from the RADIO */
 		RADIO_IRQ_DISABLE();  //Mind that it will be enabled only in the ON
@@ -366,9 +362,6 @@ static int8_t Radio_off(void) {
 		radio_status = radio_off;
 		rx_num_bytes = 0;
 	}
-
-	TRice("msg:Radio: off.\n");
-	//radio_print_status();
 	return 0;
 }
 
@@ -476,21 +469,10 @@ static int8_t Radio_init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, voi
 	radio_status = radio_on;
 
 	TRice("msg:Radio init done\n");
-	{
-#warning "this seems to be added to mac init, or maybe some hook in it..."
-		uint8_t node_mac[8];
-		(*(uint32_t*)node_mac) = HAL_GetUIDw1();
-		(*(((uint32_t*)node_mac)+1)) = HAL_GetUIDw2();
-		(*(((uint32_t*)node_mac)+1)) += HAL_GetUIDw0();
-		TRice("msg:MCU uid %08X %08X %08X to %08X %08X MAC.\n", HAL_GetUIDw0(), HAL_GetUIDw1(), HAL_GetUIDw2(), (*(uint32_t*)node_mac), (*(((uint32_t*)node_mac)+1)));
-		linkaddr_set_node_addr((linkaddr_t*)node_mac);
-	}
 	return 0;
 }
 
 static eTransmitRes Radio_prepare(sPacket *packet) {
-	TRice("msg:Radio: prepare %u\n", packetbuf_totlen(packet));
-	uint8_t tmpbuff[PACKETBUF_SIZE]; //@TODO: see below
 	packet_is_prepared = 0;
 
 	/* Checks if the payload length is supported: actually this can't happen, by system design, but it is safer to have this for sanity check. */
@@ -522,11 +504,9 @@ static eTransmitRes Radio_prepare(sPacket *packet) {
 	const linkaddr_t *addr;
 	if (auto_pkt_filter) {
 		if ((packetbuf_totlen(packet) == ACK_LEN) || packetbuf_holds_broadcast(packet)) {
-			TRice("msg:Preparing to send to broadcast (%02X) address\n", BROADCAST_ADDRESS);
 			S2LP_PCKT_HNDL_SetRxSourceReferenceAddress(BROADCAST_ADDRESS);
 		} else {
 			addr = packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER);
-			TRice("msg:Preparing to send to %2X address\n", addr->u8[LINKADDR_SIZE-1]);
 			S2LP_PCKT_HNDL_SetRxSourceReferenceAddress(addr->u8[LINKADDR_SIZE-1]);
 		}
 	}
@@ -534,23 +514,20 @@ static eTransmitRes Radio_prepare(sPacket *packet) {
 
 	S2LP_CMD_StrobeCommand(CMD_FLUSHTXFIFO);
 
-	S2LP_PCKT_BASIC_SetPayloadLength(packetbuf_datalen(packet));
+	S2LP_PCKT_BASIC_SetPayloadLength(packetbuf_totlen(packet));
 	//@TODO change IO implementation to avoid the copy here
-	memcpy(tmpbuff, packetbuf_hdrptr(packet), packetbuf_totlen(packet));
+	//memcpy(tmpbuff, packetbuf_hdrptr(packet), packetbuf_totlen(packet));
 
 	/* Currently does no happen since S2LP_RX_FIFO_SIZE == MAX_PACKET_LEN also note that S2LP_RX_FIFO_SIZE == S2LP_TX_FIFO_SIZE */
 	if (packetbuf_totlen(packet) > S2LP_TX_FIFO_SIZE) {
 		TRice("msg:Payload bigger than FIFO size.'n");
 	} else {
-		S2LP_WriteFIFO(packetbuf_totlen(packet), (uint8_t*) tmpbuff);
+		S2LP_WriteFIFO(packetbuf_totlen(packet), (uint8_t*)packetbuf_hdrptr(packet));
 //    S2LP_WriteFIFO(payload_len, (uint8_t *)payload);
 		packet_is_prepared = 1;
 	}
 
 	RADIO_IRQ_ENABLE();
-
-	TRice("msg:PREPARE OUT\n");
-
 	return tx_ok;
 }
 
@@ -559,7 +536,6 @@ static eTransmitRes Radio_transmit(uint16_t payloadLen) {
 	eRadioStatus radio_state = radio_status;
 
 	/* This function blocks until the packet has been transmitted */
-	TRice("msg:TRANSMIT IN\n");
 	if (!packet_is_prepared) {
 		TRice("msg:Radio TRANSMIT: ERROR, packet is NOT prepared.\n");
 		return tx_err;
@@ -586,21 +562,9 @@ static eTransmitRes Radio_transmit(uint16_t payloadLen) {
 	xTxDoneFlag = RESET;
 	S2LP_CMD_StrobeTx();
 	/* wait for TX done */
-//	if (polling_mode) { //@TODO: To be validated
-//		while (!xTxDoneFlag) {
-//			uint8_t tmp;
-//			BUSYWAIT_UNTIL(0, 2);
-//			S2LP_ReadRegister(TX_FIFO_STATUS_ADDR, 1, &tmp);
-//			if ((tmp & NELEM_TXFIFO_REGMASK) == 0) {
-//				xTxDoneFlag = SET;
-//				transmitting_packet = 0;
-//			}
-//		}
-//		BUSYWAIT_UNTIL(0, 2); //@TODO: we need a delay here, validate.
-//	} else {
 		/*To be on the safe side we put a timeout. */
+	osDelay(10);
 		BUSYWAIT_UNTIL(xTxDoneFlag, 10* RADIO_WAIT_TIMEOUT);
-//	}
 	if (transmitting_packet) {
 		S2LP_CMD_StrobeSabort();
 		if (xTxDoneFlag == RESET) {
@@ -647,8 +611,6 @@ static eTransmitRes Radio_transmit(uint16_t payloadLen) {
 	S2LP_GPIO_IrqClearStatus();
 	RADIO_IRQ_ENABLE();
 
-	TRice("msg:TRANSMIT OUT\n");
-
 	if (radio_off == radio_state) {
 		/*If the radio was OFF before transmitting the packet, we must turn it OFF (legacy for ContikiMAC like upper layer) */
 		Radio_off();
@@ -658,8 +620,6 @@ static eTransmitRes Radio_transmit(uint16_t payloadLen) {
 }
 
 static eTransmitRes Radio_send(sPacket *packet) {
-	TRice("msg:Radio Send\r\n");
-
 	if (tx_ok != Radio_prepare(packet)) {
 #if RADIO_SNIFF_MODE
     S2LP_TIM_LdcrMode(S_ENABLE);
@@ -674,21 +634,8 @@ static eTransmitRes Radio_send(sPacket *packet) {
 
 static int16_t Radio_read(sPacket *packet) {
 	int16_t retval = 0;
-//	S2LPIrqs x_irq_status;
-//
-//	if (polling_mode) {
-//		S2LP_GPIO_IrqGetStatus(&x_irq_status);
-//		if (x_irq_status.IRQ_RX_DATA_READY)
-//			retval = Radio_read_from_fifo(packet);
-//	} else if (pending_packet && (rx_num_bytes != 0)) {
-		if (rx_num_bytes <= packetbuf_totlen(packet)) {
-			//memcpy(packet->buffer, radio_rxbuf, rx_num_bytes);
-			retval = Radio_read_from_fifo(packet);
-		} else {
-			TRice("msg:Buf too small (%d bytes to hold %u bytes)\n", packetbuf_totlen(packet), rx_num_bytes);
-		}
-		pending_packet = 0;
-//	}
+	retval = Radio_read_from_fifo(packet);
+	pending_packet = 0;
 	/* RX command - to ensure the device will be ready for the next reception */
 #if RADIO_SNIFF_MODE
       S2LP_CMD_StrobeSleep();
@@ -696,7 +643,6 @@ static int16_t Radio_read(sPacket *packet) {
 	S2LP_CMD_StrobeRx();
 #endif /*RADIO_SNIFF_MODE*/
 	rx_num_bytes = 0;
-	TRice("msg:READ OUT: %d\n", retval);
 	return retval;
 }
 
@@ -723,24 +669,10 @@ static int8_t Radio_channel_clear(void) {
 }
 
 static int8_t Radio_receiving_packet(void) {
-//	S2LPIrqs x_irq_status;
-
-//	if (polling_mode) {
-//		S2LP_GPIO_IrqGetStatus(&x_irq_status);
-//		receiving_packet = (x_irq_status.IRQ_VALID_SYNC);
-//	}
-
 	return receiving_packet;
 }
 
 static int8_t Radio_pending_packet(void) {
-//	S2LPIrqs x_irq_status;
-	TRice("msg:RADIO PENDING PACKET(%d)\n", pending_packet);
-//	if (polling_mode) {
-//		S2LP_GPIO_IrqGetStatus(&x_irq_status);
-//		pending_packet = (x_irq_status.IRQ_RX_DATA_READY);
-//	}
-
 	return pending_packet;
 }
 
@@ -751,22 +683,21 @@ static eRadioRes Radio_get_value(radio_param_t parameter, radio_value_t *ret_val
 	if (ret_value == NULL) {
 		return radio_invalidArgument;
 	}
-
-	if (parameter == RADIO_PARAM_POWER_MODE) {
+	switch (parameter) {
+	case RADIO_PARAM_POWER_MODE:
 		if (radio_on == radio_status) {
 			*ret_value = RADIO_POWER_MODE_ON;
 		} else {
 			*ret_value = RADIO_POWER_MODE_OFF;
 		}
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_PARAM_CHANNEL) {
+		break;
+	case RADIO_PARAM_CHANNEL:
 		*ret_value = radio_get_channel();
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_PARAM_RX_MODE) {
+		break;
+	case RADIO_PARAM_RX_MODE:
 		*ret_value = 0x00;
-//		if (polling_mode) {
-//			*ret_value |= RADIO_RX_MODE_POLL_MODE;
-//		}
 		if (radio_send_auto_ack) {
 			*ret_value |= RADIO_RX_MODE_AUTOACK;
 		}
@@ -774,43 +705,59 @@ static eRadioRes Radio_get_value(radio_param_t parameter, radio_value_t *ret_val
 			*ret_value |= RADIO_RX_MODE_ADDRESS_FILTER;
 		}
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_PARAM_TX_MODE) {
+		break;
+	case RADIO_PARAM_TX_MODE:
 		*ret_value = 0x00;
 		if (csma_enabled) {
 			*ret_value |= RADIO_TX_MODE_SEND_ON_CCA;
 		}
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_PARAM_TXPOWER) {
+		break;
+	case RADIO_PARAM_TXPOWER:
 		*ret_value = radio_get_txpower();
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_PARAM_RSSI) {
+		break;
+	case RADIO_PARAM_RSSI:
 		*ret_value = S2LP_RADIO_QI_GetRssidBm();
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_PARAM_LAST_RSSI) {
+		break;
+	case RADIO_PARAM_LAST_RSSI:
 		*ret_value = last_packet_rssi;
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_PARAM_CCA_THRESHOLD) {
+		break;
+	case RADIO_PARAM_CCA_THRESHOLD:
 		*ret_value = csma_tx_threshold;
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_CONST_CHANNEL_MIN) {
+		break;
+	case RADIO_CONST_CHANNEL_MIN:
 		*ret_value = CHANNEL_NUMBER_MIN;
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_CONST_CHANNEL_MAX) {
+		break;
+	case RADIO_CONST_CHANNEL_MAX:
 		*ret_value = CHANNEL_NUMBER_MAX;
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_CONST_TXPOWER_MIN) {
+		break;
+	case RADIO_CONST_TXPOWER_MIN:
 		*ret_value = RADIO_POWER_DBM_MIN;
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_CONST_TXPOWER_MAX) {
+		break;
+	case RADIO_CONST_TXPOWER_MAX:
 		*ret_value = RADIO_POWER_DBM_MAX;
 		get_value_result = radio_ok;
-	} else if (RADIO_PARAM_MAX_BACKOFF_NR == parameter) {
+		break;
+	case RADIO_PARAM_MAX_BACKOFF_NR:
+	{
 		*ret_value = xCsmaInit.cMaxNb;
 		get_value_result = radio_ok;
-	} else if (parameter == RADIO_CONST_MAX_PAYLOAD_LEN) {
+		break;
+	}
+	case RADIO_CONST_MAX_PAYLOAD_LEN:
 		/*TODO: check if this value is correct.*/
 		*ret_value = MAX_PACKET_LEN;
 		get_value_result = radio_ok;
+		break;
+	default:
+		TRice("dbg:Radio_get_value(%d) - radio_notSupported.\n", parameter);
 	}
 
 	return get_value_result;
@@ -848,7 +795,6 @@ static eRadioRes Radio_set_value(radio_param_t parameter, radio_value_t input_va
 		} else {
 			radio_set_auto_pkt_filter((input_value & RADIO_RX_MODE_ADDRESS_FILTER) != 0);
 			radio_set_auto_ack((input_value & RADIO_RX_MODE_AUTOACK) != 0);
-//			radio_set_polling_mode((input_value & RADIO_RX_MODE_POLL_MODE) != 0);
 			set_value_result = radio_ok;
 		}
 	} else if (parameter == RADIO_PARAM_TX_MODE) {
@@ -938,7 +884,6 @@ void Radio_process_irq_cb(void) {
 	/* The IRQ_TX_DATA_SENT notifies the packet transmission.
 	 * Then puts the Radio in RX/Sleep according to the selected mode */
 	if (x_irq_status.IRQ_TX_DATA_SENT && transmitting_packet) {
-		TRice("dbg:IRQ_TX_DATA_SENT\n");
 		transmitting_packet = 0;
 		xTxDoneFlag = SET;
 		return;
@@ -947,7 +892,6 @@ void Radio_process_irq_cb(void) {
 #if !RADIO_SNIFF_MODE
 	/* The IRQ_VALID_SYNC is used to notify a new packet is coming */
 	if (x_irq_status.IRQ_VALID_SYNC && !transmitting_packet) {
-		TRice("dbg:IRQ_VALID_SYNC\n");
 		receiving_packet = 1;
 		S2LP_CMD_StrobeRx();
 	}
@@ -956,6 +900,7 @@ void Radio_process_irq_cb(void) {
 #if RADIO_HW_CSMA
 	if (x_irq_status.IRQ_MAX_BO_CCA_REACH) {
 		/* Send a Tx command: i.e. keep on trying */
+		TRice("dbg:IRQ_MAX_BO_CCA_REACH\n");
 		S2LP_CMD_StrobeTx();
 		return;
 	}
@@ -965,12 +910,13 @@ void Radio_process_irq_cb(void) {
 	if (x_irq_status.IRQ_RX_DATA_READY && !(transmitting_packet)) {
 		receiving_packet = 0;
 
-//		rx_num_bytes = Radio_read_from_fifo(radio_rxbuf, sizeof(radio_rxbuf));
-		rx_num_bytes = S2LP_PCKT_BASIC_GetReceivedPktLength();
-
-//		S2LP_CMD_StrobeFlushRxFifo();
 		pending_packet = 1;
-		radioIrq2Task(radioEvtIdOffset + radio_incomingData, NULL);
+		if (NULL == overridenRxCb) {
+			radioIrq2Task(radioEvtIdOffset + radio_incomingData, NULL);
+		} else {
+			overridenRxCb();
+			overridenRxCb = NULL;
+		}
 		return;
 	}
 
@@ -986,3 +932,6 @@ void Radio_process_irq_cb(void) {
 #endif /*!RADIO_SNIFF_MODE*/
 }
 
+void RadioOverrideRxCb(void (*overRxCb)(void)) {
+	overridenRxCb = overRxCb;
+}

@@ -47,6 +47,7 @@
 #include "../llsec802154.h"
 #if defined(STM32H753xx)
 #include "trice.h"
+#include "main.h"
 #else
 #include "App/common.h"
 #endif
@@ -94,9 +95,10 @@ static void TransmitFromQueue(void);
 
 /* Pseudo global variables --------------------------------------------------*/
 sNeighbor *neighborList = NULL;
-static sPacket rxPacket;
+static sPacket ackPacket;
 static uint16_t csmaEvtIdOffset;
 void (*csmaIrq2Task)(uint16_t, void(*cbFunc)(void));
+static volatile uint8_t radioDataReceived = 0;
 
 /* Private functions --------------------------------------------------------*/
 /**
@@ -132,6 +134,7 @@ static sNeighbor* GetNeighborForAddr(const linkaddr_t *addr) {
  *
  */
 static uint8_t GetSeqNr(void) {
+#warning "for now just hardcoded random random number."
 	static uint8_t seqNr = 0xA5;
 	seqNr++;
 	/* PACKETBUF_ATTR_MAC_SEQNO cannot be zero, due to a pecuilarity in framer-802154.c. */
@@ -173,8 +176,6 @@ static void HandleTransferEnd(uint8_t transfRes, uint8_t packetPos) {
 	    return;
 	}
 	neighborList->transfAttempt++;
-	TRice("msg:Message seqNr(%u) transfer(%u of %u) result - %u.\n",
-		   packetbuf_attr(packet, PACKETBUF_ATTR_MAC_SEQNO), neighborList->transfAttempt, neighborList->transmit[packetPos].max_transmissions, transfRes);
 	if ((MAC_TX_OK == transfRes) || (neighborList->transmit[packetPos].max_transmissions <= neighborList->transfAttempt)) {
 		//notify caller of completed transfer.
 		mac_call_sent_callback(neighborList->transmit[packetPos].sentCb, neighborList->transmit[packetPos].cptr, transfRes, neighborList->transfAttempt);
@@ -201,13 +202,33 @@ static void HandleTransferEnd(uint8_t transfRes, uint8_t packetPos) {
 	}
 }
 
+static uint8_t FormPayload(sPacket *packet) {
+  uint8_t seqNr = GetSeqNr();
+  packetbuf_set_attr(packet, PACKETBUF_ATTR_MAC_SEQNO, seqNr);
+  packetbuf_set_attr(packet, PACKETBUF_ATTR_FRAME_TYPE, FRAME802154_DATAFRAME);
+  packetbuf_set_addr(packet, PACKETBUF_ADDR_SENDER, &linkaddr_node_addr);
+  packetbuf_set_attr(packet, PACKETBUF_ATTR_MAC_ACK, 1);
+#if LLSEC802154_ENABLED
+#if LLSEC802154_USES_EXPLICIT_KEYS
+	/* This should possibly be taken from upper layers in the future */
+  packetbuf_set_attr(packet, PACKETBUF_ATTR_KEY_ID_MODE, CSMA_LLSEC_KEY_ID_MODE);
+#endif /* LLSEC802154_USES_EXPLICIT_KEYS */
+#endif /* LLSEC802154_ENABLED */
+#warning "for now csma security is disabled - will need to be ported/implemented also..."
+  packetbuf_set_attr(packet, PACKETBUF_ATTR_FRAME_TYPE, FRAME802154_DATAFRAME);
+  return (/*csma_security_create_frame()*/framer_802154.create(packet) < 0)?MAC_TX_ERR_FATAL:MAC_TX_OK;
+}
+
+static void MarkDataReceived(void) {
+	radioDataReceived = 1;
+}
 /**
  *
  */
 static void TransmitFromQueue(void) {
 	//config CSMA/CA (Maximum number of re-transmissions attampts is NBACKOFF_MAX)
-	uint8_t maxBackoff = 0;
-	subGHz_radio_driver.get_value(RADIO_PARAM_MAX_BACKOFF_NR, (radio_value_t*)&maxBackoff);
+	radio_value_t maxBackoff = 0;
+	subGHz_radio_driver.get_value(RADIO_PARAM_MAX_BACKOFF_NR, &maxBackoff);
 	if (CSMA_MAX_BACKOFF != maxBackoff) {
 		TRice("msg:Setting max. backoff value to %u.\n", maxBackoff);
 		subGHz_radio_driver.set_value(RADIO_PARAM_MAX_BACKOFF_NR, MIN(7, CSMA_MAX_BACKOFF));
@@ -224,62 +245,48 @@ static void TransmitFromQueue(void) {
 		  }
 		}
 		if (NULL != packet) {
-			uint8_t res;
-			packetbuf_set_addr(packet, PACKETBUF_ADDR_SENDER, &linkaddr_node_addr);
-			packetbuf_set_attr(packet, PACKETBUF_ATTR_MAC_ACK, 1);
-#if LLSEC802154_ENABLED
-#if LLSEC802154_USES_EXPLICIT_KEYS
-			/* This should possibly be taken from upper layers in the future */
-			packetbuf_set_attr(packet, PACKETBUF_ATTR_KEY_ID_MODE, CSMA_LLSEC_KEY_ID_MODE);
-#endif /* LLSEC802154_USES_EXPLICIT_KEYS */
-#endif /* LLSEC802154_ENABLED */
-#warning "for now csma security is disabled - will need to be ported/implemented also..."
-			packetbuf_set_attr(packet, PACKETBUF_ATTR_FRAME_TYPE, FRAME802154_DATAFRAME);
-			if(/*csma_security_create_frame()*/framer_802154.create(packet) < 0) {
-				/* Failed to allocate space for headers */
-				TRice("wrn:failed to create packet, seqno: %d\n", packetbuf_attr(packet, PACKETBUF_ATTR_MAC_SEQNO));
-				res = MAC_TX_ERR_FATAL;
-			} else {
-  //send it
-				uint8_t isBroadcast = packetbuf_holds_broadcast(packet);
-				uint8_t dsn = ((uint8_t *)packetbuf_hdrptr(packet))[2] & 0xff;
-
-				switch (subGHz_radio_driver.send(packet)) {
-				case tx_ok:
-			        if(isBroadcast) {
-			        	res = MAC_TX_OK;
-			        } else {
-			          /* Check for ack */
-
-			          /* Wait for max CSMA_ACK_WAIT_TIME */
-			        	BUSYWAIT_UNTIL(subGHz_radio_driver.pending_packet(), CSMA_ACK_WAIT_TIME);
-
-			        	res = MAC_TX_NOACK;
-			          if(subGHz_radio_driver.receiving_packet() || subGHz_radio_driver.pending_packet() || subGHz_radio_driver.channel_clear() == 0) {
-			            /* Wait an additional CSMA_AFTER_ACK_DETECTED_WAIT_TIME to complete reception */
-			            BUSYWAIT_UNTIL(subGHz_radio_driver.pending_packet(), CSMA_AFTER_ACK_DETECTED_WAIT_TIME);
-
-			            if(subGHz_radio_driver.pending_packet()) {
-			              int16_t len = subGHz_radio_driver.read(&rxPacket);
-			              uint8_t *ackbuf = packetbuf_dataptr(&rxPacket);
-			              if((len == CSMA_ACK_LEN) && (ackbuf[2] == dsn)) {
-			                /* Ack received */
-			            	  res = MAC_TX_OK;
-			              } else {
-			                /* Not an ack or ack not for us: collision */
-			            	  res = MAC_TX_COLLISION;
-			              }
+			uint8_t res = MAC_TX_ERR_FATAL;
+			uint8_t isBroadcast = packetbuf_holds_broadcast(packet);
+			uint8_t dsn = ((uint8_t *)packetbuf_hdrptr(packet))[2] & 0xff;
+			uint8_t tempDly;
+			switch (subGHz_radio_driver.send(packet)) {
+			case tx_ok:
+		        if(isBroadcast) {
+		        	res = MAC_TX_OK;
+		        } else {
+		          /* Check for ack */
+		        	radioDataReceived = 0;
+		        	RadioOverrideRxCb(MarkDataReceived);
+		          /* Wait for max CSMA_ACK_WAIT_TIME */
+		        	tempDly = CSMA_ACK_WAIT_TIME;
+		        	while ((tempDly) && (0 == subGHz_radio_driver.pending_packet())) {
+		        		tempDly--;
+		        		osDelay(1);
+		        	}
+		        	if (subGHz_radio_driver.pending_packet()) {
+			            int16_t len = subGHz_radio_driver.read(&ackPacket);
+			            uint8_t *ackbuf = packetbuf_dataptr(&ackPacket);
+			            if((len == CSMA_ACK_LEN) && (ackbuf[2] == dsn)) {
+			              /* Ack received */
+			          	  res = MAC_TX_OK;
+			            } else {
+			              /* Not an ack or ack not for us: collision */
+			          	  res = MAC_TX_COLLISION;
 			            }
-			          }
-			        }
-					break;
-				case tx_collision:
-					res = MAC_TX_COLLISION;
-					break;
-				default:
-					res = MAC_TX_ERR;
-					break;
-				}
+		        	} else {
+		        		res = MAC_TX_NOACK;
+		        	}
+		          radioDataReceived = 0;
+		          RadioOverrideRxCb(NULL);
+		        }
+				break;
+			case tx_collision:
+				res = MAC_TX_COLLISION;
+				break;
+			default:
+				res = MAC_TX_ERR;
+				break;
+			}
 	// now sending is blocking - so wait for completion.
 	//else if broadcast - do transmit OK stuff
 	//else - do waiting for ACK stuff
@@ -288,7 +295,6 @@ static void TransmitFromQueue(void) {
 	//if no ACK received - do retransmit stuff
 	//else - do transmit OK stuff
 
-			}
 			HandleTransferEnd(res, packetPos);
 	  } else {
 			TRice("err:could not transmit from queue - packet is missing\n");
@@ -307,11 +313,8 @@ static void EnqueuePacket(mac_callback_t sent, void *ptr, sPacket *packet) {
 	  TRice("wrn:could not allocate neighbor, dropping packet\n");
   } else if ((MAX_QUEUED_PACKETS - 1) == targetNeighbor->queuedTransmits) {
 	  TRice("wrn:could not attach packet to neighbor (neighbor packet queue is full), dropping packet\n");
-  } else {
-	  uint8_t seqNr = GetSeqNr();
+  } else if (MAC_TX_OK == FormPayload(packet)) {
 	  uint8_t packetPos = MAX_QUEUED_PACKETS;
-	  packetbuf_set_attr(packet, PACKETBUF_ATTR_MAC_SEQNO, seqNr);
-	  packetbuf_set_attr(packet, PACKETBUF_ATTR_FRAME_TYPE, FRAME802154_DATAFRAME);
 	  while (packetPos) {
 		  packetPos--;
 		  if (0 == ((1 << packetPos) & targetNeighbor->queuedTransmits)) {
@@ -327,13 +330,14 @@ static void EnqueuePacket(mac_callback_t sent, void *ptr, sPacket *packet) {
 	  targetNeighbor->transmit[packetPos].sentCb = sent;
 	  targetNeighbor->transmit[packetPos].cptr = ptr;
 	  targetNeighbor->transmit[packetPos].packet = packet;
-	  TRice("msg:Enqueue message seqNr(%u) %uB to %016X for transmit\n", seqNr, packetbuf_datalen(packet), *(uint64_t*)targetNeighbor->addr.u8);
 	  if (NULL != neighborList->next) {
 		  /* More neighbors are being processed - print some info about them */
 		  sNeighbor *walker = neighborList;
 		  while (NULL != walker) {
 			  //print neighbor info
-			  TRice("msg:\t neighbor %016X have %u packets in queue.\n", *(uint64_t*)walker->addr.u8, GetQueueLenOfNeighbor(walker));
+			  TRice("msg:\t neighbor ");
+			  linkaddr_print(&walker->addr);
+			  TRice("msg: have %u packets in queue.\n", GetQueueLenOfNeighbor(walker));
 			  walker = walker->next;
 		  }
 	  } else if ((1 << packetPos) != targetNeighbor->queuedTransmits) { // targetNeighbor here is always neighborList and we already checked if no other neighbors are present
@@ -344,6 +348,9 @@ static void EnqueuePacket(mac_callback_t sent, void *ptr, sPacket *packet) {
 		  TransmitFromQueue();
 	  }
 	  return;
+  } else {
+	  /* Failed to allocate space for headers */
+	  TRice("wrn:could form payload for neighbor, dropping packet\n");
   }
   // this is failure catching
   mac_call_sent_callback(sent, ptr, MAC_TX_ERR, 1);
@@ -372,44 +379,43 @@ static void send_packet(mac_callback_t sent, void *ptr, sPacket *packet) {
 /**
  *
  */
-static void input_packet(void)
+static void input_packet(sPacket *rxPacket)
 {
-#if CSMA_SEND_SOFT_ACK
-  uint8_t ackdata[CSMA_ACK_LEN];
-#endif
-  subGHz_radio_driver.read(&rxPacket);
-  if(packetbuf_datalen(&rxPacket) == CSMA_ACK_LEN) {
+  subGHz_radio_driver.read(rxPacket);
+  if(packetbuf_datalen(rxPacket) == CSMA_ACK_LEN) {
     /* Ignore ack packets */
 	  TRice("msg:ignored ack\n");
 #warning "for now csma security is disabled - will need to be ported/implemented also..."
-  } else if(/*csma_security_parse_frame()*/framer_802154.parse(&rxPacket) < 0) {
-	  TRice("err:failed to parse %u\n", packetbuf_datalen(&rxPacket));
-  } else if(!linkaddr_cmp(packetbuf_addr(&rxPacket, PACKETBUF_ADDR_RECEIVER), &linkaddr_node_addr) && !packetbuf_holds_broadcast(&rxPacket)) {
+  } else if(/*csma_security_parse_frame()*/framer_802154.parse(rxPacket) < 0) {
+	  TRice("err:failed to parse %u\n", packetbuf_datalen(rxPacket));
+  } else if(!linkaddr_cmp(packetbuf_addr(rxPacket, PACKETBUF_ADDR_RECEIVER), &linkaddr_node_addr) && !packetbuf_holds_broadcast(rxPacket)) {
 	  TRice("wrn:not for us\n");
-  } else if(linkaddr_cmp(packetbuf_addr(&rxPacket, PACKETBUF_ADDR_SENDER), &linkaddr_node_addr)) {
+  } else if(linkaddr_cmp(packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER), &linkaddr_node_addr)) {
 	  TRice("wrn:frame from ourselves\n");
   } else {
     int duplicate = 0;
 
     /* Check for duplicate packet. */
-    duplicate = mac_sequence_is_duplicate(packetbuf_addr(&rxPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(&rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
+    duplicate = mac_sequence_is_duplicate(packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
     if(duplicate) {
       /* Drop the packet. */
-    	TRice("wrn:drop duplicate link layer packet from %02X, seqno %u\n", packetbuf_addr(&rxPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(&rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
+    	TRice("wrn:drop duplicate link layer packet from %02X, seqno %u\n", packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
     } else {
-      mac_sequence_register_seqno(packetbuf_addr(&rxPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(&rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
+      mac_sequence_register_seqno(packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
     }
 
 #if CSMA_SEND_SOFT_ACK
-    if(packetbuf_attr(&rxPacket, PACKETBUF_ATTR_MAC_ACK)) {
-      ackdata[0] = FRAME802154_ACKFRAME;
-      ackdata[1] = 0;
-      ackdata[2] = ((uint8_t *)packetbuf_hdrptr())[2];
-      subGHz_radio_driver.send(ackdata, CSMA_ACK_LEN);
+    if(packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_ACK)) {
+      uint8_t *buff = (uint8_t*)packetbuf_hdrptr(&ackPacket);
+      packetbuf_clear(&ackPacket);
+      buff[0] = FRAME802154_ACKFRAME;
+      buff[1] = 0;
+      buff[2] = ((uint8_t *)packetbuf_hdrptr(rxPacket))[2];
+      packetbuf_set_datalen(&ackPacket, CSMA_ACK_LEN);
+      subGHz_radio_driver.send(&ackPacket);
     }
 #endif /* CSMA_SEND_SOFT_ACK */
     if(!duplicate) {
-    	TRice("msg:received packet from  %02X, seqno %u, len %u\n", packetbuf_addr(&rxPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(&rxPacket, PACKETBUF_ATTR_MAC_SEQNO), packetbuf_datalen(&rxPacket));
 #warning "NETSTACK_NETWORK attaches here"
 //    NETSTACK_NETWORK.input();
     }
@@ -438,6 +444,14 @@ static void init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(voi
   radio_value_t radio_max_payload_len;
   csmaEvtIdOffset = evtOffset;
   csmaIrq2Task = packedEvtHndl;
+  {
+	uint8_t node_mac[8];
+	(*(uint32_t*)node_mac) = HAL_GetUIDw1();
+	(*(((uint32_t*)node_mac)+1)) = HAL_GetUIDw2();
+	(*(((uint32_t*)node_mac)+1)) += HAL_GetUIDw0();
+	TRice("msg:MCU uid %08X %08X %08X to %08X %08X MAC.\n", HAL_GetUIDw0(), HAL_GetUIDw1(), HAL_GetUIDw2(), (*(uint32_t*)node_mac), (*(((uint32_t*)node_mac)+1)));
+	linkaddr_set_node_addr((linkaddr_t*)node_mac);
+  }
   subGHz_radio_driver.init(evtOffset, packedEvtHndl);
   /* Check that the radio can correctly report its max supported payload */
   if(subGHz_radio_driver.get_value(RADIO_CONST_MAX_PAYLOAD_LEN, &radio_max_payload_len) != radio_ok) {
