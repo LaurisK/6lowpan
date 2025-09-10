@@ -173,6 +173,9 @@ static void HandleTransferEnd(uint8_t transfRes, uint8_t packetPos) {
 	sPacket *packet = neighborList->transmit[packetPos].packet;
 	if(NULL == packet) {
 		TRice("err:packet sent: missing packet.\n");
+		if (NULL != neighborList) {
+			csmaIrq2Task(csmaEvtIdOffset + radio_taskCall, KickTranferQueue);
+		}
 	    return;
 	}
 	neighborList->transfAttempt++;
@@ -183,10 +186,12 @@ static void HandleTransferEnd(uint8_t transfRes, uint8_t packetPos) {
 		neighborList->queuedTransmits &= ~(1 << packetPos);
 		neighborList->transfAttempt = 0;
 		if (0 == neighborList->queuedTransmits) {
+			TRice("dbg:this neighbor is clean.\n");
 			sNeighbor *completedNeighbor = neighborList;
 			neighborList = neighborList->next;
 			vPortFree(completedNeighbor);
 		} else if (NULL != neighborList->next) {
+			TRice("dbg:this neighbor is served and moved to back of a list.\n");
 			//this neighbor is served and others are in list pending - so this one need to be moved to end of a list
 			sNeighbor *walker = neighborList;
 			while (NULL != walker->next) {
@@ -196,8 +201,11 @@ static void HandleTransferEnd(uint8_t transfRes, uint8_t packetPos) {
 			neighborList = neighborList->next;
 			walker->next->next = NULL;
 		}
+	} else {
+		TRice("dbg:not done with this one.\n");
 	}
 	if (NULL != neighborList) {
+		TRice("dbg:not all data sent - continue sending.\n");
 		csmaIrq2Task(csmaEvtIdOffset + radio_taskCall, KickTranferQueue);
 	}
 }
@@ -245,6 +253,7 @@ static void TransmitFromQueue(void) {
 		  }
 		}
 		if (NULL != packet) {
+			TRice("dbg:Packet(%d), neighbor attempt(%d)\n", packetPos, neighborList->transfAttempt);
 			uint8_t res = MAC_TX_ERR_FATAL;
 			uint8_t isBroadcast = packetbuf_holds_broadcast(packet);
 			uint8_t dsn = ((uint8_t *)packetbuf_hdrptr(packet))[2] & 0xff;
@@ -294,7 +303,7 @@ static void TransmitFromQueue(void) {
 	//further in ACK handle stuff:
 	//if no ACK received - do retransmit stuff
 	//else - do transmit OK stuff
-
+			TRice("dbg:TX res(%d)\n", res);
 			HandleTransferEnd(res, packetPos);
 	  } else {
 			TRice("err:could not transmit from queue - packet is missing\n");
@@ -418,8 +427,13 @@ static void input_packet(sPacket *rxPacket)
     if(!duplicate) {
 #warning "NETSTACK_NETWORK attaches here"
 //    NETSTACK_NETWORK.input();
+    } else {
+  	  packetbuf_clear(rxPacket);
     }
+    return;
   }
+  // here we come only if error occurs.
+  packetbuf_clear(rxPacket);
 }
 
 /**
