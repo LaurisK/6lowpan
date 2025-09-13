@@ -55,9 +55,9 @@ extern "C" {
 #define IEEE802154_DEFAULT_CHANNEL           26
 #endif /* IEEE802154_CONF_DEFAULT_CHANNEL */
 
-typedef void (* mac_callback_t)(void *ptr, int status, int transmissions);
+typedef void (* mac_callback_t)(void *ptr, int status, int transmissions, sPacket *packet);
 
-void mac_call_sent_callback(mac_callback_t sent, void *ptr, int status, int num_tx);
+void mac_call_sent_callback(mac_callback_t sent, void *ptr, int status, int num_tx, sPacket *packet);
 
 /**
  * The structure of a MAC protocol driver in Contiki.
@@ -69,7 +69,7 @@ struct mac_driver {
   void (* init)(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void)));
 
   /** Send a packet from the packetbuf  */
-  void (* send)(mac_callback_t, void*, sPacket*);
+  void (* send)(sPacket*, mac_callback_t, void*);
 
   /** Callback for getting notified of incoming packet. */
   void (* input)(sPacket*);

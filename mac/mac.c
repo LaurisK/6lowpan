@@ -38,9 +38,9 @@
 /* Pseudo global variables --------------------------------------------------*/
 /* Private functions --------------------------------------------------------*/
 /* Functions ----------------------------------------------------------------*/
-void mac_call_sent_callback(mac_callback_t sent, void *ptr, int status, int num_tx) {
+void mac_call_sent_callback(mac_callback_t sent, void *ptr, int status, int num_tx, sPacket *packet) {
   if(sent) {
-    sent(ptr, status, num_tx);
+    sent(ptr, status, num_tx, packet);
   }
 }
 

@@ -178,7 +178,7 @@ static void HandleTransferEnd(uint8_t transfRes, uint8_t packetPos) {
 	neighborList->transfAttempt++;
 	if ((MAC_TX_OK == transfRes) || (neighborList->transmit[packetPos].max_transmissions <= neighborList->transfAttempt)) {
 		//notify caller of completed transfer.
-		mac_call_sent_callback(neighborList->transmit[packetPos].sentCb, neighborList->transmit[packetPos].cptr, transfRes, neighborList->transfAttempt);
+		mac_call_sent_callback(neighborList->transmit[packetPos].sentCb, neighborList->transmit[packetPos].cptr, transfRes, neighborList->transfAttempt, packet);
 		//remove packet from queue
 		neighborList->queuedTransmits &= ~(1 << packetPos);
 		neighborList->transfAttempt = 0;
@@ -307,7 +307,7 @@ static void TransmitFromQueue(void) {
 /**
  *
  */
-static void EnqueuePacket(mac_callback_t sent, void *ptr, sPacket *packet) {
+static void EnqueuePacket(sPacket *packet, mac_callback_t sent, void *ptr) {
   sNeighbor *targetNeighbor = GetNeighborForAddr(packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER));
   if (NULL == targetNeighbor) {
 	  TRice("wrn:could not allocate neighbor, dropping packet\n");
@@ -353,7 +353,7 @@ static void EnqueuePacket(mac_callback_t sent, void *ptr, sPacket *packet) {
 	  TRice("wrn:could form payload for neighbor, dropping packet\n");
   }
   // this is failure catching
-  mac_call_sent_callback(sent, ptr, MAC_TX_ERR, 1);
+  mac_call_sent_callback(sent, ptr, MAC_TX_ERR, 1, packet);
 }
 
 /**
@@ -371,9 +371,9 @@ static void init_sec(void) {
 /**
  *
  */
-static void send_packet(mac_callback_t sent, void *ptr, sPacket *packet) {
+static void send_packet(sPacket *packet, mac_callback_t sent, void *ptr) {
   init_sec();
-  EnqueuePacket(sent, ptr, packet);
+  EnqueuePacket(packet, sent, ptr);
 }
 
 /**
@@ -399,6 +399,7 @@ static void input_packet(sPacket *rxPacket)
     duplicate = mac_sequence_is_duplicate(packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
     if(duplicate) {
       /* Drop the packet. */
+    	packetbuf_clear(rxPacket);
     	TRice("wrn:drop duplicate link layer packet from %02X, seqno %u\n", packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
     } else {
       mac_sequence_register_seqno(packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
@@ -415,10 +416,6 @@ static void input_packet(sPacket *rxPacket)
       subGHz_radio_driver.send(&ackPacket);
     }
 #endif /* CSMA_SEND_SOFT_ACK */
-    if(!duplicate) {
-#warning "NETSTACK_NETWORK attaches here"
-//    NETSTACK_NETWORK.input();
-    }
   }
 }
 
