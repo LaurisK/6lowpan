@@ -34,65 +34,53 @@
 #include <string.h>
 
 /*---------------------------------------------------------------------------*/
-/** Packet buffer for incoming and outgoing packets */
-#ifndef UIP_CONF_EXTERNAL_BUFFER
-uip_buf_t uip_aligned_buf;
-#endif /* UIP_CONF_EXTERNAL_BUFFER */
 
-static uint16_t uipbuf_attrs[UIPBUF_ATTR_MAX];
 static uint16_t uipbuf_default_attrs[UIPBUF_ATTR_MAX];
 
 /*---------------------------------------------------------------------------*/
-void
-uipbuf_clear(void)
-{
-  uip_len = 0;
-  uip_ext_len = 0;
-  uip_last_proto = 0;
-  uipbuf_clear_attr();
+void uipbuf_clear(sUipBuff *uipBuff) {
+	uipBuff->len = 0;
+	uipBuff->extLen = 0;
+	uipBuff->lastProto = 0;
+  uipbuf_clear_attr(uipBuff);
 }
+
 /*---------------------------------------------------------------------------*/
-bool
-uipbuf_add_ext_hdr(int16_t len)
-{
-  if(len + uip_len <= UIP_LINK_MTU && len + uip_len >= 0 && len + uip_ext_len >= 0) {
-    uip_ext_len += len;
-    uip_len += len;
+bool uipbuf_add_ext_hdr(sUipBuff *uipBuff, int16_t len) {
+  if(((len + uipBuff->len) <= UIP_LINK_MTU) && ((len + uipBuff->len) >= 0) && ((len + uipBuff->extLen) >= 0)) {
+	uipBuff->extLen += len;
+    uipBuff->len += len;
     return true;
   } else {
     return false;
   }
 }
+
 /*---------------------------------------------------------------------------*/
-bool
-uipbuf_set_len(uint16_t len)
-{
+bool uipbuf_set_len(sUipBuff *uipBuff, uint16_t len) {
   if(len <= UIP_LINK_MTU) {
-    uip_len = len;
+	  uipBuff->len = len;
     return true;
   } else {
     return false;
   }
 }
+
 /*---------------------------------------------------------------------------*/
-void
-uipbuf_set_len_field(struct uip_ip_hdr *hdr, uint16_t len)
-{
+void uipbuf_set_len_field(struct uip_ip_hdr *hdr, uint16_t len) {
   hdr->len[0] = (len >> 8);
   hdr->len[1] = (len & 0xff);
 }
+
 /*---------------------------------------------------------------------------*/
-uint16_t
-uipbuf_get_len_field(struct uip_ip_hdr *hdr)
-{
+uint16_t uipbuf_get_len_field(struct uip_ip_hdr *hdr) {
   return ((uint16_t)(hdr->len[0]) << 8) + hdr->len[1];
 }
+
 /*---------------------------------------------------------------------------*/
 /* Get the next header given the buffer - start indicates that this is
    start of the IPv6 header - needs to be set to 0 when in an ext hdr */
-uint8_t *
-uipbuf_get_next_header(uint8_t *buffer, uint16_t size, uint8_t *protocol, bool start)
-{
+uint8_t * uipbuf_get_next_header(uint8_t *buffer, uint16_t size, uint8_t *protocol, bool start) {
   int curr_hdr_len = 0;
   int next_hdr_len = 0;
   uint8_t *next_header = NULL;
@@ -140,27 +128,25 @@ uipbuf_get_next_header(uint8_t *buffer, uint16_t size, uint8_t *protocol, bool s
 
   return next_header;
 }
+
 /*---------------------------------------------------------------------------*/
 /* Get the final header given the buffer - that is assumed to be at start
    of an IPv6 header */
-uint8_t *
-uipbuf_get_last_header(uint8_t *buffer, uint16_t size, uint8_t *protocol)
-{
+uint8_t * uipbuf_get_last_header(uint8_t *buffer, uint16_t size, uint8_t *protocol) {
   uint8_t *nbuf;
 
   nbuf = uipbuf_get_next_header(buffer, size, protocol, true);
-  while(nbuf != NULL && uip_is_proto_ext_hdr(*protocol)) {
+  while((nbuf != NULL) && uip_is_proto_ext_hdr(*protocol)) {
     /* move to the ext hdr */
-    nbuf = uipbuf_get_next_header(nbuf, size - (nbuf - buffer), protocol, false);
+    nbuf = uipbuf_get_next_header(nbuf, (size - (nbuf - buffer)), protocol, false);
   }
 
   /* In case the buffer wasn't large enough for all headers, return NULL */
   return nbuf;
 }
+
 /*---------------------------------------------------------------------------*/
-uint8_t *
-uipbuf_search_header(uint8_t *buffer, uint16_t size, uint8_t protocol)
-{
+uint8_t *uipbuf_search_header(uint8_t *buffer, uint16_t size, uint8_t protocol) {
   uint8_t *nbuf;
   uint8_t next_proto;
 
@@ -176,78 +162,69 @@ uipbuf_search_header(uint8_t *buffer, uint16_t size, uint8_t protocol)
     return NULL;
   }
 }
+
 /*---------------------------------------------------------------------------*/
 /**
  * Common functions for uipbuf (attributes, etc).
  *
  */
 /*---------------------------------------------------------------------------*/
-uint16_t
-uipbuf_get_attr(uint8_t type)
-{
+uint16_t uipbuf_get_attr(sUipBuff *uipBuff, uint8_t type) {
   if(type < UIPBUF_ATTR_MAX) {
-    return uipbuf_attrs[type];
+    return uipBuff->attributes[type];
   }
   return 0;
 }
+
 /*---------------------------------------------------------------------------*/
-int
-uipbuf_set_attr(uint8_t type, uint16_t value)
-{
+int uipbuf_set_attr(sUipBuff *uipBuff, uint8_t type, uint16_t value) {
   if(type < UIPBUF_ATTR_MAX) {
-    uipbuf_attrs[type] = value;
+	uipBuff->attributes[type] = value;
     return 1;
   }
   return 0;
 }
+
 /*---------------------------------------------------------------------------*/
-int
-uipbuf_set_default_attr(uint8_t type, uint16_t value)
-{
+int uipbuf_set_default_attr(uint8_t type, uint16_t value) {
   if(type < UIPBUF_ATTR_MAX) {
     uipbuf_default_attrs[type] = value;
     return 1;
   }
   return 0;
 }
+
 /*---------------------------------------------------------------------------*/
-void
-uipbuf_clear_attr(void)
-{
+void uipbuf_clear_attr(sUipBuff *uipBuff) {
   /* set everything to "defaults" */
-  memcpy(uipbuf_attrs, uipbuf_default_attrs, sizeof(uipbuf_attrs));
+  memcpy(uipBuff->attributes, uipbuf_default_attrs, sizeof(uipbuf_default_attrs));
 }
+
 /*---------------------------------------------------------------------------*/
-void
-uipbuf_set_attr_flag(uint16_t flag)
-{
+void uipbuf_set_attr_flag(sUipBuff *uipBuff, uint16_t flag) {
   /* Assume only 16-bits for flags now */
-  uipbuf_attrs[UIPBUF_ATTR_FLAGS] |= flag;
+	uipBuff->attributes[UIPBUF_ATTR_FLAGS] |= flag;
 }
+
 /*---------------------------------------------------------------------------*/
-void
-uipbuf_clr_attr_flag(uint16_t flag)
-{
-  uipbuf_attrs[UIPBUF_ATTR_FLAGS] &= ~flag;
+void uipbuf_clr_attr_flag(sUipBuff *uipBuff, uint16_t flag) {
+	uipBuff->attributes[UIPBUF_ATTR_FLAGS] &= ~flag;
 }
+
 /*---------------------------------------------------------------------------*/
-uint16_t
-uipbuf_is_attr_flag(uint16_t flag)
-{
-  return (uipbuf_attrs[UIPBUF_ATTR_FLAGS] & flag) == flag;
+uint16_t uipbuf_is_attr_flag(sUipBuff *uipBuff, uint16_t flag) {
+  return (uipBuff->attributes[UIPBUF_ATTR_FLAGS] & flag) == flag;
 }
+
 /*---------------------------------------------------------------------------*/
-void
-uipbuf_init(void)
+void uipbuf_init(void)
 {
   memset(uipbuf_default_attrs, 0, sizeof(uipbuf_default_attrs));
   /* And initialize anything that should be initialized */
-  uipbuf_set_default_attr(UIPBUF_ATTR_MAX_MAC_TRANSMISSIONS,
-                          UIP_MAX_MAC_TRANSMISSIONS_UNDEFINED);
+  uipbuf_set_default_attr(UIPBUF_ATTR_MAX_MAC_TRANSMISSIONS, UIP_MAX_MAC_TRANSMISSIONS_UNDEFINED);
   /* set the not-set default value - this will cause the MAC layer to
      configure its default */
-  uipbuf_set_default_attr(UIPBUF_ATTR_LLSEC_LEVEL,
-                          UIPBUF_ATTR_LLSEC_LEVEL_MAC_DEFAULT);
+  uipbuf_set_default_attr(UIPBUF_ATTR_LLSEC_LEVEL, UIPBUF_ATTR_LLSEC_LEVEL_MAC_DEFAULT);
 }
 
 /*---------------------------------------------------------------------------*/

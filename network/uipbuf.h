@@ -62,26 +62,75 @@ enum {
   UIPBUF_ATTR_MAX
 };
 
+/**
+ * The uIP packet buffer.
+ *
+ * The uip_aligned_buf array is used to hold incoming and outgoing
+ * packets. The device driver should place incoming data into this
+ * buffer. When sending data, the device driver should read the
+ * outgoing data from this buffer.
+*/
+/**
+ * \defgroup uipdrivervars Variables used in uIP device drivers
+ * @{
+ *
+ * uIP has a few global variables that are used in device drivers for
+ * uIP.
+ */
+
+/**
+ * The length of the packet in the uip_buf buffer.
+ *
+ * The global variable uip_len holds the length of the packet in the
+ * uip_buf buffer.
+ *
+ * When the network device driver calls the uIP input function,
+ * uip_len should be set to the length of the packet in the uip_buf
+ * buffer.
+ *
+ * When sending packets, the device driver should use the contents of
+ * the uip_len variable to determine the length of the outgoing
+ * packet.
+ *
+ */
+
+/**
+ * The length of the extension headers
+ */
+
+/** The final protocol after IPv6 extension headers:
+  * UIP_PROTO_TCP, UIP_PROTO_UDP or UIP_PROTO_ICMP6 */
+/** @} */
+typedef struct {
+	uint16_t   attributes[UIPBUF_ATTR_MAX];
+	uint16_t   len;
+	uint8_t    lastProto;
+	uint16_t   extLen;
+	union {
+	  uint32_t u32[(UIP_BUFSIZE + 3) / 4];
+	  uint8_t u8[UIP_BUFSIZE];
+	} buff;
+} sUipBuff;
 //struct uip_ip_hdr;
 
 /**
  * \brief          Resets uIP buffer
  */
-void uipbuf_clear(void);
+void uipbuf_clear(sUipBuff *uipBuff);
 
 /**
  * \brief          Update uip buffer length for addition of an extension header
  * \param len      The length of the new extension header
  * \retval         true if the length fields were successfully set, false otherwise
  */
-bool uipbuf_add_ext_hdr(int16_t len);
+bool uipbuf_add_ext_hdr(sUipBuff *uipBuff, int16_t len);
 
 /**
  * \brief          Set the length of the uIP buffer
  * \param len      The new length
  * \retval         true if the len was successfully set, false otherwise
  */
-bool uipbuf_set_len(uint16_t len);
+bool uipbuf_set_len(sUipBuff *uipBuff, uint16_t len);
 
 /**
  * \brief          Updates the length field in the uIP buffer
@@ -139,7 +188,7 @@ uint8_t *uipbuf_search_header(uint8_t *buffer, uint16_t size, uint8_t protocol);
  *
  *                 This function gets the value of a specific uipbuf attribute.
  */
-uint16_t uipbuf_get_attr(uint8_t type);
+uint16_t uipbuf_get_attr(sUipBuff *uipBuff, uint8_t type);
 
 
 /**
@@ -151,7 +200,7 @@ uint16_t uipbuf_get_attr(uint8_t type);
  *
  *                 This function sets the value of a specific uipbuf attribute.
  */
-int uipbuf_set_attr(uint8_t type, uint16_t value);
+int uipbuf_set_attr(sUipBuff *uipBuff, uint8_t type, uint16_t value);
 
 /**
  * \brief          Set the default value of the attribute
@@ -170,7 +219,7 @@ int uipbuf_set_default_attr(uint8_t type, uint16_t value);
  *
  *                 This function sets the uipbuf attributes flag of specified bits.
  */
-void uipbuf_set_attr_flag(uint16_t flag_bits);
+void uipbuf_set_attr_flag(sUipBuff *uipBuff, uint16_t flag_bits);
 
 /**
  * \brief          Clear bits in the uipbuf attribute flags.
@@ -178,7 +227,7 @@ void uipbuf_set_attr_flag(uint16_t flag_bits);
  *
  *                 This function clears the uipbuf attributes flag of specified bits.
  */
-void uipbuf_clr_attr_flag(uint16_t flag_bits);
+void uipbuf_clr_attr_flag(sUipBuff *uipBuff, uint16_t flag_bits);
 
 /**
  * \brief          Check if bits in the uipbuf attribute flag are set.
@@ -187,7 +236,7 @@ void uipbuf_clr_attr_flag(uint16_t flag_bits);
  *                 This function checks if the specified bits are set in the
  *                 uipbuf attributes flag.
  */
-uint16_t uipbuf_is_attr_flag(uint16_t flag_bits);
+uint16_t uipbuf_is_attr_flag(sUipBuff *uipBuff, uint16_t flag_bits);
 
 
 /**
@@ -196,7 +245,7 @@ uint16_t uipbuf_is_attr_flag(uint16_t flag_bits);
  *                 This function clear all attributes in the uipbuf attributes
  *                 including all flags.
  */
-void uipbuf_clear_attr(void);
+void uipbuf_clear_attr(sUipBuff *uipBuffvoid);
 
 /**
  * \brief          Initialize uipbuf attributes.

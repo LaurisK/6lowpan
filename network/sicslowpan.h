@@ -50,6 +50,7 @@
 #define SICSLOWPAN_H_
 
 #include "../linkaddr.h"
+#include "uipbuf.h"
 //#include "net/ipv6/uip.h"
 //#include "net/mac/mac.h"
 
@@ -243,10 +244,10 @@ struct network_driver {
   void (*init)(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void)));
 
   /** Callback for getting notified of incoming packet in packetbuf. */
-  void (*input)(void);
+  void (*input)(sUipBuff *rxBuff);
 
   /** Output funtion, sends from uipbuf. */
-  uint8_t (*output)(const linkaddr_t *localdest);
+  uint8_t (*output)(sUipBuff *txBuff, const linkaddr_t *localdest);
 };
 
 /**

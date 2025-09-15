@@ -488,24 +488,8 @@ void uip_setipid(uint16_t id);
 /** \brief Abandon the reassembly of the current packet */
 void uip_reass_over(void);
 
-/**
- * The uIP packet buffer.
- *
- * The uip_aligned_buf array is used to hold incoming and outgoing
- * packets. The device driver should place incoming data into this
- * buffer. When sending data, the device driver should read the
- * outgoing data from this buffer.
-*/
-
-typedef union {
-  uint32_t u32[(UIP_BUFSIZE + 3) / 4];
-  uint8_t u8[UIP_BUFSIZE];
-} uip_buf_t;
-
-extern uip_buf_t uip_aligned_buf;
-
 /** Macro to access uip_aligned_buf as an array of bytes */
-#define uip_buf (uip_aligned_buf.u8)
+//#define uip_buf (uip_aligned_buf.u8)
 
 
 /** @} */
@@ -634,7 +618,6 @@ void uip_send(const void *data, int len);
  * \hideinitializer
  */
 /*void uip_datalen(void);*/
-#define uip_datalen()       uip_len
 
 /**
  * The length of any out-of-band data (urgent data) that has arrived
@@ -1268,42 +1251,6 @@ extern void *uip_appdata;
  */
 extern void *uip_urgdata;
 #endif /* UIP_URGDATA > 0 */
-
-
-/**
- * \defgroup uipdrivervars Variables used in uIP device drivers
- * @{
- *
- * uIP has a few global variables that are used in device drivers for
- * uIP.
- */
-
-/**
- * The length of the packet in the uip_buf buffer.
- *
- * The global variable uip_len holds the length of the packet in the
- * uip_buf buffer.
- *
- * When the network device driver calls the uIP input function,
- * uip_len should be set to the length of the packet in the uip_buf
- * buffer.
- *
- * When sending packets, the device driver should use the contents of
- * the uip_len variable to determine the length of the outgoing
- * packet.
- *
- */
-extern uint16_t uip_len;
-
-/**
- * The length of the extension headers
- */
-extern uint16_t uip_ext_len;
-
-/** The final protocol after IPv6 extension headers:
-  * UIP_PROTO_TCP, UIP_PROTO_UDP or UIP_PROTO_ICMP6 */
-extern uint8_t uip_last_proto;
-/** @} */
 
 #if UIP_URGDATA > 0
 extern uint16_t uip_urglen, uip_surglen;
