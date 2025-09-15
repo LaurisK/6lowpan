@@ -607,10 +607,8 @@ addr_context_lookup_by_number(uint8_t number)
   return NULL;
 }
 /*--------------------------------------------------------------------*/
-static uint8_t
-compress_addr_64(uint8_t bitpos, uip_ipaddr_t *ipaddr, uip_lladdr_t *lladdr)
-{
-  if(uip_is_addr_mac_addr_based(ipaddr, lladdr)) {
+static uint8_t compress_addr_64(uint8_t bitpos, uip_ipaddr_t *ipaddr, linkaddr_t *lladdr) {
+  if(uip_is_addr_mac_addr_based(ipaddr, (uip_lladdr_t *)lladdr)) {
     return 3 << bitpos; /* 0-bits */
   } else if(sicslowpan_is_iid_16_bit_compressable(ipaddr)) {
     /* compress IID to 16 bits xxxx::0000:00ff:fe00:XXXX */
@@ -840,24 +838,24 @@ static int compress_hdr_iphc(sUipBuff *uipBuff, linkaddr_t *link_destaddr) {
 
   /* source address - cannot be multicast */
   if(uip_is_addr_unspecified(&ipHdr->srcipaddr)) {
-	  TRice("dbg:compression: addr unspecified - setting SAC\n");
+	TRice("dbg:compression: addr unspecified - setting SAC\n");
     iphc1 |= SICSLOWPAN_IPHC_SAC;
     iphc1 |= SICSLOWPAN_IPHC_SAM_00;
-  } else if((context = addr_context_lookup_by_prefix(&ipHdr->srcipaddr))
-     != NULL) {
+  } else if((context = addr_context_lookup_by_prefix(&ipHdr->srcipaddr)) != NULL) {
+	linkaddr_t srcAddr;
+	linkaddr_get_node_addr(&srcAddr);
     /* elide the prefix - indicate by CID and set context + SAC */
-	  TRice("dbg:compression: src with context - setting CID & SAC ctx: %d\n", context->number);
+	TRice("dbg:compression: src with context - setting CID & SAC ctx: %d\n", context->number);
     iphc1 |= SICSLOWPAN_IPHC_CID | SICSLOWPAN_IPHC_SAC;
     PACKETBUF_IPHC_BUF[2] |= context->number << 4;
     /* compession compare with this nodes address (source) */
 
-    iphc1 |= compress_addr_64(SICSLOWPAN_IPHC_SAM_BIT, &ipHdr->srcipaddr, &uip_lladdr);
+    iphc1 |= compress_addr_64(SICSLOWPAN_IPHC_SAM_BIT, &ipHdr->srcipaddr, &srcAddr);
     /* No context found for this address */
-  } else if(uip_is_addr_linklocal(&ipHdr->srcipaddr) &&
-		  ipHdr->destipaddr.u16[1] == 0 &&
-		  ipHdr->destipaddr.u16[2] == 0 &&
-		  ipHdr->destipaddr.u16[3] == 0) {
-    iphc1 |= compress_addr_64(SICSLOWPAN_IPHC_SAM_BIT, &ipHdr->srcipaddr, &uip_lladdr);
+  } else if(uip_is_addr_linklocal(&ipHdr->srcipaddr) && ipHdr->destipaddr.u16[1] == 0 && ipHdr->destipaddr.u16[2] == 0 && ipHdr->destipaddr.u16[3] == 0) {
+		linkaddr_t srcAddr;
+		linkaddr_get_node_addr(&srcAddr);
+    iphc1 |= compress_addr_64(SICSLOWPAN_IPHC_SAM_BIT, &ipHdr->srcipaddr, &srcAddr);
   } else {
     /* send the full address => SAC = 0, SAM = 00 */
     iphc1 |= SICSLOWPAN_IPHC_SAM_00; /* 128-bits */
@@ -900,13 +898,13 @@ static int compress_hdr_iphc(sUipBuff *uipBuff, linkaddr_t *link_destaddr) {
       PACKETBUF_IPHC_BUF[2] |= context->number;
       /* compession compare with link adress (destination) */
 
-      iphc1 |= compress_addr_64(SICSLOWPAN_IPHC_DAM_BIT, &ipHdr->destipaddr, (uip_lladdr_t *)link_destaddr);
+      iphc1 |= compress_addr_64(SICSLOWPAN_IPHC_DAM_BIT, &ipHdr->destipaddr, link_destaddr);
       /* No context found for this address */
     } else if(uip_is_addr_linklocal(&ipHdr->destipaddr) &&
     		ipHdr->destipaddr.u16[1] == 0 &&
 			ipHdr->destipaddr.u16[2] == 0 &&
 			ipHdr->destipaddr.u16[3] == 0) {
-      iphc1 |= compress_addr_64(SICSLOWPAN_IPHC_DAM_BIT, &ipHdr->destipaddr, (uip_lladdr_t *)link_destaddr);
+      iphc1 |= compress_addr_64(SICSLOWPAN_IPHC_DAM_BIT, &ipHdr->destipaddr, link_destaddr);
     } else {
       /* send the full address */
       iphc1 |= SICSLOWPAN_IPHC_DAM_00; /* 128-bits */
