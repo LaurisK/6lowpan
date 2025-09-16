@@ -1771,7 +1771,7 @@ static uint8_t output(sUipBuff *txBuff, const linkaddr_t *localdest) {
  * \note We do not check for overlapping sicslowpan fragments
  * (it is a SHALL in the RFC 4944 and should never happen)
  */
-static void input(sUipBuff *rxBuff)
+static uint8_t input(sUipBuff *rxBuff)
 {
   /* size of the IP packet (read from fragment) */
   uint16_t frag_size = 0;
@@ -1806,7 +1806,7 @@ static void input(sUipBuff *rxBuff)
 
   if(packetbuf_datalen(&rxPacket) == 0) {
 	  TRice("wrn:input: empty packet\n");
-    return;
+    return 0;
   }
 
   /* Clear uipbuf and set default attributes */
@@ -1838,7 +1838,7 @@ static void input(sUipBuff *rxBuff)
 
       if(frag_context == -1) {
     	  TRice("err:input: failed to allocate new reassembly context\n");
-        return;
+        return 0;
       }
 
       buffer = frag_info[frag_context].first_frag;
@@ -1860,7 +1860,7 @@ static void input(sUipBuff *rxBuff)
 
       if(frag_context == -1) {
     	  TRice("err:input: reassembly context not found (tag %d)\n", frag_tag);
-        return;
+        return 0;
       }
 
       /* Ok - add_fragment will store the fragment automatically - so
@@ -1890,7 +1890,7 @@ static void input(sUipBuff *rxBuff)
     digest_6lorh_hdr();
   } else if (curr_page > 1) {
 	  TRice("err:input: page %u not supported\n", curr_page);
-    return;
+    return 0;
   }
 
   /* Process next dispatch and headers */
@@ -1911,7 +1911,7 @@ static void input(sUipBuff *rxBuff)
   } else {
 	  TRice("err:uncompression: unknown dispatch: 0x%02x, or IPHC disabled\n",
              PACKETBUF_6LO_PTR[PACKETBUF_6LO_DISPATCH] & SICSLOWPAN_DISPATCH_IPHC_MASK);
-    return;
+    return 0;
   }
 
 #if SICSLOWPAN_CONF_FRAG
@@ -1926,7 +1926,7 @@ static void input(sUipBuff *rxBuff)
    */
   if(packetbuf_datalen(&rxPacket) < packetbuf_hdr_len) {
 	  TRice("err:input: packet dropped due to header > total packet\n");
-    return;
+    return 0;
   }
   packetbuf_payload_len = packetbuf_datalen(&rxPacket) - packetbuf_hdr_len;
 
@@ -1948,7 +1948,7 @@ static void input(sUipBuff *rxBuff)
        * cause an overflow in uipbuf */
       clear_fragments(frag_context);
 #endif /* SICSLOWPAN_CONF_FRAG */
-      return;
+      return 0;
     }
   }
 
@@ -1973,7 +1973,7 @@ static void input(sUipBuff *rxBuff)
       frag_info[frag_context].reassembled_len = frag_size;
       /* copy to uip */
       if(!copy_frags2uip(rxBuff->buff.u8, frag_context)) {
-        return;
+        return 0;
       }
     }
   }
@@ -2018,9 +2018,11 @@ static void input(sUipBuff *rxBuff)
 #endif /*  LLSEC802154_USES_AUX_HEADER */
 #warning "TCP_IP attaches here"
     //tcpip_input();
+    return 1;
 #if SICSLOWPAN_CONF_FRAG
   }
 #endif /* SICSLOWPAN_CONF_FRAG */
+  return 0;
 }
 /** @} */
 

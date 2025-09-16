@@ -244,7 +244,7 @@ struct network_driver {
   void (*init)(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void)));
 
   /** Callback for getting notified of incoming packet in packetbuf. */
-  void (*input)(sUipBuff *rxBuff);
+  uint8_t (*input)(sUipBuff *rxBuff);
 
   /** Output funtion, sends from uipbuf. */
   uint8_t (*output)(sUipBuff *txBuff, const linkaddr_t *localdest);
