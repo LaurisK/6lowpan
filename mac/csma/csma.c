@@ -94,7 +94,7 @@ typedef struct sNeighbor {
 static void TransmitFromQueue(void);
 
 /* Pseudo global variables --------------------------------------------------*/
-sNeighbor *neighborList = NULL;
+static volatile sNeighbor *neighborList = NULL;
 static sPacket ackPacket;
 static uint16_t csmaEvtIdOffset;
 void (*csmaIrq2Task)(uint16_t, void(*cbFunc)(void));
@@ -114,7 +114,7 @@ static sNeighbor* CreateNeighbor(void) {
  *
  */
 static sNeighbor* GetNeighborForAddr(const linkaddr_t *addr) {
-  sNeighbor *walker = neighborList;
+  sNeighbor *walker = (sNeighbor *)neighborList;
   while (NULL != walker) {
 	  if (linkaddr_cmp(addr, &walker->addr)) {
 		  break;
@@ -124,7 +124,7 @@ static sNeighbor* GetNeighborForAddr(const linkaddr_t *addr) {
   if (NULL == walker) {
 	  walker = CreateNeighbor();
 	  linkaddr_copy(&walker->addr, addr);
-	  walker->next = neighborList;
+	  walker->next = (sNeighbor *)neighborList;
 	  neighborList = walker;
   }
   return walker;
@@ -183,16 +183,16 @@ static void HandleTransferEnd(uint8_t transfRes, uint8_t packetPos) {
 		neighborList->queuedTransmits &= ~(1 << packetPos);
 		neighborList->transfAttempt = 0;
 		if (0 == neighborList->queuedTransmits) {
-			sNeighbor *completedNeighbor = neighborList;
+			sNeighbor *completedNeighbor = (sNeighbor *)neighborList;
 			neighborList = neighborList->next;
 			vPortFree(completedNeighbor);
 		} else if (NULL != neighborList->next) {
 			//this neighbor is served and others are in list pending - so this one need to be moved to end of a list
-			sNeighbor *walker = neighborList;
+			sNeighbor *walker = (sNeighbor *)neighborList;
 			while (NULL != walker->next) {
 				walker = walker->next;
 			}
-			walker->next = neighborList;
+			walker->next = (sNeighbor *)neighborList;
 			neighborList = neighborList->next;
 			walker->next->next = NULL;
 		}
@@ -311,7 +311,7 @@ static void EnqueuePacket(sPacket *packet, mac_callback_t sent, void *ptr) {
   sNeighbor *targetNeighbor = GetNeighborForAddr(packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER));
   if (NULL == targetNeighbor) {
 	  TRice("wrn:could not allocate neighbor, dropping packet\n");
-  } else if ((MAX_QUEUED_PACKETS - 1) == targetNeighbor->queuedTransmits) {
+  } else if (((1 << MAX_QUEUED_PACKETS) - 1) <= targetNeighbor->queuedTransmits) {
 	  TRice("wrn:could not attach packet to neighbor (neighbor packet queue is full), dropping packet\n");
   } else if (MAC_TX_OK == FormPayload(packet)) {
 	  uint8_t packetPos = MAX_QUEUED_PACKETS;
@@ -330,9 +330,9 @@ static void EnqueuePacket(sPacket *packet, mac_callback_t sent, void *ptr) {
 	  targetNeighbor->transmit[packetPos].sentCb = sent;
 	  targetNeighbor->transmit[packetPos].cptr = ptr;
 	  targetNeighbor->transmit[packetPos].packet = packet;
-	  if (NULL != neighborList->next) {
+	  if ((NULL != neighborList) && (NULL != neighborList->next)) {
 		  /* More neighbors are being processed - print some info about them */
-		  sNeighbor *walker = neighborList;
+		  sNeighbor *walker = (sNeighbor *)neighborList;
 		  while (NULL != walker) {
 			  //print neighbor info
 			  TRice("msg:\t neighbor ");

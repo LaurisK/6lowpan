@@ -75,6 +75,7 @@
 //
 //#include "net/routing/routing.h"
 #if defined(STM32H753xx)
+#include "trice.h"
 #include "main.h"
 #else
 #include "App/common.h"
@@ -607,10 +608,8 @@ addr_context_lookup_by_number(uint8_t number)
   return NULL;
 }
 /*--------------------------------------------------------------------*/
-static uint8_t
-compress_addr_64(uint8_t bitpos, uip_ipaddr_t *ipaddr, uip_lladdr_t *lladdr)
-{
-  if(uip_is_addr_mac_addr_based(ipaddr, lladdr)) {
+static uint8_t compress_addr_64(uint8_t bitpos, uip_ipaddr_t *ipaddr, linkaddr_t *lladdr) {
+  if(uip_is_addr_mac_addr_based(ipaddr, (uip_lladdr_t *)lladdr)) {
     return 3 << bitpos; /* 0-bits */
   } else if(sicslowpan_is_iid_16_bit_compressable(ipaddr)) {
     /* compress IID to 16 bits xxxx::0000:00ff:fe00:XXXX */
@@ -840,24 +839,24 @@ static int compress_hdr_iphc(sUipBuff *uipBuff, linkaddr_t *link_destaddr) {
 
   /* source address - cannot be multicast */
   if(uip_is_addr_unspecified(&ipHdr->srcipaddr)) {
-	  TRice("dbg:compression: addr unspecified - setting SAC\n");
+	TRice("dbg:compression: addr unspecified - setting SAC\n");
     iphc1 |= SICSLOWPAN_IPHC_SAC;
     iphc1 |= SICSLOWPAN_IPHC_SAM_00;
-  } else if((context = addr_context_lookup_by_prefix(&ipHdr->srcipaddr))
-     != NULL) {
+  } else if((context = addr_context_lookup_by_prefix(&ipHdr->srcipaddr)) != NULL) {
+	linkaddr_t srcAddr;
+	linkaddr_get_node_addr(&srcAddr);
     /* elide the prefix - indicate by CID and set context + SAC */
-	  TRice("dbg:compression: src with context - setting CID & SAC ctx: %d\n", context->number);
+	TRice("dbg:compression: src with context - setting CID & SAC ctx: %d\n", context->number);
     iphc1 |= SICSLOWPAN_IPHC_CID | SICSLOWPAN_IPHC_SAC;
     PACKETBUF_IPHC_BUF[2] |= context->number << 4;
     /* compession compare with this nodes address (source) */
 
-    iphc1 |= compress_addr_64(SICSLOWPAN_IPHC_SAM_BIT, &ipHdr->srcipaddr, &uip_lladdr);
+    iphc1 |= compress_addr_64(SICSLOWPAN_IPHC_SAM_BIT, &ipHdr->srcipaddr, &srcAddr);
     /* No context found for this address */
-  } else if(uip_is_addr_linklocal(&ipHdr->srcipaddr) &&
-		  ipHdr->destipaddr.u16[1] == 0 &&
-		  ipHdr->destipaddr.u16[2] == 0 &&
-		  ipHdr->destipaddr.u16[3] == 0) {
-    iphc1 |= compress_addr_64(SICSLOWPAN_IPHC_SAM_BIT, &ipHdr->srcipaddr, &uip_lladdr);
+  } else if(uip_is_addr_linklocal(&ipHdr->srcipaddr) && ipHdr->destipaddr.u16[1] == 0 && ipHdr->destipaddr.u16[2] == 0 && ipHdr->destipaddr.u16[3] == 0) {
+		linkaddr_t srcAddr;
+		linkaddr_get_node_addr(&srcAddr);
+    iphc1 |= compress_addr_64(SICSLOWPAN_IPHC_SAM_BIT, &ipHdr->srcipaddr, &srcAddr);
   } else {
     /* send the full address => SAC = 0, SAM = 00 */
     iphc1 |= SICSLOWPAN_IPHC_SAM_00; /* 128-bits */
@@ -900,13 +899,13 @@ static int compress_hdr_iphc(sUipBuff *uipBuff, linkaddr_t *link_destaddr) {
       PACKETBUF_IPHC_BUF[2] |= context->number;
       /* compession compare with link adress (destination) */
 
-      iphc1 |= compress_addr_64(SICSLOWPAN_IPHC_DAM_BIT, &ipHdr->destipaddr, (uip_lladdr_t *)link_destaddr);
+      iphc1 |= compress_addr_64(SICSLOWPAN_IPHC_DAM_BIT, &ipHdr->destipaddr, link_destaddr);
       /* No context found for this address */
     } else if(uip_is_addr_linklocal(&ipHdr->destipaddr) &&
     		ipHdr->destipaddr.u16[1] == 0 &&
 			ipHdr->destipaddr.u16[2] == 0 &&
 			ipHdr->destipaddr.u16[3] == 0) {
-      iphc1 |= compress_addr_64(SICSLOWPAN_IPHC_DAM_BIT, &ipHdr->destipaddr, (uip_lladdr_t *)link_destaddr);
+      iphc1 |= compress_addr_64(SICSLOWPAN_IPHC_DAM_BIT, &ipHdr->destipaddr, link_destaddr);
     } else {
       /* send the full address */
       iphc1 |= SICSLOWPAN_IPHC_DAM_00; /* 128-bits */
@@ -1458,6 +1457,7 @@ static void packet_sent(void *ptr, int status, int transmissions, sPacket *packe
   /* What follows only applies to unicast */
   dest = packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER);
   if(linkaddr_cmp(dest, &linkaddr_null)) {
+	 vPortFree(packet);
     return;
   }
 
@@ -1472,6 +1472,7 @@ static void packet_sent(void *ptr, int status, int transmissions, sPacket *packe
   /* DS6 callback, used for UIP_DS6_LL_NUD */
 #warning "UIP attaches here"
 //  uip_ds6_link_callback(status, transmissions);
+ vPortFree(packet);
 }
 /*--------------------------------------------------------------------*/
 /**
@@ -1773,7 +1774,7 @@ static uint8_t output(sUipBuff *txBuff, const linkaddr_t *localdest) {
  * \note We do not check for overlapping sicslowpan fragments
  * (it is a SHALL in the RFC 4944 and should never happen)
  */
-static void input(sUipBuff *rxBuff)
+static uint8_t input(sUipBuff *rxBuff)
 {
   /* size of the IP packet (read from fragment) */
   uint16_t frag_size = 0;
@@ -1808,7 +1809,7 @@ static void input(sUipBuff *rxBuff)
 
   if(packetbuf_datalen(&rxPacket) == 0) {
 	  TRice("wrn:input: empty packet\n");
-    return;
+    return 0;
   }
 
   /* Clear uipbuf and set default attributes */
@@ -1840,7 +1841,7 @@ static void input(sUipBuff *rxBuff)
 
       if(frag_context == -1) {
     	  TRice("err:input: failed to allocate new reassembly context\n");
-        return;
+        return 0;
       }
 
       buffer = frag_info[frag_context].first_frag;
@@ -1862,7 +1863,7 @@ static void input(sUipBuff *rxBuff)
 
       if(frag_context == -1) {
     	  TRice("err:input: reassembly context not found (tag %d)\n", frag_tag);
-        return;
+        return 0;
       }
 
       /* Ok - add_fragment will store the fragment automatically - so
@@ -1892,7 +1893,7 @@ static void input(sUipBuff *rxBuff)
     digest_6lorh_hdr();
   } else if (curr_page > 1) {
 	  TRice("err:input: page %u not supported\n", curr_page);
-    return;
+    return 0;
   }
 
   /* Process next dispatch and headers */
@@ -1913,7 +1914,7 @@ static void input(sUipBuff *rxBuff)
   } else {
 	  TRice("err:uncompression: unknown dispatch: 0x%02x, or IPHC disabled\n",
              PACKETBUF_6LO_PTR[PACKETBUF_6LO_DISPATCH] & SICSLOWPAN_DISPATCH_IPHC_MASK);
-    return;
+    return 0;
   }
 
 #if SICSLOWPAN_CONF_FRAG
@@ -1928,7 +1929,7 @@ static void input(sUipBuff *rxBuff)
    */
   if(packetbuf_datalen(&rxPacket) < packetbuf_hdr_len) {
 	  TRice("err:input: packet dropped due to header > total packet\n");
-    return;
+    return 0;
   }
   packetbuf_payload_len = packetbuf_datalen(&rxPacket) - packetbuf_hdr_len;
 
@@ -1950,7 +1951,7 @@ static void input(sUipBuff *rxBuff)
        * cause an overflow in uipbuf */
       clear_fragments(frag_context);
 #endif /* SICSLOWPAN_CONF_FRAG */
-      return;
+      return 0;
     }
   }
 
@@ -1975,7 +1976,7 @@ static void input(sUipBuff *rxBuff)
       frag_info[frag_context].reassembled_len = frag_size;
       /* copy to uip */
       if(!copy_frags2uip(rxBuff->buff.u8, frag_context)) {
-        return;
+        return 0;
       }
     }
   }
@@ -2020,9 +2021,11 @@ static void input(sUipBuff *rxBuff)
 #endif /*  LLSEC802154_USES_AUX_HEADER */
 #warning "TCP_IP attaches here"
     //tcpip_input();
+    return 1;
 #if SICSLOWPAN_CONF_FRAG
   }
 #endif /* SICSLOWPAN_CONF_FRAG */
+  return 0;
 }
 /** @} */
 
