@@ -326,14 +326,14 @@ void uip_setipid(uint16_t id);
  #define BUF ((struct uip_eth_hdr *)&uip_buf[0])
  uip_len = ethernet_devicedrver_poll();
  if(uip_len > 0) {
- if(BUF->type == UIP_HTONS(UIP_ETHTYPE_IP)) {
+ if(BUF->type == __REVSH(UIP_ETHTYPE_IP)) {
  uip_arp_ipin();
  uip_input();
  if(uip_len > 0) {
  uip_arp_out();
  ethernet_devicedriver_send();
  }
- } else if(BUF->type == UIP_HTONS(UIP_ETHTYPE_ARP)) {
+ } else if(BUF->type == __REVSH(UIP_ETHTYPE_ARP)) {
  uip_arp_arpin();
  if(uip_len > 0) {
  ethernet_devicedriver_send();
@@ -510,10 +510,10 @@ void uip_reass_over(void);
  * Start listening to the specified port.
  *
  * \note Since this function expects the port number in network byte
- * order, a conversion using UIP_HTONS() or uip_htons() is necessary.
+ * order, a conversion using __REVSH() is necessary.
  *
  \code
- uip_listen(UIP_HTONS(80));
+ uip_listen(__REVSH(80));
  \endcode
  *
  * \param port A 16-bit port number in network byte order.
@@ -524,10 +524,10 @@ void uip_listen(uint16_t port);
  * Stop listening to the specified port.
  *
  * \note Since this function expects the port number in network byte
- * order, a conversion using UIP_HTONS() or uip_htons() is necessary.
+ * order, a conversion using __REVSH() is necessary.
  *
  \code
- uip_unlisten(UIP_HTONS(80));
+ uip_unlisten(__REVSH(80));
  \endcode
  *
  * \param port A 16-bit port number in network byte order.
@@ -549,13 +549,13 @@ void uip_unlisten(uint16_t port);
  * has been configured by defining UIP_ACTIVE_OPEN to 1 in uipopt.h.
  *
  * \note Since this function requires the port number to be in network
- * byte order, a conversion using UIP_HTONS() or uip_htons() is necessary.
+ * byte order, a conversion using __REVSH() is necessary.
  *
  \code
  uip_ipaddr_t ipaddr;
 
  uip_ipaddr(&ipaddr, 192,168,1,2);
- uip_connect(&ipaddr, UIP_HTONS(80));
+ uip_connect(&ipaddr, __REVSH(80));
  \endcode
  *
  * \param ripaddr The IP address of the remote host.
@@ -821,9 +821,9 @@ void uip_send(const void *data, int len);
  struct uip_udp_conn *c;
 
  uip_ipaddr(&addr, 192,168,2,1);
- c = uip_udp_new(&addr, UIP_HTONS(12345));
+ c = uip_udp_new(&addr, __REVSH(12345));
  if(c != NULL) {
- uip_udp_bind(c, UIP_HTONS(12344));
+ uip_udp_bind(c, __REVSH(12344));
  }
  \endcode
  * \param ripaddr The IP address of the remote host.
@@ -909,7 +909,7 @@ struct uip_udp_conn *uip_udp_new(const uip_ipaddr_t *ripaddr, uint16_t rport);
  struct uip_conn *c;
 
  uip_ipaddr(&ipaddr, 192,168,1,2);
- c = uip_connect(&ipaddr, UIP_HTONS(80));
+ c = uip_connect(&ipaddr, __REVSH(80));
  \endcode
  *
  * \param addr A pointer to a uip_ipaddr_t variable that will be
@@ -937,14 +937,14 @@ struct uip_udp_conn *uip_udp_new(const uip_ipaddr_t *ripaddr, uint16_t rport);
  * \hideinitializer
  */
 #define uip_ip6addr(addr, addr0,addr1,addr2,addr3,addr4,addr5,addr6,addr7) do { \
-    (addr)->u16[0] = UIP_HTONS(addr0);                                      \
-    (addr)->u16[1] = UIP_HTONS(addr1);                                      \
-    (addr)->u16[2] = UIP_HTONS(addr2);                                      \
-    (addr)->u16[3] = UIP_HTONS(addr3);                                      \
-    (addr)->u16[4] = UIP_HTONS(addr4);                                      \
-    (addr)->u16[5] = UIP_HTONS(addr5);                                      \
-    (addr)->u16[6] = UIP_HTONS(addr6);                                      \
-    (addr)->u16[7] = UIP_HTONS(addr7);                                      \
+    (addr)->u16[0] = __REVSH(addr0);                                      \
+    (addr)->u16[1] = __REVSH(addr1);                                      \
+    (addr)->u16[2] = __REVSH(addr2);                                      \
+    (addr)->u16[3] = __REVSH(addr3);                                      \
+    (addr)->u16[4] = __REVSH(addr4);                                      \
+    (addr)->u16[5] = __REVSH(addr5);                                      \
+    (addr)->u16[6] = __REVSH(addr6);                                      \
+    (addr)->u16[7] = __REVSH(addr7);                                      \
   } while(0)
 
 /**
@@ -1189,48 +1189,6 @@ struct uip_udp_conn *uip_udp_new(const uip_ipaddr_t *ripaddr, uint16_t rport);
  * \hideinitializer
  */
 #define uip_ipaddr4(addr) ((addr)->u8[3])
-
-/**
- * Convert 16-bit quantity from host byte order to network byte order.
- *
- * This macro is primarily used for converting constants from host
- * byte order to network byte order. For converting variables to
- * network byte order, use the uip_htons() function instead.
- *
- * \hideinitializer
- */
-#ifndef UIP_HTONS
-#   if UIP_BYTE_ORDER == UIP_BIG_ENDIAN
-#      define UIP_HTONS(n) (n)
-#      define UIP_HTONL(n) (n)
-#   else /* UIP_BYTE_ORDER == UIP_BIG_ENDIAN */
-#      define UIP_HTONS(n) (uint16_t)((((uint16_t) (n)) << 8) | (((uint16_t) (n)) >> 8))
-#      define UIP_HTONL(n) (((uint32_t)UIP_HTONS(n) << 16) | UIP_HTONS((uint32_t)(n) >> 16))
-#   endif /* UIP_BYTE_ORDER == UIP_BIG_ENDIAN */
-#else
-#error "UIP_HTONS already defined!"
-#endif /* UIP_HTONS */
-
-/**
- * Convert a 16-bit quantity from host byte order to network byte order.
- *
- * This function is primarily used for converting variables from host
- * byte order to network byte order. For converting constants to
- * network byte order, use the UIP_HTONS() macro instead.
- */
-#ifndef uip_htons
-uint16_t uip_htons(uint16_t val);
-#endif /* uip_htons */
-#ifndef uip_ntohs
-#define uip_ntohs uip_htons
-#endif
-
-#ifndef uip_htonl
-uint32_t uip_htonl(uint32_t val);
-#endif /* uip_htonl */
-#ifndef uip_ntohl
-#define uip_ntohl uip_htonl
-#endif
 
 /** @} */
 
@@ -1832,7 +1790,7 @@ extern uip_lladdr_t uip_lladdr;
 /** \brief set IP address a to the link local all-routers multicast address */
 #define uip_create_linklocal_allrouters_mcast(a) uip_ip6addr(a, 0xff02, 0, 0, 0, 0, 0, 0, 0x0002)
 #define uip_create_linklocal_prefix(addr) do { \
-    (addr)->u16[0] = UIP_HTONS(0xfe80);            \
+    (addr)->u16[0] = __REVSH(0xfe80);            \
     (addr)->u16[1] = 0;                        \
     (addr)->u16[2] = 0;                        \
     (addr)->u16[3] = 0;                        \
@@ -2092,6 +2050,8 @@ uint16_t uip_icmp6chksum(void);
  * \return true upon success, false otherwise.
  */
 uint8_t uip_remove_ext_hdr(void);
+
+char *uip6_printAddr(const uip_ip6addr_t*, int16_t*);
 
 #endif /* UIP_H_ */
 

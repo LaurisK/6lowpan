@@ -325,7 +325,8 @@ void uip_log(char *msg);
 #ifdef UIP_CONF_TCP
 #define UIP_TCP (UIP_CONF_TCP)
 #else /* UIP_CONF_TCP */
-#define UIP_TCP           1
+#warning "for now lets disable TPC/IP - work with udp only
+#define UIP_TCP           0//1
 #endif /* UIP_CONF_TCP */
 
 /**

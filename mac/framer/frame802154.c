@@ -97,35 +97,35 @@ static uint16_t mac_pan_id = IEEE802154_PANID;
 
 /* Private functions --------------------------------------------------------*/
 static void Print_fcf(frame802154_fcf_t *fcf) {
-//	TRice("msg:Frame bitfield of the frame control field (FCF)\n");
+//	TRice(iD(6695), "msg:Frame bitfield of the frame control field (FCF)\n");
 //	switch (fcf->frame_type) {
-//	case FRAME802154_BEACONFRAME:	TRice("msg:\t frame_type: \t FRAME802154_BEACONFRAME\n"); 		break;
-//	case FRAME802154_DATAFRAME: 	TRice("msg:\t frame_type: \t FRAME802154_DATAFRAME\n"); 		break;
-//	case FRAME802154_ACKFRAME: 		TRice("msg:\t frame_type: \t FRAME802154_ACKFRAME\n"); 			break;
-//	case FRAME802154_CMDFRAME: 		TRice("msg:\t frame_type: \t FRAME802154_CMDFRAME\n"); 			break;
-//	case FRAME802154_BEACONREQ: 	TRice("msg:\t frame_type: \t FRAME802154_BEACONREQ\n"); 		break;
-//	default:						TRice("msg:\t frame_type: \t undefined(%d)\n",fcf->frame_type);	break;
+//	case FRAME802154_BEACONFRAME:	TRice(iD(5111), "msg:\t frame_type: \t FRAME802154_BEACONFRAME\n"); 		break;
+//	case FRAME802154_DATAFRAME: 	TRice(iD(3078), "msg:\t frame_type: \t FRAME802154_DATAFRAME\n"); 		break;
+//	case FRAME802154_ACKFRAME: 		TRice(iD(4250), "msg:\t frame_type: \t FRAME802154_ACKFRAME\n"); 			break;
+//	case FRAME802154_CMDFRAME: 		TRice(iD(7483), "msg:\t frame_type: \t FRAME802154_CMDFRAME\n"); 			break;
+//	case FRAME802154_BEACONREQ: 	TRice(iD(1515), "msg:\t frame_type: \t FRAME802154_BEACONREQ\n"); 		break;
+//	default:						TRice(iD(2613), "msg:\t frame_type: \t undefined(%d)\n",fcf->frame_type);	break;
 //	}
-//	if (0 != fcf->security_enabled) 			TRice("msg:\t security_enabled\n");
-//	if (0 != fcf->frame_pending) 				TRice("msg:\t frame_pending\n");
-//	if (0 != fcf->ack_required) 				TRice("msg:\t ack_required\n");
-//	if (0 != fcf->panid_compression) 			TRice("msg:\t panid_compression\n");
-//	if (0 != fcf->sequence_number_suppression) 	TRice("msg:\t sequence_number_suppression\n");
-//	if (0 != fcf->ie_list_present) 				TRice("msg:\t ie_list_present\n");
+//	if (0 != fcf->security_enabled) 			TRice(iD(6594), "msg:\t security_enabled\n");
+//	if (0 != fcf->frame_pending) 				TRice(iD(3482), "msg:\t frame_pending\n");
+//	if (0 != fcf->ack_required) 				TRice(iD(1571), "msg:\t ack_required\n");
+//	if (0 != fcf->panid_compression) 			TRice(iD(7995), "msg:\t panid_compression\n");
+//	if (0 != fcf->sequence_number_suppression) 	TRice(iD(4819), "msg:\t sequence_number_suppression\n");
+//	if (0 != fcf->ie_list_present) 				TRice(iD(5551), "msg:\t ie_list_present\n");
 //	switch (fcf->dest_addr_mode) {
-//	case FRAME802154_NOADDR: 		TRice("msg:\t dest_addr_mode: \t FRAME802154_NOADDR\n"); 		break;
-//	case FRAME802154_SHORTADDRMODE: TRice("msg:\t dest_addr_mode: \t FRAME802154_SHORTADDRMODE\n"); break;
-//	case FRAME802154_LONGADDRMODE: 	TRice("msg:\t dest_addr_mode: \t FRAME802154_LONGADDRMODE\n"); 	break;
+//	case FRAME802154_NOADDR: 		TRice(iD(1760), "msg:\t dest_addr_mode: \t FRAME802154_NOADDR\n"); 		break;
+//	case FRAME802154_SHORTADDRMODE: TRice(iD(2415), "msg:\t dest_addr_mode: \t FRAME802154_SHORTADDRMODE\n"); break;
+//	case FRAME802154_LONGADDRMODE: 	TRice(iD(5975), "msg:\t dest_addr_mode: \t FRAME802154_LONGADDRMODE\n"); 	break;
 //	}
 //	switch (fcf->src_addr_mode) {
-//	case FRAME802154_NOADDR: 		TRice("msg:\t src_addr_mode: \t FRAME802154_NOADDR\n"); 		break;
-//	case FRAME802154_SHORTADDRMODE: TRice("msg:\t src_addr_mode: \t FRAME802154_SHORTADDRMODE\n"); 	break;
-//	case FRAME802154_LONGADDRMODE: 	TRice("msg:\t src_addr_mode: \t FRAME802154_LONGADDRMODE\n"); 	break;
+//	case FRAME802154_NOADDR: 		TRice(iD(7666), "msg:\t src_addr_mode: \t FRAME802154_NOADDR\n"); 		break;
+//	case FRAME802154_SHORTADDRMODE: TRice(iD(6753), "msg:\t src_addr_mode: \t FRAME802154_SHORTADDRMODE\n"); 	break;
+//	case FRAME802154_LONGADDRMODE: 	TRice(iD(7558), "msg:\t src_addr_mode: \t FRAME802154_LONGADDRMODE\n"); 	break;
 //	}
 //	switch (fcf->frame_version) {
-//	case FRAME802154_IEEE802154_2003:	TRice("msg:\t frame_version: \t FRAME802154_IEEE802154_2003\n"); 	break;
-//	case FRAME802154_IEEE802154_2006: 	TRice("msg:\t frame_version: \t FRAME802154_IEEE802154_2006\n"); 	break;
-//	case FRAME802154_IEEE802154_2015: 	TRice("msg:\t frame_version: \t FRAME802154_IEEE802154_2015\n"); 	break;
+//	case FRAME802154_IEEE802154_2003:	TRice(iD(1606), "msg:\t frame_version: \t FRAME802154_IEEE802154_2003\n"); 	break;
+//	case FRAME802154_IEEE802154_2006: 	TRice(iD(5312), "msg:\t frame_version: \t FRAME802154_IEEE802154_2006\n"); 	break;
+//	case FRAME802154_IEEE802154_2015: 	TRice(iD(4195), "msg:\t frame_version: \t FRAME802154_IEEE802154_2015\n"); 	break;
 //	}
 }
 /**
@@ -529,7 +529,7 @@ int frame802154_parse(uint8_t *data, int len, frame802154_t *pf) {
 #endif /* LLSEC802154_USES_EXPLICIT_KEYS */
 
   if(len < 2) {
-	  TRice("wrn:frame802154_parse(frame too short - %d)!\n", len);
+	  TRice(iD(6856), "wrn:frame802154_parse(frame too short - %d)!\n", len);
     return 0;
   }
 

@@ -135,6 +135,7 @@ void linkaddr_set_node_addr(linkaddr_t *addr);
 
 void linkaddr_get_node_addr(linkaddr_t *addr);
 void linkaddr_print(const linkaddr_t *addr);
+const char *linkaddr_printAddr(const linkaddr_t *addr);
 #ifdef __cplusplus
 }
 #endif
