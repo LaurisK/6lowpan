@@ -162,8 +162,7 @@ create_llao(uint8_t *llao, uint8_t type) {
  *
  */
 #if UIP_ND6_SEND_NA
-static void
-ns_input(void)
+static void ns_input(void)
 {
   uint8_t flags;
   TRiceS(iD(5544), "msg:Received NS from %s", uip6_printAddr(&UIP_IP_BUF->srcipaddr, NULL));
@@ -796,8 +795,7 @@ uip_nd6_rs_output(void)
     uip_len = uip_l3_icmp_hdr_len + UIP_ND6_RS_LEN + UIP_ND6_OPT_LLAO_LEN;
     uipbuf_set_len_field(UIP_IP_BUF, UIP_ICMPH_LEN + UIP_ND6_RS_LEN + UIP_ND6_OPT_LLAO_LEN);
 
-    create_llao(&uip_buf[uip_l3_icmp_hdr_len + UIP_ND6_RS_LEN],
-                UIP_ND6_OPT_SLLAO);
+    create_llao(&uip_buf[uip_l3_icmp_hdr_len + UIP_ND6_RS_LEN], UIP_ND6_OPT_SLLAO);
   }
 
   UIP_ICMP_BUF->icmpchksum = 0;
@@ -827,9 +825,7 @@ ra_input(void)
   UIP_STAT(++uip_stat.nd6.recv);
 
 #if UIP_CONF_IPV6_CHECKS
-  if((UIP_IP_BUF->ttl != UIP_ND6_HOP_LIMIT) ||
-     (!uip_is_addr_linklocal(&UIP_IP_BUF->srcipaddr)) ||
-     (UIP_ICMP_BUF->icode != 0)) {
+  if((UIP_IP_BUF->ttl != UIP_ND6_HOP_LIMIT) || (!uip_is_addr_linklocal(&UIP_IP_BUF->srcipaddr)) || (UIP_ICMP_BUF->icode != 0)) {
 	  TRice(iD(3877), "err:RA received is bad");
     goto discard;
   }
@@ -925,7 +921,7 @@ ra_input(void)
             default:
               TRiceS(iD(5396), "dbg:Updating timer of prefix %s", uip6_printAddr(&addr->ipaddr, NULL));
               TRice(iD(1533), "dbg: new value %d\n", __REV(nd6_opt_prefix_info->validlt));
-              stimer_set(&prefix->vlifetime, __REV(nd6_opt_prefix_info->validlt));
+              Time_TimerSet(&prefix->vlifetime, __REV(nd6_opt_prefix_info->validlt));
               prefix->isinfinite = 0;
               break;
             }
@@ -944,11 +940,11 @@ ra_input(void)
             if(nd6_opt_prefix_info->validlt != UIP_ND6_INFINITE_LIFETIME) {
               /* The processing below is defined in RFC4862 section 5.5.3 e */
               TRiceS(iD(2134), "dbg:Updating timer of address %s", uip6_printAddr(&addr->ipaddr, NULL));
-              if((__REV(nd6_opt_prefix_info->validlt) > 2 * 60 * 60) || (__REV(nd6_opt_prefix_info->validlt) > stimer_remaining(&addr->vlifetime))) {
+              if((__REV(nd6_opt_prefix_info->validlt) > 2 * 60 * 60) || (__REV(nd6_opt_prefix_info->validlt) > Time_TimerRemaining(&addr->vlifetime))) {
             	TRice(iD(7581), "dbg: new value %lu\n", (unsigned long)__REV(nd6_opt_prefix_info->validlt));
-                stimer_set(&addr->vlifetime, __REV(nd6_opt_prefix_info->validlt));
+            	Time_TimerSet(&addr->vlifetime, __REV(nd6_opt_prefix_info->validlt));
               } else {
-                stimer_set(&addr->vlifetime, 2 * 60 * 60);
+            	  Time_TimerSet(&addr->vlifetime, 2 * 60 * 60);
                 TRice(iD(2936), "dbg: new value %lu\n", (unsigned long)(2 * 60 * 60));
               }
               addr->isinfinite = 0;
@@ -996,8 +992,7 @@ ra_input(void)
                         (unsigned
                          long)(uip_ntohs(UIP_ND6_RA_BUF->router_lifetime)));
     } else {
-      stimer_set(&(defrt->lifetime),
-                 (unsigned long)(uip_ntohs(UIP_ND6_RA_BUF->router_lifetime)));
+    	Time_TimerSet(&(defrt->lifetime), (unsigned long)(uip_ntohs(UIP_ND6_RA_BUF->router_lifetime)));
     }
   } else {
     if(defrt != NULL) {

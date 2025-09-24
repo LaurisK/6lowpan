@@ -485,9 +485,6 @@ void uip_setipid(uint16_t id);
     uip_process(UIP_UDP_TIMER); } while(0)
 #endif /* UIP_UDP */
 
-/** \brief Abandon the reassembly of the current packet */
-void uip_reass_over(void);
-
 /** Macro to access uip_aligned_buf as an array of bytes */
 //#define uip_buf (uip_aligned_buf.u8)
 
@@ -2052,6 +2049,7 @@ uint16_t uip_icmp6chksum(void);
 uint8_t uip_remove_ext_hdr(void);
 
 char *uip6_printAddr(const uip_ip6addr_t*, int16_t*);
+void uip6_init(void);
 
 #endif /* UIP_H_ */
 

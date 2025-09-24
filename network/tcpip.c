@@ -49,7 +49,11 @@
 //#include "net/routing/routing.h"
 #include "sicslowpan.h"
 #include "uipopt.h"
-
+#if defined(STM32H753xx)
+#include "trice.h"
+#else
+#include "App/common.h"
+#endif
 #include <string.h>
 
 
@@ -61,11 +65,6 @@ process_event_t tcpip_event;
 #if UIP_CONF_ICMP6
 process_event_t tcpip_icmp6_event;
 #endif /* UIP_CONF_ICMP6 */
-
-#if UIP_CONF_IPV6_REASSEMBLY
-/* Timer for reassembly. */
-extern struct etimer uip_reass_timer;
-#endif
 
 #if UIP_TCP
 /**
@@ -82,7 +81,7 @@ static struct internal_state {
 } s;
 
 /* Periodic check of active connections. */
-static struct etimer periodic;
+static TimerHandle_t periodicTim;
 #endif
 
 enum {
@@ -121,8 +120,8 @@ uint8_t tcpip_output(sUipBuff *tcpUipBuff, const uip_lladdr_t *addr) {
 /*---------------------------------------------------------------------------*/
 #if UIP_TCP
 static void start_periodic_tcp_timer(void) {
-  if(etimer_expired(&periodic)) {
-    etimer_restart(&periodic);
+  if(pdFALSE == xTimerIsTimerActive(periodicTim)) {
+	xTimerStart(periodicTim, 0);
   }
 }
 #endif /* UIP_TCP */
@@ -343,58 +342,6 @@ eventhandler(process_event_t ev, process_data_t data)
 #endif /* UIP_UDP */
     break;
 
-  case PROCESS_EVENT_TIMER:
-    /* We get this event if one of our timers have expired. */
-  {
-    /* Check the clock so see if we should call the periodic uIP
-           processing. */
-#if UIP_TCP
-    if(data == &periodic && etimer_expired(&periodic)) {
-      for(i = 0; i < UIP_TCP_CONNS; ++i) {
-        if(uip_conn_active(i)) {
-          /* Only restart the timer if there are active
-                 connections. */
-          etimer_restart(&periodic);
-          uip_periodic(i);
-          tcpip_ipv6_output();
-        }
-      }
-    }
-#endif /* UIP_TCP */
-
-#if UIP_CONF_IPV6_REASSEMBLY
-    /*
-     * check the timer for reassembly
-     */
-    if(data == &uip_reass_timer &&
-        etimer_expired(&uip_reass_timer)) {
-      uip_reass_over();
-      tcpip_ipv6_output();
-    }
-#endif /* UIP_CONF_IPV6_REASSEMBLY */
-    /*
-     * check the different timers for neighbor discovery and
-     * stateless autoconfiguration
-     */
-    /*if(data == &uip_ds6_timer_periodic &&
-           etimer_expired(&uip_ds6_timer_periodic)) {
-          uip_ds6_periodic();
-          tcpip_ipv6_output();
-        }*/
-#if 0 /*!UIP_CONF_ROUTER*/
-    if(data == &uip_ds6_timer_rs &&
-        etimer_expired(&uip_ds6_timer_rs)) {
-      uip_ds6_send_rs();
-      tcpip_ipv6_output();
-    }
-#endif /* !UIP_CONF_ROUTER */
-    if(data == &uip_ds6_timer_periodic && etimer_expired(&uip_ds6_timer_periodic)) {
-      uip_ds6_periodic();
-      tcpip_ipv6_output();
-    }
-  }
-  break;
-
 #if UIP_TCP
   case TCP_POLL:
     if(data != NULL) {
@@ -423,8 +370,7 @@ eventhandler(process_event_t ev, process_data_t data)
 void
 tcpip_input(void)
 {
-  if(netstack_process_ip_callback(NETSTACK_IP_INPUT, NULL) ==
-     NETSTACK_IP_PROCESS) {
+  if(netstack_process_ip_callback(NETSTACK_IP_INPUT, NULL) == NETSTACK_IP_PROCESS) {
     process_post_synch(&tcpip_process, PACKET_INPUT, NULL);
   } /* else - do nothing and drop */
   uipbuf_clear();
@@ -585,7 +531,7 @@ send_nd6_ns(const uip_ipaddr_t *nexthop)
       uip_nd6_ns_output(NULL, NULL, &nbr->ipaddr);
     }
 
-    stimer_set(&nbr->sendns, uip_ds6_if.retrans_timer / 1000);
+   Time_TimerSet(&nbr->sendns, uip_ds6_if.retrans_timer / 1000);
     nbr->nscount = 1;
     /* Send the first NS try from here (multicast destination IP address). */
   }
@@ -596,8 +542,7 @@ send_nd6_ns(const uip_ipaddr_t *nexthop)
   return err;
 }
 /*---------------------------------------------------------------------------*/
-void
-tcpip_ipv6_output(void)
+void tcpip_ipv6_output(void)
 {
   uip_ipaddr_t ipaddr;
   uip_ds6_nbr_t *nbr = NULL;
@@ -683,7 +628,7 @@ tcpip_ipv6_output(void)
      DELAY, or PROBE). See RFC 4861, section 7.3.3 on node behavior. */
   if(nbr->state == NBR_STALE) {
     nbr->state = NBR_DELAY;
-    stimer_set(&nbr->reachable, UIP_ND6_DELAY_FIRST_PROBE_TIME);
+    Time_TimerSet(&nbr->reachable, UIP_ND6_DELAY_FIRST_PROBE_TIME);
     nbr->nscount = 0;
     TRice(iD(5421), "msg:output: nbr cache entry stale moving to delay\n");
   }
@@ -778,7 +723,6 @@ PROCESS_THREAD(tcpip_process, ev, data)
 #if UIP_TCP
   memset(s.listenports, 0, UIP_LISTENPORTS*sizeof(*(s.listenports)));
   s.p = PROCESS_CURRENT();
-  etimer_set(&periodic, CLOCK_SECOND / 2);
 #endif
 
   tcpip_event = process_alloc_event();
@@ -786,12 +730,13 @@ PROCESS_THREAD(tcpip_process, ev, data)
   tcpip_icmp6_event = process_alloc_event();
 #endif /* UIP_CONF_ICMP6 */
 
-  uip_init();
 #ifdef UIP_FALLBACK_INTERFACE
   UIP_FALLBACK_INTERFACE.init();
 #endif
   /* Initialize routing protocol */
-  NETSTACK_ROUTING.init();
+#warning "NETSTACK_ROUTING init here."
+  uip6_init();
+  //NETSTACK_ROUTING.init();
 
   while(1) {
     PROCESS_YIELD();
@@ -799,5 +744,34 @@ PROCESS_THREAD(tcpip_process, ev, data)
   }
 
   PROCESS_END();
+}
+
+#if UIP_TCP
+static void HandleTcpipPeriodicTimer(TimerHandle_t periodicTim) {
+	uint8_t i = UIP_TCP_CONNS;
+	uint8_t noActiveConn = true;
+    while(i) {
+      i--;
+      if(uip_conn_active(i)) {
+        /* Only restart the timer if there are active
+               connections. */
+        uip_periodic(i);
+        tcpip_ipv6_output();
+        noActiveConn = false;
+      }
+    }
+    if (noActiveConn) {
+    	xTimerStop(periodicTim, 0);
+    }
+}
+#endif
+
+void tcpip_init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void))) {
+#if UIP_TCP
+	  periodicTim = xTimerCreate("tcpipPeriodicTimer", pdMS_TO_TICKS(500), pdTRUE, 0, HandleTcpipPeriodicTimer);
+	  xTimerStart(periodicTim, 0);
+#endif
+  uip_init();
+  sicslowpan_driver.init((uint16_t)radio_radioEvent, SendPackedEvent);
 }
 /*---------------------------------------------------------------------------*/

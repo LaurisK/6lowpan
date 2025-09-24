@@ -338,7 +338,7 @@ void tcpip_input(void);
  * \brief Output packet to layer 2
  * The eventual parameter is the MAC address of the destination.
  */
-uint8_t tcpip_output(const uip_lladdr_t *);
+uint8_t tcpip_output(sUipBuff *tcpUipBuff, const uip_lladdr_t *);
 
 /**
  * \brief This function does address resolution and then calls tcpip_output
@@ -361,6 +361,8 @@ extern unsigned char tcpip_is_forwarding;
 /** @} */
 
 PROCESS_NAME(tcpip_process);
+
+void tcpip_init(uint16_t, void (*)(uint16_t, void(*)(void)));
 
 #endif /* TCPIP_H_ */
 

@@ -43,6 +43,7 @@
 #define UIP_DS6_H_
 
 #include "uip.h"
+#include "App/Time/time.h"
 //#include "net/ipv6/multicast/uip-mcast6.h"
 //#include "sys/stimer.h"
 /* The size of uip_ds6_addr_t depends on UIP_ND6_DEF_MAXDADNS. Include uip-nd6.h to define it. */
@@ -196,7 +197,7 @@ typedef struct uip_ds6_prefix {
   uint8_t isused;
   uip_ipaddr_t ipaddr;
   uint8_t length;
-  struct stimer vlifetime;
+  sTimeTimer vlifetime;
   uint8_t isinfinite;
 } uip_ds6_prefix_t;
 #endif /*UIP_CONF_ROUTER */
@@ -208,7 +209,7 @@ typedef struct uip_ds6_addr {
   uint8_t state;
   uint8_t type;
   uint8_t isinfinite;
-  struct stimer vlifetime;
+  sTimeTimer vlifetime;
 #if UIP_ND6_DEF_MAXDADNS > 0
   struct timer dadtimer;
   uint8_t dadnscount;
@@ -255,12 +256,9 @@ typedef struct uip_ds6_element {
 
 /*---------------------------------------------------------------------------*/
 extern uip_ds6_netif_t uip_ds6_if;
-extern struct etimer uip_ds6_timer_periodic;
 
 #if UIP_CONF_ROUTER
 extern uip_ds6_prefix_t uip_ds6_prefix_list[UIP_DS6_PREFIX_NB];
-#else /* UIP_CONF_ROUTER */
-extern struct etimer uip_ds6_timer_rs;
 #endif /* UIP_CONF_ROUTER */
 
 
@@ -285,16 +283,12 @@ uint8_t uip_ds6_list_loop(uip_ds6_element_t *list, uint8_t size,
 /** @{ */
 #if UIP_CONF_ROUTER
 uip_ds6_prefix_t *uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t length,
-                                     uint8_t advertise, uint8_t flags,
-                                     unsigned long vtime,
-                                     unsigned long ptime);
+                                     uint8_t advertise, uint8_t flags, uint32_t vtime, uint32_t ptime);
 #else /* UIP_CONF_ROUTER */
-uip_ds6_prefix_t *uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t length,
-                                     unsigned long interval);
+uip_ds6_prefix_t *uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t length, uint32_t interval);
 #endif /* UIP_CONF_ROUTER */
 void uip_ds6_prefix_rm(uip_ds6_prefix_t *prefix);
-uip_ds6_prefix_t *uip_ds6_prefix_lookup(uip_ipaddr_t *ipaddr,
-                                        uint8_t ipaddrlen);
+uip_ds6_prefix_t *uip_ds6_prefix_lookup(uip_ipaddr_t *ipaddr, uint8_t ipaddrlen);
 uint8_t uip_ds6_is_addr_onlink(uip_ipaddr_t *ipaddr);
 
 /**
@@ -318,8 +312,7 @@ void uip_ds6_set_default_prefix(const uip_ip6addr_t *prefix);
 /** \name Unicast address list basic routines */
 /** @{ */
 /** \brief Add a unicast address to the interface */
-uip_ds6_addr_t *uip_ds6_addr_add(uip_ipaddr_t *ipaddr,
-                                 unsigned long vlifetime, uint8_t type);
+uip_ds6_addr_t *uip_ds6_addr_add(uip_ipaddr_t *ipaddr, uint32_t vlifetime, uint8_t type);
 void uip_ds6_addr_rm(uip_ds6_addr_t *addr);
 uip_ds6_addr_t *uip_ds6_addr_lookup(uip_ipaddr_t *ipaddr);
 uip_ds6_addr_t *uip_ds6_get_link_local(int8_t state);
@@ -372,9 +365,6 @@ void uip_ds6_send_ra_sollicited(void);
 /** \brief Send a periodic RA */
 void uip_ds6_send_ra_periodic(void);
 #endif /* UIP_ND6_SEND_RA */
-#else /* UIP_CONF_ROUTER */
-/** \brief Send periodic RS to find router */
-void uip_ds6_send_rs(void);
 #endif /* UIP_CONF_ROUTER */
 
 /** \brief Compute the reachable time based on base reachable time, see RFC 4861*/

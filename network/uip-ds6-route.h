@@ -41,6 +41,7 @@
 #define UIP_DS6_ROUTE_H
 
 #include "uip.h"
+#include "App/Time/time.h"
 //#include "net/nbr-table.h"
 //#include "sys/stimer.h"
 //#include "lib/list.h"
@@ -194,7 +195,7 @@ struct uip_ds6_route_neighbor_route {
 typedef struct uip_ds6_defrt {
   struct uip_ds6_defrt *next;
   uip_ipaddr_t ipaddr;
-  struct stimer lifetime;
+  sTimeTimer lifetime;
   uint8_t isinfinite;
 } uip_ds6_defrt_t;
 

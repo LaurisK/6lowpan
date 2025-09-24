@@ -606,7 +606,7 @@ uip_ds6_defrt_add(const uip_ipaddr_t *ipaddr, unsigned long interval)
 
   uip_ipaddr_copy(&d->ipaddr, ipaddr);
   if(interval != 0) {
-    stimer_set(&d->lifetime, interval);
+	  Time_TimerSet(&d->lifetime, interval);
     d->isinfinite = 0;
   } else {
     d->isinfinite = 1;
@@ -704,7 +704,7 @@ uip_ds6_defrt_periodic(void)
   d = list_head(defaultrouterlist);
   while(d != NULL) {
     if(!d->isinfinite &&
-       stimer_expired(&d->lifetime)) {
+    		Time_TimerExpired(&d->lifetime)) {
     	TRice(iD(3584), "msg:Default route periodic: defrt lifetime expired\n");
       uip_ds6_defrt_rm(d);
       d = list_head(defaultrouterlist);

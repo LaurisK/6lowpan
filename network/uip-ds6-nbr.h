@@ -48,6 +48,7 @@
 
 //#include "contiki.h"
 #include "uip.h"
+#include "App/Time/time.h"
 //#include "net/ipv6/uip-nd6.h"
 //#include "net/nbr-table.h"
 //#include "sys/stimer.h"
@@ -111,8 +112,8 @@ typedef struct uip_ds6_nbr {
   uint8_t isrouter;
   uint8_t state;
 #if UIP_ND6_SEND_NS || UIP_ND6_SEND_RA
-  struct stimer reachable;
-  struct stimer sendns;
+  sTimeTimer reachable;
+  sTimeTimer sendns;
   uint8_t nscount;
 #endif /* UIP_ND6_SEND_NS || UIP_ND6_SEND_RA */
 #if UIP_CONF_IPV6_QUEUE_PKT

@@ -72,6 +72,7 @@
  */
 
 //#include "sys/cc.h"
+#include <stdio.h>
 #include "uip.h"
 //#include "net/ipv6/uip-arch.h"
 //#include "net/ipv6/uipopt.h"
@@ -80,6 +81,11 @@
 //#include "net/ipv6/uip-ds6.h"
 //#include "net/ipv6/multicast/uip-mcast6.h"
 //#include "net/routing/routing.h"
+#if defined(STM32H753xx)
+#include "trice.h"
+#else
+#include "App/common.h"
+#endif
 
 #if UIP_ND6_SEND_NS
 #include "net/ipv6/uip-ds6-nbr.h"
@@ -241,6 +247,9 @@ struct uip_icmp6_conn uip_icmp6_conns;
 #endif /*UIP_CONF_ICMP6*/
 /** @} */
 static char printAddrBuff[IP_STRING_LEN];
+#if UIP_CONF_IPV6_REASSEMBLY
+static TimerHandle_t reassemblyTmo;
+#endif /*UIP_CONF_IPV6_REASSEMBLY*/
 /*---------------------------------------------------------------------------*/
 /* Functions                                                                 */
 /*---------------------------------------------------------------------------*/
@@ -614,8 +623,6 @@ static uint8_t uip_reassflags;
  *  +------------------+--------+--------------+
  */
 
-
-struct etimer uip_reass_timer; /**< Timer for reassembly */
 uint8_t uip_reass_on; /* equal to 1 if we are currently reassembling a packet */
 
 static uint32_t uip_id; /* For every packet that is to be fragmented, the source
@@ -638,7 +645,7 @@ uip_reass(uint8_t *prev_proto_ptr)
 	TRice(iD(2821), "msg:Starting reassembly\n");
     memcpy(FBUF, UIP_IP_BUF, uip_ext_len + UIP_IPH_LEN);
     /* temporary in case we do not receive the fragment with offset 0 first */
-    etimer_set(&uip_reass_timer, UIP_REASS_MAXAGE*CLOCK_SECOND);
+    xTimerStart(reassemblyTmo, 0);
     uip_reass_on = 1;
     uip_reassflags = 0;
     uip_id = frag_buf->id;
@@ -677,7 +684,7 @@ uip_reass(uint8_t *prev_proto_ptr)
     if(offset > UIP_REASS_BUFSIZE ||
        offset + len > UIP_REASS_BUFSIZE) {
       uip_reass_on = 0;
-      etimer_stop(&uip_reass_timer);
+      xTimerStop(reassemblyTmo, 0);
       return 0;
     }
 
@@ -699,7 +706,7 @@ uip_reass(uint8_t *prev_proto_ptr)
         /* not clear if we should interrupt reassembly, but it seems so from
            the conformance tests */
         uip_reass_on = 0;
-        etimer_stop(&uip_reass_timer);
+        xTimerStop(reassemblyTmo, 0);
         return uip_len;
       }
     }
@@ -749,7 +756,7 @@ uip_reass(uint8_t *prev_proto_ptr)
       /* If we have come this far, we have a full packet in the
          buffer, so we copy it to uip_buf. We also reset the timer. */
       uip_reass_on = 0;
-      etimer_stop(&uip_reass_timer);
+      xTimerStop(reassemblyTmo, 0);
 
       uip_reasslen += UIP_IPH_LEN + uip_ext_len;
       memcpy(UIP_IP_BUF, FBUF, uip_reasslen);
@@ -765,13 +772,12 @@ uip_reass(uint8_t *prev_proto_ptr)
   return 0;
 }
 
-void
-uip_reass_over(void)
+static void uip_reass_over(void)
 {
   /* to late, we abandon the reassembly of the packet */
 
   uip_reass_on = 0;
-  etimer_stop(&uip_reass_timer);
+  xTimerStop(reassemblyTmo, 0);
 
   if(uip_reassflags & UIP_REASS_FLAG_FIRSTFRAG){
 	  TRice(iD(1542), "err:fragmentation timeout\n");
@@ -792,6 +798,11 @@ uip_reass_over(void)
     UIP_STAT(++uip_stat.ip.sent);
     uip_flags = 0;
   }
+}
+
+static void HandleReassemblyTmo(TimerHandle_t reassTmo) {
+    uip_reass_over();
+    tcpip_ipv6_output();
 }
 
 #endif /* UIP_CONF_IPV6_REASSEMBLY */
@@ -831,8 +842,7 @@ ext_hdr_options_process(uint8_t *ext_buf)
 
     if(opt_offset + opt_len > ext_hdr_len) {
     	TRice(iD(3623), "err:Extension header option too long: dropping packet\n");
-      uip_icmp6_error_output(ICMP6_PARAM_PROB, ICMP6_PARAMPROB_OPTION,
-          (ext_buf + opt_offset) - uip_buf);
+      uip_icmp6_error_output(ICMP6_PARAM_PROB, ICMP6_PARAMPROB_OPTION, (ext_buf + opt_offset) - uip_buf);
       return 2;
     }
 
@@ -2353,7 +2363,7 @@ uip_send(const void *data, int len)
 #define DEFINED_IPV6_ADDR_MASK (sizeof(uip_ip6addr_t))
 static const uip_ip6addr_t IPv4MappedIPv6 = {.u16 = {0, 0, 0, 0, 0, 0xFFFF, 0, 0}};
 static const uip_ip6addr_t loopbackIPv6 = {.u16 = {0, 0, 0, 0, 0, 0, 0, 1}};
-static const uip_ip6addr_t loopbackIPv6 = {.u16 = {0, 0, 0, 0, 0, 0, 0, 0}};
+static const uip_ip6addr_t unspecifiedIPv6 = {.u16 = {0, 0, 0, 0, 0, 0, 0, 0}};
 /*---------------------------------------------------------------------------*/
 char *uip6_printAddr(const uip_ipaddr_t *addr, int16_t *len)
 {
@@ -2361,11 +2371,11 @@ char *uip6_printAddr(const uip_ipaddr_t *addr, int16_t *len)
 
   if(addr == NULL) {
 	stringLen = snprintf(printAddrBuff, IP_STRING_LEN, "[NULL IP addr]");
-  } else if(0 == memcmp(addr, loopbackIPv6, DEFINED_IPV6_ADDR_MASK)) {
+  } else if(0 == memcmp(addr, &loopbackIPv6, DEFINED_IPV6_ADDR_MASK)) {
 	stringLen = snprintf(printAddrBuff, IP_STRING_LEN, "::1 [Loopback Address]");
-  } else if(0 == memcmp(addr, loopbackIPv6, DEFINED_IPV6_ADDR_MASK)) {
+  } else if(0 == memcmp(addr, &unspecifiedIPv6, DEFINED_IPV6_ADDR_MASK)) {
 	stringLen = snprintf(printAddrBuff, IP_STRING_LEN, ":: [Unspecified Address]");
-  } else if(0 == memcmp(addr, IPv4MappedIPv6, IPV4_MAPPED_IPV6_MASK)) {
+  } else if(0 == memcmp(addr, &IPv4MappedIPv6, IPV4_MAPPED_IPV6_MASK)) {
     /*
      * Printing IPv4-mapped addresses is done according to RFC 4291 [1]
      *
@@ -2405,5 +2415,11 @@ char *uip6_printAddr(const uip_ipaddr_t *addr, int16_t *len)
 	  *len = stringLen;
   }
   return printAddrBuff;
+}
+
+void uip6_init(void) {
+#if UIP_CONF_IPV6_REASSEMBLY
+	reassemblyTmo = xTimerCreate("uIP6 reassembly", pdMS_TO_TICKS(1000 * UIP_REASS_MAXAGE), pdFALSE, 0, HandleReassemblyTmo);
+#endif /*UIP_CONF_IPV6_REASSEMBLY*/
 }
 /** @} */

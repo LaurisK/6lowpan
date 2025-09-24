@@ -182,12 +182,12 @@ uip_ds6_nbr_add(const uip_ipaddr_t *ipaddr, const uip_lladdr_t *lladdr,
 #endif /* UIP_CONF_IPV6_QUEUE_PKT */
 #if UIP_ND6_SEND_NS
     if(nbr->state == NBR_REACHABLE) {
-      stimer_set(&nbr->reachable, UIP_ND6_REACHABLE_TIME / 1000);
+    	Time_TimerSet(&nbr->reachable, UIP_ND6_REACHABLE_TIME / 1000);
     } else {
       /* We set the timer in expired state */
-      stimer_set(&nbr->reachable, 0);
+    	Time_TimerSet(&nbr->reachable, 0);
     }
-    stimer_set(&nbr->sendns, 0);
+    Time_TimerSet(&nbr->sendns, 0);
     nbr->nscount = 0;
 #endif /* UIP_ND6_SEND_NS */
     TRiceS(iD(3927), "msg:Adding neighbor with ip addr %s link addr ", uip6_printAddr(ipaddr, NULL));
@@ -323,8 +323,8 @@ uip_ds6_nbr_update_ll(uip_ds6_nbr_t **nbr_pp, const uip_lladdr_t *new_ll_addr)
         nbr_table_add_lladdr(uip_ds6_nbr_entries,
                              (const linkaddr_t*)new_ll_addr,
                              NBR_TABLE_REASON_IPV6_ND, NULL)) == NULL) {
-    	TRice(iD(4100), "err:%s: cannot allocate a nbr_entry for", __func__);
-      LOG_ERR_LLADDR((const linkaddr_t *)new_ll_addr);
+    	TRiceS(iD(2644), "err:%s: cannot allocate a nbr_entry for", __func__);
+    	TRiceS(iD(5764), "err:%s\n", linkaddr_printAddr(new_ll_addr));
       return -1;
     } else {
       LIST_STRUCT_INIT(nbr_entry, uip_ds6_nbrs);
@@ -343,22 +343,21 @@ uip_ds6_nbr_update_ll(uip_ds6_nbr_t **nbr_pp, const uip_lladdr_t *new_ll_addr)
 
   /* make sure new_ll_addr is not used in some other nbr */
   if(uip_ds6_nbr_ll_lookup(new_ll_addr) != NULL) {
-	  TRice(iD(6566), "err:%s: new_ll_addr, ", __func__);
-    LOG_ERR_LLADDR((const linkaddr_t *)new_ll_addr);
-    LOG_ERR_(", is already used in another nbr\n");
+	TRiceS(iD(5535), "err:%s: new_ll_addr, ", __func__);
+  	TRiceS(iD(7841), "err:%s, is already used in another nbr\n", linkaddr_printAddr(new_ll_addr));
     return -1;
   }
 
   memcpy(&nbr_backup, *nbr_pp, sizeof(uip_ds6_nbr_t));
   if(uip_ds6_nbr_rm(*nbr_pp) == 0) {
-	  TRice(iD(3571), "err:%s: input nbr cannot be removed\n", __func__);
+	  TRiceS(iD(3317), "err:%s: input nbr cannot be removed\n", __func__);
     return -1;
   }
 
   if((*nbr_pp = uip_ds6_nbr_add(&nbr_backup.ipaddr, new_ll_addr,
                                 nbr_backup.isrouter, nbr_backup.state,
                                 NBR_TABLE_REASON_IPV6_ND, NULL)) == NULL) {
-	  TRice(iD(1039), "err:%s: cannot allocate a new nbr for new_ll_addr\n", __func__);
+	  TRiceS(iD(5709), "err:%s: cannot allocate a new nbr for new_ll_addr\n", __func__);
     return -1;
   }
   memcpy(*nbr_pp, &nbr_backup, sizeof(uip_ds6_nbr_t));
@@ -508,10 +507,9 @@ update_nbr_reachable_state_by_ack(uip_ds6_nbr_t *nbr, const linkaddr_t *lladdr)
 {
   if(nbr != NULL && nbr->state != NBR_INCOMPLETE) {
     nbr->state = NBR_REACHABLE;
-    stimer_set(&nbr->reachable, UIP_ND6_REACHABLE_TIME / 1000);
+    Time_TimerSet(&nbr->reachable, UIP_ND6_REACHABLE_TIME / 1000);
     TRice(iD(2536), "msg:received a link layer ACK : ");
-    LOG_INFO_LLADDR(lladdr);
-    LOG_INFO_(" is reachable.\n");
+  	TRiceS(iD(4690), "msg:%s is reachable.\n", linkaddr_printAddr(lladdr));
   }
 }
 #endif /* UIP_DS6_LL_NUD */
@@ -571,7 +569,7 @@ uip_ds6_neighbor_periodic(void)
   while(nbr != NULL) {
     switch(nbr->state) {
     case NBR_REACHABLE:
-      if(stimer_expired(&nbr->reachable)) {
+      if(Time_TimerExpired(&nbr->reachable)) {
 #if UIP_CONF_ROUTER
         /* when a neighbor leave its REACHABLE state and is a default router,
            instead of going to STALE state it enters DELAY state in order to
@@ -582,7 +580,7 @@ uip_ds6_neighbor_periodic(void)
         if(uip_ds6_defrt_lookup(&nbr->ipaddr) != NULL) {
           TRiceS(iD(1032), "msg:REACHABLE: defrt moving to DELAY (%s)\n", uip6_printAddr(&nbr->ipaddr, NULL));
           nbr->state = NBR_DELAY;
-          stimer_set(&nbr->reachable, UIP_ND6_DELAY_FIRST_PROBE_TIME);
+          Time_TimerSet(&nbr->reachable, UIP_ND6_DELAY_FIRST_PROBE_TIME);
           nbr->nscount = 0;
         } else {
           TRiceS(iD(6227), "msg:REACHABLE: moving to STALE (%s)\n", uip6_printAddr(&nbr->ipaddr, NULL));
@@ -597,19 +595,19 @@ uip_ds6_neighbor_periodic(void)
     case NBR_INCOMPLETE:
       if(nbr->nscount >= UIP_ND6_MAX_MULTICAST_SOLICIT) {
         uip_ds6_nbr_rm(nbr);
-      } else if(stimer_expired(&nbr->sendns) && (uip_len == 0)) {
+      } else if(Time_TimerExpired(&nbr->sendns) && (uip_len == 0)) {
         nbr->nscount++;
         TRice(iD(2949), "msg:NBR_INCOMPLETE: NS %u\n", nbr->nscount);
         uip_nd6_ns_output(NULL, NULL, &nbr->ipaddr);
-        stimer_set(&nbr->sendns, uip_ds6_if.retrans_timer / 1000);
+        Time_TimerSet(&nbr->sendns, uip_ds6_if.retrans_timer / 1000);
       }
       break;
     case NBR_DELAY:
-      if(stimer_expired(&nbr->reachable)) {
+      if(Time_TimerExpired(&nbr->reachable)) {
         nbr->state = NBR_PROBE;
         nbr->nscount = 0;
         TRice(iD(1824), "msg:DELAY: moving to PROBE\n");
-        stimer_set(&nbr->sendns, 0);
+        Time_TimerSet(&nbr->sendns, 0);
       }
       break;
     case NBR_PROBE:
@@ -622,11 +620,11 @@ uip_ds6_neighbor_periodic(void)
           }
         }
         uip_ds6_nbr_rm(nbr);
-      } else if(stimer_expired(&nbr->sendns) && (uip_len == 0)) {
+      } else if(Time_TimerExpired(&nbr->sendns) && (uip_len == 0)) {
         nbr->nscount++;
         TRice(iD(4144), "msg:PROBE: NS %u\n", nbr->nscount);
         uip_nd6_ns_output(NULL, &nbr->ipaddr, &nbr->ipaddr);
-        stimer_set(&nbr->sendns, uip_ds6_if.retrans_timer / 1000);
+        Time_TimerSet(&nbr->sendns, uip_ds6_if.retrans_timer / 1000);
       }
       break;
     default:
@@ -644,7 +642,7 @@ uip_ds6_nbr_refresh_reachable_state(const uip_ipaddr_t *ipaddr)
   if(nbr != NULL) {
     nbr->state = NBR_REACHABLE;
     nbr->nscount = 0;
-    stimer_set(&nbr->reachable, UIP_ND6_REACHABLE_TIME / 1000);
+    Time_TimerSet(&nbr->reachable, UIP_ND6_REACHABLE_TIME / 1000);
   }
 }
 /*---------------------------------------------------------------------------*/
@@ -655,8 +653,8 @@ uip_ds6_get_least_lifetime_neighbor(void)
   uip_ds6_nbr_t *nbr_expiring = NULL;
   while(nbr != NULL) {
     if(nbr_expiring != NULL) {
-      clock_time_t curr = stimer_remaining(&nbr->reachable);
-      if(curr < stimer_remaining(&nbr->reachable)) {
+      clock_time_t curr = Time_TimerRemaining(&nbr->reachable);
+      if(curr < Time_TimerRemaining(&nbr->reachable)) {
         nbr_expiring = nbr;
       }
     } else {

@@ -47,6 +47,11 @@
 #include "uip-icmp6.h"
 //#include "contiki-default-conf.h"
 //#include "net/routing/routing.h"
+#if defined(STM32H753xx)
+#include "trice.h"
+#else
+#include "App/common.h"
+#endif
 
 #define UIP_ICMP6_ERROR_BUF  ((struct uip_icmp6_error *)UIP_ICMP_PAYLOAD)
 
@@ -58,8 +63,7 @@ LIST(echo_reply_callback_list);
 /* List of input handlers */
 LIST(input_handler_list);
 /*---------------------------------------------------------------------------*/
-static uip_icmp6_input_handler_t *
-input_handler_lookup(uint8_t type, uint8_t icode)
+static uip_icmp6_input_handler_t *input_handler_lookup(uint8_t type, uint8_t icode)
 {
   uip_icmp6_input_handler_t *handler = NULL;
 
