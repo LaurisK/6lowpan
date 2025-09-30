@@ -43,18 +43,21 @@
 //#include "net/ipv6/uip-packetqueue.h"
 //
 //#include "net/ipv6/uip-nd6.h"
-#include "uip-ds6.h"
+#include <string.h>
 #include "tcpip.h"
+#include "uip-ds6.h"
+#include "uip-ds6-nbr.h"
+#include "uip-ds6-route.h"
 //#include "net/linkaddr.h"
 //#include "net/routing/routing.h"
 #include "sicslowpan.h"
 #include "uipopt.h"
+#include "cmsis_os.h"
 #if defined(STM32H753xx)
 #include "trice.h"
 #else
 #include "App/common.h"
 #endif
-#include <string.h>
 
 
 #ifdef UIP_FALLBACK_INTERFACE
@@ -370,7 +373,8 @@ eventhandler(process_event_t ev, process_data_t data)
 void
 tcpip_input(void)
 {
-  if(netstack_process_ip_callback(NETSTACK_IP_INPUT, NULL) == NETSTACK_IP_PROCESS) {
+#warning "netstack.c/h is for packet filtering, firewall or other functionality which is not needed for now"
+  if(1/*netstack_process_ip_callback(NETSTACK_IP_INPUT, NULL) == NETSTACK_IP_PROCESS*/) {
     process_post_synch(&tcpip_process, PACKET_INPUT, NULL);
   } /* else - do nothing and drop */
   uipbuf_clear();
@@ -531,7 +535,7 @@ send_nd6_ns(const uip_ipaddr_t *nexthop)
       uip_nd6_ns_output(NULL, NULL, &nbr->ipaddr);
     }
 
-   Time_TimerSet(&nbr->sendns, uip_ds6_if.retrans_timer / 1000);
+   Time_TimerSet(&nbr->sendns, Ds6_GetRetransmitTmoInMs() / 1000);
     nbr->nscount = 1;
     /* Send the first NS try from here (multicast destination IP address). */
   }

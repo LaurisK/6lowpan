@@ -74,13 +74,15 @@
 //#include "sys/cc.h"
 #include <stdio.h>
 #include "uip.h"
+#include "uip-ds6.h"
+#include "uip-icmp6.h"
 //#include "net/ipv6/uip-arch.h"
 //#include "net/ipv6/uipopt.h"
-//#include "net/ipv6/uip-icmp6.h"
 //#include "net/ipv6/uip-nd6.h"
 //#include "net/ipv6/uip-ds6.h"
 //#include "net/ipv6/multicast/uip-mcast6.h"
 //#include "net/routing/routing.h"
+#include "cmsis_os.h"
 #if defined(STM32H753xx)
 #include "trice.h"
 #else
@@ -563,7 +565,7 @@ uip_udp_new(const uip_ipaddr_t *ripaddr, uint16_t rport)
   } else {
     uip_ipaddr_copy(&conn->ripaddr, ripaddr);
   }
-  conn->ttl = uip_ds6_if.cur_hop_limit;
+  conn->ttl = Ds6_GetHopLimit();
 
   return conn;
 }
@@ -1469,8 +1471,7 @@ uip_process(uint8_t flag)
    * Search generic input handlers.
    * The handler is in charge of setting uip_len to 0
    */
-  if(uip_icmp6_input(UIP_ICMP_BUF->type,
-                     UIP_ICMP_BUF->icode) == UIP_ICMP6_INPUT_ERROR) {
+  if(uip_icmp6_input(UIP_ICMP_BUF->type, UIP_ICMP_BUF->icode) == UIP_ICMP6_INPUT_ERROR) {
 	  TRice(iD(5728), "err:Unknown ICMPv6 message type/code %d\n", UIP_ICMP_BUF->type);
     UIP_STAT(++uip_stat.icmp.drop);
     UIP_STAT(++uip_stat.icmp.typeerr);
@@ -2306,7 +2307,7 @@ uip_process(uint8_t flag)
   tcp_send_noconn:
   UIP_IP_BUF->proto = UIP_PROTO_TCP;
 
-  UIP_IP_BUF->ttl = uip_ds6_if.cur_hop_limit;
+  UIP_IP_BUF->ttl = Ds6_GetHopLimit();
   uipbuf_set_len_field(UIP_IP_BUF, uip_len - UIP_IPH_LEN);
 
   UIP_TCP_BUF->urgp[0] = UIP_TCP_BUF->urgp[1] = 0;

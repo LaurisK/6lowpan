@@ -853,20 +853,6 @@ struct uip_udp_conn *uip_udp_new(const uip_ipaddr_t *ripaddr, uint16_t rport);
  */
 #define uip_udp_bind(conn, port) (conn)->lport = port
 
-/**
- * Send a UDP datagram of length len on the current connection.
- *
- * This function can only be called in response to a UDP event (poll
- * or newdata). The data must be present in the uip_buf buffer, at the
- * place pointed to by the uip_appdata pointer.
- *
- * \param len The length of the data in the uip_buf buffer.
- *
- * \hideinitializer
- */
-#define uip_udp_send(len) uip_send((char *)uip_appdata, len)
-
-
 /** @} */
 
 /* uIP convenience and converting functions. */

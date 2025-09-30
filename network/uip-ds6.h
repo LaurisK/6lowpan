@@ -153,6 +153,23 @@
 #define UIP_DS6_LL_NUD UIP_CONF_DS6_LL_NUD
 #endif
 
+#ifdef UIP_CONF_ND6_REACHABLE_TIME
+#define UIP_ND6_REACHABLE_TIME         UIP_CONF_ND6_REACHABLE_TIME
+#else
+#define UIP_ND6_REACHABLE_TIME         60000
+#endif
+
+#ifndef UIP_CONF_ND6_DEF_MAXDADNS
+/** \brief Do not try DAD when using EUI-64 as allowed by draft-ietf-6lowpan-nd-15 section 8.2 */
+#if UIP_CONF_LL_802154
+#define UIP_ND6_DEF_MAXDADNS 0
+#else /* UIP_CONF_LL_802154 */
+#define UIP_ND6_DEF_MAXDADNS UIP_ND6_SEND_NS
+#endif /* UIP_CONF_LL_802154 */
+#else /* UIP_CONF_ND6_DEF_MAXDADNS */
+#define UIP_ND6_DEF_MAXDADNS UIP_CONF_ND6_DEF_MAXDADNS
+#endif /* UIP_CONF_ND6_DEF_MAXDADNS */
+
 /** \brief Possible states for the an address  (RFC 4862) */
 #define ADDR_TENTATIVE 0
 #define ADDR_PREFERRED 1
@@ -167,7 +184,7 @@
 /** \brief General DS6 definitions */
 /** Period for uip-ds6 periodic task*/
 #ifndef UIP_DS6_CONF_PERIOD
-#define UIP_DS6_PERIOD   (60 * CLOCK_SECOND)
+#define UIP_DS6_PERIOD   (60)
 #else
 #define UIP_DS6_PERIOD UIP_DS6_CONF_PERIOD
 #endif
@@ -228,25 +245,6 @@ typedef struct uip_ds6_maddr {
   uip_ipaddr_t ipaddr;
 } uip_ds6_maddr_t;
 
-/** \brief  Interface structure (contains all the interface variables) */
-typedef struct uip_ds6_netif {
-  uint32_t link_mtu;
-  uint8_t cur_hop_limit;
-  uint32_t base_reachable_time; /* in msec */
-  uint32_t reachable_time;      /* in msec */
-  uint32_t retrans_timer;       /* in msec */
-  uint8_t maxdadns;
-#if UIP_DS6_ADDR_NB
-  uip_ds6_addr_t addr_list[UIP_DS6_ADDR_NB];
-#endif /* UIP_DS6_ADDR_NB */
-#if UIP_DS6_AADDR_NB
-  uip_ds6_aaddr_t aaddr_list[UIP_DS6_AADDR_NB];
-#endif /* UIP_DS6_AADDR_NB */
-#if UIP_DS6_MADDR_NB
-  uip_ds6_maddr_t maddr_list[UIP_DS6_MADDR_NB];
-#endif /* UIP_DS6_MADDR_NB */
-} uip_ds6_netif_t;
-
 /** \brief Generic type for a DS6, to use a common loop though all DS */
 typedef struct uip_ds6_element {
   uint8_t isused;
@@ -255,8 +253,6 @@ typedef struct uip_ds6_element {
 
 
 /*---------------------------------------------------------------------------*/
-extern uip_ds6_netif_t uip_ds6_if;
-
 #if UIP_CONF_ROUTER
 extern uip_ds6_prefix_t uip_ds6_prefix_list[UIP_DS6_PREFIX_NB];
 #endif /* UIP_CONF_ROUTER */
@@ -367,9 +363,6 @@ void uip_ds6_send_ra_periodic(void);
 #endif /* UIP_ND6_SEND_RA */
 #endif /* UIP_CONF_ROUTER */
 
-/** \brief Compute the reachable time based on base reachable time, see RFC 4861*/
-uint32_t uip_ds6_compute_reachable_time(void); /** \brief compute random reachable timer */
-
 /** \name Macros to check if an IP address (unicast, multicast or anycast) is mine */
 /** @{ */
 #define uip_ds6_is_my_addr(addr)  (uip_ds6_addr_lookup(addr) != NULL)
@@ -377,5 +370,11 @@ uint32_t uip_ds6_compute_reachable_time(void); /** \brief compute random reachab
 #define uip_ds6_is_my_aaddr(addr) (uip_ds6_aaddr_lookup(addr) != NULL)
 /** @} */
 /** @} */
+
+uint8_t Ds6_GetHopLimit(void);
+void Ds6_SetHopLimit(const uint8_t);
+uint32_t Ds6_GetRetransmitTmoInMs(void);
+void Ds6_SetReachableTimes(const uint32_t);
+void Ds6_SetRetransmitTim(const uint32_t);
 
 #endif /* UIP_DS6_H_ */

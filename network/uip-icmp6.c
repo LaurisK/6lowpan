@@ -45,6 +45,7 @@
 #include <string.h>
 //#include "net/ipv6/uip-ds6.h"
 #include "uip-icmp6.h"
+#include "uip-ds6.h"
 //#include "contiki-default-conf.h"
 //#include "net/routing/routing.h"
 #if defined(STM32H753xx)
@@ -115,7 +116,7 @@ echo_request_input(void)
 	  TRiceS(iD(4343), "msg:to %s\n", uip6_printAddr(&UIP_IP_BUF->destipaddr, NULL));
 
   /* IP header */
-  UIP_IP_BUF->ttl = uip_ds6_if.cur_hop_limit;
+  UIP_IP_BUF->ttl = Ds6_GetHopLimit();
 
   if(uip_is_addr_mcast(&UIP_IP_BUF->destipaddr)){
     uip_ipaddr_copy(&UIP_IP_BUF->destipaddr, &UIP_IP_BUF->srcipaddr);
@@ -185,7 +186,7 @@ uip_icmp6_error_output(uint8_t type, uint8_t code, uint32_t param)
   UIP_IP_BUF->tcflow = 0;
   UIP_IP_BUF->flow = 0;
   UIP_IP_BUF->proto = UIP_PROTO_ICMP6;
-  UIP_IP_BUF->ttl = uip_ds6_if.cur_hop_limit;
+  UIP_IP_BUF->ttl = Ds6_GetHopLimit();
 
   uip_ipaddr_copy(&UIP_IP_BUF->destipaddr, &UIP_IP_BUF->srcipaddr);
 
@@ -225,7 +226,7 @@ uip_icmp6_send(const uip_ipaddr_t *dest, int type, int code, int payload_len)
   UIP_IP_BUF->tcflow = 0;
   UIP_IP_BUF->flow = 0;
   UIP_IP_BUF->proto = UIP_PROTO_ICMP6;
-  UIP_IP_BUF->ttl = uip_ds6_if.cur_hop_limit;
+  UIP_IP_BUF->ttl = Ds6_GetHopLimit();
   uipbuf_set_len_field(UIP_IP_BUF, UIP_ICMPH_LEN + payload_len);
 
   if(dest == NULL) {

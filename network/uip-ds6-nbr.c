@@ -52,6 +52,7 @@
 //#include "net/packetbuf.h"
 //#include "net/ipv6/uip-ds6.h"
 #include "uip-ds6-nbr.h"
+#include "uip-ds6.h"
 //#include "net/ipv6/uip-nd6.h"
 //#include "net/routing/routing.h"
 
@@ -103,7 +104,7 @@ NBR_TABLE(uip_ds6_nbr_t, ds6_neighbors);
 void
 uip_ds6_neighbors_init(void)
 {
-  link_stats_init();
+  //link_stats_init();
 #if UIP_DS6_NBR_MULTI_IPV6_ADDRS
   memb_init(&uip_ds6_nbr_memb);
   nbr_table_register(uip_ds6_nbr_entries,
@@ -599,7 +600,7 @@ uip_ds6_neighbor_periodic(void)
         nbr->nscount++;
         TRice(iD(2949), "msg:NBR_INCOMPLETE: NS %u\n", nbr->nscount);
         uip_nd6_ns_output(NULL, NULL, &nbr->ipaddr);
-        Time_TimerSet(&nbr->sendns, uip_ds6_if.retrans_timer / 1000);
+        Time_TimerSet(&nbr->sendns, Ds6_GetRetransmitTmoInMs() / 1000);
       }
       break;
     case NBR_DELAY:
@@ -624,7 +625,7 @@ uip_ds6_neighbor_periodic(void)
         nbr->nscount++;
         TRice(iD(4144), "msg:PROBE: NS %u\n", nbr->nscount);
         uip_nd6_ns_output(NULL, &nbr->ipaddr, &nbr->ipaddr);
-        Time_TimerSet(&nbr->sendns, uip_ds6_if.retrans_timer / 1000);
+        Time_TimerSet(&nbr->sendns, Ds6_GetRetransmitTmoInMs() / 1000);
       }
       break;
     default:

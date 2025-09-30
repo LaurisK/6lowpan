@@ -48,13 +48,34 @@
 //#include "lib/random.h"
 //#include "uip-nd6.h"
 #include "uip-ds6.h"
+#include "App/Time/time.h"
 //#include "net/ipv6/multicast/uip-mcast6.h"
 //#include "net/ipv6/uip-packetqueue.h"
+#include "cmsis_os.h"
 #if defined(STM32H753xx)
 #include "trice.h"
 #else
 #include "App/common.h"
 #endif
+
+/** \brief  Interface structure (contains all the interface variables) */
+typedef struct uip_ds6_netif {
+  uint32_t link_mtu;
+  uint8_t cur_hop_limit;
+  uint32_t base_reachable_time; /* in msec */
+  uint32_t reachable_time;      /* in msec */
+  uint32_t retrans_timer;       /* in msec */
+  uint8_t maxdadns;
+#if UIP_DS6_ADDR_NB
+  uip_ds6_addr_t addr_list[UIP_DS6_ADDR_NB];
+#endif /* UIP_DS6_ADDR_NB */
+#if UIP_DS6_AADDR_NB
+  uip_ds6_aaddr_t aaddr_list[UIP_DS6_AADDR_NB];
+#endif /* UIP_DS6_AADDR_NB */
+#if UIP_DS6_MADDR_NB
+  uip_ds6_maddr_t maddr_list[UIP_DS6_MADDR_NB];
+#endif /* UIP_DS6_MADDR_NB */
+} uip_ds6_netif_t;
 
 #if UIP_CONF_ROUTER
 sTimeTimer uip_ds6_timer_ra;                                 /**< RA timer, to schedule RA sending */
@@ -188,6 +209,13 @@ static void HandleRsSendingTmo(TimerHandle_t rsSendTim) {
 }
 
 #endif /* !UIP_CONF_ROUTER */
+
+/** \brief Compute the reachable time based on base reachable time, see RFC 4861*/
+static uint32_t uip_ds6_compute_reachable_time(uint32_t baseReachTime)
+{
+  return (System_Random(baseReachTime) + (baseReachTime / 2));
+}
+
 /*---------------------------------------------------------------------------*/
 void uip_ds6_init(void)
 {
@@ -729,16 +757,36 @@ uip_ds6_send_ra_periodic(void)
 #endif /* UIP_ND6_SEND_RA */
 #endif /* UIP_CONF_ROUTER */
 /*---------------------------------------------------------------------------*/
-uint32_t
-uip_ds6_compute_reachable_time(void)
-{
-  return (uint32_t) (UIP_ND6_MIN_RANDOM_FACTOR
-                     (uip_ds6_if.base_reachable_time)) +
-    ((uint16_t) (random_rand() << 8) +
-     (uint16_t) random_rand()) %
-    (uint32_t) (UIP_ND6_MAX_RANDOM_FACTOR(uip_ds6_if.base_reachable_time) -
-                UIP_ND6_MIN_RANDOM_FACTOR(uip_ds6_if.base_reachable_time));
+uint8_t Ds6_GetHopLimit(void) {
+	return uip_ds6_if.cur_hop_limit;
 }
+
+void Ds6_SetHopLimit(const uint8_t ttl) {
+	if (0 != ttl) {
+	    uip_ds6_if.cur_hop_limit = ttl;
+	    TRice(iD(6112), "msg:[uIP DS6] Hop limit set to - %u\n", uip_ds6_if.cur_hop_limit);
+	}
+}
+
+uint32_t Ds6_GetRetransmitTmoInMs(void) {
+	return uip_ds6_if.retrans_timer;
+}
+
+void Ds6_SetReachableTimes(const uint32_t baseReachTime) {
+    if(baseReachTime != uip_ds6_if.base_reachable_time) {
+      uip_ds6_if.base_reachable_time = baseReachTime;
+      uip_ds6_if.reachable_time = uip_ds6_compute_reachable_time(baseReachTime);
+	    TRice(iD(5591), "msg:[uIP DS6] Reachable time updated - base(%u), my(%d)\n", uip_ds6_if.base_reachable_time, uip_ds6_if.reachable_time);
+    }
+}
+
+void Ds6_SetRetransmitTim(const uint32_t retransTmo) {
+  if(0 != UIP_ND6_RA_BUF->retrans_timer) {
+    uip_ds6_if.retrans_timer = retransTmo;
+    TRice(iD(6951), "msg:[uIP DS6] Retransmit timeout set to - %u\n", uip_ds6_if.retrans_timer);
+  }
+}
+
 /*---------------------------------------------------------------------------*/
 
 /** @}*/

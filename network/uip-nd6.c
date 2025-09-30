@@ -72,6 +72,8 @@
 #include <inttypes.h>
 //#include "net/ipv6/uip-icmp6.h"
 #include "uip-nd6.h"
+#include "uip-ds6.h"
+#include "uip-ds6-nbr.h"
 //#include "net/ipv6/uip-ds6.h"
 //#include "net/ipv6/uip-nameserver.h"
 //#include "lib/random.h"
@@ -689,7 +691,7 @@ uip_nd6_ra_output(uip_ipaddr_t * dest)
   UIP_ICMP_BUF->type = ICMP6_RA;
   UIP_ICMP_BUF->icode = 0;
 
-  UIP_ND6_RA_BUF->cur_ttl = uip_ds6_if.cur_hop_limit;
+  UIP_ND6_RA_BUF->cur_ttl = Ds6_GetHopLimit();
 
   UIP_ND6_RA_BUF->flags_reserved =
     (UIP_ND6_M_FLAG << 7) | (UIP_ND6_O_FLAG << 6);
@@ -831,17 +833,9 @@ ra_input(void)
   }
 #endif /*UIP_CONF_IPV6_CHECKS */
 
-  if(UIP_ND6_RA_BUF->cur_ttl != 0) {
-    uip_ds6_if.cur_hop_limit = UIP_ND6_RA_BUF->cur_ttl;
-    TRice(iD(5588), "msg:uip_ds6_if.cur_hop_limit %u\n", uip_ds6_if.cur_hop_limit);
-  }
+  Ds6_SetHopLimit(UIP_ND6_RA_BUF->cur_ttl);
+  Ds6_SetReachableTimes(__REV(UIP_ND6_RA_BUF->reachable_time));
 
-  if(UIP_ND6_RA_BUF->reachable_time != 0) {
-    if(uip_ds6_if.base_reachable_time != __REV(UIP_ND6_RA_BUF->reachable_time)) {
-      uip_ds6_if.base_reachable_time = __REV(UIP_ND6_RA_BUF->reachable_time);
-      uip_ds6_if.reachable_time = uip_ds6_compute_reachable_time();
-    }
-  }
   if(UIP_ND6_RA_BUF->retrans_timer != 0) {
     uip_ds6_if.retrans_timer = __REV(UIP_ND6_RA_BUF->retrans_timer);
   }

@@ -50,7 +50,7 @@
 #include "uip.h"
 #include "App/Time/time.h"
 //#include "net/ipv6/uip-nd6.h"
-//#include "net/nbr-table.h"
+#include "nbr-table.h"
 //#include "sys/stimer.h"
 #if UIP_CONF_IPV6_QUEUE_PKT
 #include "net/ipv6/uip-packetqueue.h"
