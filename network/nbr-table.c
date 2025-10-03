@@ -40,8 +40,8 @@
 //#include "lib/list.h"
 #include "nbr-table.h"
 
-#define DEBUG 0
-#if DEBUG
+#define NBR_DEBUG 0
+#if NBR_DEBUG
 #include <stdio.h>
 #include "sys/ctimer.h"
 static void handle_periodic_timer(void *ptr);
@@ -80,15 +80,15 @@ static struct nbr_table *all_tables[MAX_NUM_TABLES];
 static unsigned num_tables;
 
 /* The neighbor address table */
-MEMB(neighbor_addr_mem, nbr_table_key_t, NBR_TABLE_MAX_NEIGHBORS);
-LIST(nbr_table_keys);
+static nbr_table_key_t neighborAddr[NBR_TABLE_MAX_NEIGHBORS] = {0};
+static nbr_table_key_t *keyListHead = NULL, *keyListTail = NULL;
 
 /*---------------------------------------------------------------------------*/
 /* Get a key from a neighbor index */
 static nbr_table_key_t *
 key_from_index(int index)
 {
-  return index != -1 ? &((nbr_table_key_t *)neighbor_addr_mem.mem)[index] : NULL;
+  return (index != -1) ? &neighborAddr[index] : NULL;
 }
 /*---------------------------------------------------------------------------*/
 /* Get an item from its neighbor index */
@@ -102,7 +102,7 @@ item_from_index(nbr_table_t *table, int index)
 static int
 index_from_key(nbr_table_key_t *key)
 {
-  return key != NULL ? key - (nbr_table_key_t *)neighbor_addr_mem.mem : -1;
+  return (key != NULL) ? (key - neighborAddr) : -1;
 }
 /*---------------------------------------------------------------------------*/
 /* Get the neighbor index of an item */
@@ -136,12 +136,12 @@ index_from_lladdr(const linkaddr_t *lladdr)
   if(lladdr == NULL) {
     lladdr = &linkaddr_null;
   }
-  key = list_head(nbr_table_keys);
+  key = keyListHead;
   while(key != NULL) {
     if(lladdr && linkaddr_cmp(lladdr, &key->lladdr)) {
       return index_from_key(key);
     }
-    key = list_item_next(key);
+    key = key->next;
   }
   return -1;
 }
@@ -178,10 +178,9 @@ nbr_set_bit(uint8_t *bitmap, nbr_table_t *table, nbr_table_item_t *item, int val
   return 0;
 }
 /*---------------------------------------------------------------------------*/
-static void
-remove_key(nbr_table_key_t *least_used_key)
-{
+static void remove_key(nbr_table_key_t *least_used_key) {
   int i;
+  nbr_table_key_t *walker = keyListHead, *follower = NULL;
   for(i = 0; i < MAX_NUM_TABLES; i++) {
     if(all_tables[i] != NULL && all_tables[i]->callback != NULL) {
       /* Call table callback for each table that uses this item */
@@ -194,18 +193,32 @@ remove_key(nbr_table_key_t *least_used_key)
   /* Empty used map */
   used_map[index_from_key(least_used_key)] = 0;
   /* Remove neighbor from list */
-  list_remove(nbr_table_keys, least_used_key);
+  while (NULL != walker) {
+	  if (least_used_key == walker) {
+		  if (NULL != follower) {
+			  follower->next = walker->next;
+		  } else {
+			  keyListHead = walker->next;
+		  }
+		  walker->next = NULL;
+		  break;
+	  }
+	  follower = walker;
+	  walker = walker->next;
+  }
 }
 /*---------------------------------------------------------------------------*/
 static nbr_table_key_t *
 nbr_table_allocate(nbr_table_reason_t reason, void *data)
 {
+  static uint8_t unusedKeyPos = 0;
   nbr_table_key_t *key;
   int least_used_count = 0;
   nbr_table_key_t *least_used_key = NULL;
 
-  key = memb_alloc(&neighbor_addr_mem);
-  if(key != NULL) {
+  if(NBR_TABLE_MAX_NEIGHBORS > unusedKeyPos) {
+	key = &neighborAddr[unusedKeyPos];
+	unusedKeyPos--;
     return key;
   } else {
 #ifdef NBR_TABLE_FIND_REMOVABLE
@@ -239,7 +252,7 @@ nbr_table_allocate(nbr_table_reason_t reason, void *data)
        * (3) oldest (the list is ordered by insertion time)
        * */
       /* Get item from first key */
-      key = list_head(nbr_table_keys);
+      key = keyListHead;
       while(key != NULL) {
         int item_index = index_from_key(key);
         int locked = locked_map[item_index];
@@ -263,7 +276,7 @@ nbr_table_allocate(nbr_table_reason_t reason, void *data)
             }
           }
         }
-        key = list_item_next(key);
+        key = key->next;
       }
     }
 
@@ -283,7 +296,7 @@ nbr_table_allocate(nbr_table_reason_t reason, void *data)
 int
 nbr_table_register(nbr_table_t *table, nbr_table_callback *callback)
 {
-#if DEBUG
+#if NBR_DEBUG
   if(!initialized) {
     initialized = 1;
     /* schedule a debug printout per minute */
@@ -324,7 +337,7 @@ nbr_table_item_t *
 nbr_table_head(nbr_table_t *table)
 {
   /* Get item from first key */
-  nbr_table_item_t *item = item_from_key(table, list_head(nbr_table_keys));
+  nbr_table_item_t *item = item_from_key(table, keyListHead);
   /* Item is the first neighbor, now check is it is in the current table */
   if(nbr_get_bit(used_map, table, item)) {
     return item;
@@ -338,8 +351,8 @@ nbr_table_item_t *
 nbr_table_next(nbr_table_t *table, nbr_table_item_t *item)
 {
   do {
-    void *key = key_from_item(table, item);
-    key = list_item_next(key);
+	nbr_table_key_t *key = key_from_item(table, item);
+    key = key->next;
     /* Loop until the next item is in the current table */
     item = item_from_key(table, key);
   } while(item && !nbr_get_bit(used_map, table, item));
@@ -374,7 +387,13 @@ nbr_table_add_lladdr(nbr_table_t *table, const linkaddr_t *lladdr, nbr_table_rea
     }
 
     /* Add neighbor to list */
-    list_add(nbr_table_keys, key);
+    key->next = NULL;
+    if (NULL != keyListTail) {
+    	keyListTail->next = key;
+    } else {
+    	keyListHead = key;
+    }
+    keyListTail = key;
 
     /* Get index from newly allocated neighbor */
     index = index_from_key(key);
@@ -390,7 +409,7 @@ nbr_table_add_lladdr(nbr_table_t *table, const linkaddr_t *lladdr, nbr_table_rea
   memset(item, 0, table->item_size);
   nbr_set_bit(used_map, table, item, 1);
 
-#if DEBUG
+#if NBR_DEBUG
   print_table();
 #endif
   return item;
@@ -417,7 +436,7 @@ nbr_table_remove(nbr_table_t *table, void *item)
 int
 nbr_table_lock(nbr_table_t *table, void *item)
 {
-#if DEBUG
+#if NBR_DEBUG
   int i = index_from_item(table, item);
   PRINTF("*** Lock %d\n", i);
 #endif
@@ -428,7 +447,7 @@ nbr_table_lock(nbr_table_t *table, void *item)
 int
 nbr_table_unlock(nbr_table_t *table, void *item)
 {
-#if DEBUG
+#if NBR_DEBUG
   int i = index_from_item(table, item);
   PRINTF("*** Unlock %d\n", i);
 #endif
@@ -443,7 +462,7 @@ nbr_table_get_lladdr(nbr_table_t *table, const void *item)
   return key != NULL ? &key->lladdr : NULL;
 }
 /*---------------------------------------------------------------------------*/
-#if DEBUG
+#if NBR_DEBUG
 static void
 print_table()
 {

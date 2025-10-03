@@ -52,6 +52,8 @@
 
 #else /* UIP_CONF_MAX_ROUTES */
 
+#define ROUTING_CONF_RPL_LITE 1
+
 #if ROUTING_CONF_RPL_LITE
 #define UIP_MAX_ROUTES 0 /* RPL Lite only supports non-storing, no routes */
 #elif ROUTING_CONF_RPL_CLASSIC
@@ -162,11 +164,13 @@ typedef struct rpl_route_entry {
 } rpl_route_entry_t;
 #endif /* UIP_DS6_ROUTE_STATE_TYPE */
 
+#if (UIP_MAX_ROUTES != 0)
 /** \brief The neighbor routes hold a list of routing table entries
     that are attached to a specific neihbor. */
 struct uip_ds6_route_neighbor_routes {
   LIST_STRUCT(route_list);
 };
+#endif /* (UIP_MAX_ROUTES != 0) */
 
 /** \brief An entry in the routing table */
 typedef struct uip_ds6_route {
@@ -176,7 +180,9 @@ typedef struct uip_ds6_route {
      routes field point to the uip_ds6_route_neighbor_routes that
      belong to the neighbor table entry that this routing table entry
      uses. */
+#if (UIP_MAX_ROUTES != 0)
   struct uip_ds6_route_neighbor_routes *neighbor_routes;
+#endif /* (UIP_MAX_ROUTES != 0) */
   uip_ipaddr_t ipaddr;
 #ifdef UIP_DS6_ROUTE_STATE_TYPE
   UIP_DS6_ROUTE_STATE_TYPE state;

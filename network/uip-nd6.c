@@ -70,7 +70,7 @@
 
 #include <string.h>
 #include <inttypes.h>
-//#include "net/ipv6/uip-icmp6.h"
+#include "uip-icmp6.h"
 #include "uip-nd6.h"
 #include "uip-ds6.h"
 #include "uip-ds6-nbr.h"
@@ -777,38 +777,6 @@ uip_nd6_ra_output(uip_ipaddr_t * dest)
 
 #if !UIP_CONF_ROUTER
 /*---------------------------------------------------------------------------*/
-void
-uip_nd6_rs_output(void)
-{
-  UIP_IP_BUF->vtc = 0x60;
-  UIP_IP_BUF->tcflow = 0;
-  UIP_IP_BUF->flow = 0;
-  UIP_IP_BUF->proto = UIP_PROTO_ICMP6;
-  UIP_IP_BUF->ttl = UIP_ND6_HOP_LIMIT;
-  uip_create_linklocal_allrouters_mcast(&UIP_IP_BUF->destipaddr);
-  uip_ds6_select_src(&UIP_IP_BUF->srcipaddr, &UIP_IP_BUF->destipaddr);
-  UIP_ICMP_BUF->type = ICMP6_RS;
-  UIP_ICMP_BUF->icode = 0;
-
-  if(uip_is_addr_unspecified(&UIP_IP_BUF->srcipaddr)) {
-    UIP_IP_BUF->len[1] = UIP_ICMPH_LEN + UIP_ND6_RS_LEN;
-    uip_len = uip_l3_icmp_hdr_len + UIP_ND6_RS_LEN;
-  } else {
-    uip_len = uip_l3_icmp_hdr_len + UIP_ND6_RS_LEN + UIP_ND6_OPT_LLAO_LEN;
-    uipbuf_set_len_field(UIP_IP_BUF, UIP_ICMPH_LEN + UIP_ND6_RS_LEN + UIP_ND6_OPT_LLAO_LEN);
-
-    create_llao(&uip_buf[uip_l3_icmp_hdr_len + UIP_ND6_RS_LEN], UIP_ND6_OPT_SLLAO);
-  }
-
-  UIP_ICMP_BUF->icmpchksum = 0;
-  UIP_ICMP_BUF->icmpchksum = ~uip_icmp6chksum();
-
-  UIP_STAT(++uip_stat.nd6.sent);
-  TRiceS(iD(7072), "msg:Sending RS to %s", uip6_printAddr(&UIP_IP_BUF->destipaddr, NULL));
-  TRiceS(iD(3900), "msg: from %s\n", uip6_printAddr(&UIP_IP_BUF->srcipaddr, NULL));
-  return;
-}
-/*---------------------------------------------------------------------------*/
 /**
  * Process a Router Advertisement
  *
@@ -1020,22 +988,18 @@ discard:
 /*------------------------------------------------------------------*/
 /* ICMPv6 input handlers */
 #if UIP_ND6_SEND_NA
-UIP_ICMP6_HANDLER(ns_input_handler, ICMP6_NS, UIP_ICMP6_HANDLER_CODE_ANY,
-                  ns_input);
+static uip_icmp6_input_handler_t ns_input_handler = {NULL, ICMP6_NS, UIP_ICMP6_HANDLER_CODE_ANY, ns_input};
 #endif
 #if UIP_ND6_SEND_NS
-UIP_ICMP6_HANDLER(na_input_handler, ICMP6_NA, UIP_ICMP6_HANDLER_CODE_ANY,
-                  na_input);
+static uip_icmp6_input_handler_t na_input_handler = {NULL, ICMP6_NA, UIP_ICMP6_HANDLER_CODE_ANY, na_input};
 #endif
 
 #if UIP_CONF_ROUTER && UIP_ND6_SEND_RA
-UIP_ICMP6_HANDLER(rs_input_handler, ICMP6_RS, UIP_ICMP6_HANDLER_CODE_ANY,
-                  rs_input);
+static uip_icmp6_input_handler_t rs_input_handler = {NULL, ICMP6_RS, UIP_ICMP6_HANDLER_CODE_ANY, rs_input};
 #endif
 
 #if !UIP_CONF_ROUTER
-UIP_ICMP6_HANDLER(ra_input_handler, ICMP6_RA, UIP_ICMP6_HANDLER_CODE_ANY,
-                  ra_input);
+static uip_icmp6_input_handler_t ra_input_handler = {NULL, ICMP6_RA, UIP_ICMP6_HANDLER_CODE_ANY, ra_input};
 #endif
 /*---------------------------------------------------------------------------*/
 void

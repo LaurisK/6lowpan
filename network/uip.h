@@ -56,8 +56,11 @@
 #include <stdint.h>
 #include "../linkaddr.h"
 #include "uipopt.h"
+#include "uipbuf.h"
 /* For memcmp */
 //#include <string.h>
+
+#define NETSTACK_CONF_WITH_IPV6 1
 
 /* Header sizes. */
 #define UIP_IPH_LEN    40
@@ -75,13 +78,17 @@
 /**
  * Direct access to IPv6 header
  */
+#define IP_HDR_CAST_TO_BUFF(buff)   ((struct uip_ip_hdr *)buff)
+#define UDP_HDR_CAST_TO_BUFF(buff)  ((struct uip_udp_hdr *)buff)
+#define ICMP_HDR_CAST_TO_BUFF(buff) ((struct uip_icmp_hdr *)buff)
+
 #define UIP_IP_BUF                             ((struct uip_ip_hdr *)uip_buf)
 #define UIP_IP_PAYLOAD(ext)                        ((unsigned char *)uip_buf + UIP_IPH_LEN + (ext))
 
 /**
  * Direct access to ICMP, UDP, and TCP headers and payload, with implicit ext header offset (global uip_ext_len)
  */
-#define UIP_ICMP_BUF                         ((struct uip_icmp_hdr *)UIP_IP_PAYLOAD(uip_ext_len))
+#define UIP_ICMP_BUF                         ((struct uip_icmp_hdr *)UIP_IP_PAYLOAD(uip_ext_len)) // >> (struct uip_icmp_hdr*)(faultyBuff->buff.u8 + UIP_IPH_LEN + faultyBuff->extLen)
 #define UIP_ICMP_PAYLOAD                           ((unsigned char *)UIP_IP_PAYLOAD(uip_ext_len) + UIP_ICMPH_LEN)
 #define UIP_UDP_BUF                           ((struct uip_udp_hdr *)UIP_IP_PAYLOAD(uip_ext_len))
 #define UIP_UDP_PAYLOAD                            ((unsigned char *)UIP_IP_PAYLOAD(uip_ext_len) + UIP_UDPH_LEN)
@@ -292,59 +299,6 @@ void uip_setipid(uint16_t id);
  * These functions are used by a network device driver for interacting
  * with uIP.
  */
-
-/**
- * Process an incoming packet.
- *
- * This function should be called when the device driver has received
- * a packet from the network. The packet from the device driver must
- * be present in the uip_buf buffer, and the length of the packet
- * should be placed in the uip_len variable.
- *
- * When the function returns, there may be an outbound packet placed
- * in the uip_buf packet buffer. If so, the uip_len variable is set to
- * the length of the packet. If no packet is to be sent out, the
- * uip_len variable is set to 0.
- *
- * The usual way of calling the function is presented by the source
- * code below.
- \code
- uip_len = devicedriver_poll();
- if(uip_len > 0) {
- uip_input();
- if(uip_len > 0) {
- devicedriver_send();
- }
- }
- \endcode
- *
- * \note If you are writing a uIP device driver that needs ARP
- * (Address Resolution Protocol), e.g., when running uIP over
- * Ethernet, you will need to call the uIP ARP code before calling
- * this function:
- \code
- #define BUF ((struct uip_eth_hdr *)&uip_buf[0])
- uip_len = ethernet_devicedrver_poll();
- if(uip_len > 0) {
- if(BUF->type == __REVSH(UIP_ETHTYPE_IP)) {
- uip_arp_ipin();
- uip_input();
- if(uip_len > 0) {
- uip_arp_out();
- ethernet_devicedriver_send();
- }
- } else if(BUF->type == __REVSH(UIP_ETHTYPE_ARP)) {
- uip_arp_arpin();
- if(uip_len > 0) {
- ethernet_devicedriver_send();
- }
- }
- \endcode
- *
- * \hideinitializer
- */
-#define uip_input()        uip_process(UIP_DATA)
-
 
 /**
  * Periodic processing for a connection identified by its number.
@@ -1443,7 +1397,7 @@ uip_ext_hdr_options_process(); */
  *
  * The actual uIP function which does all the work.
  */
-void uip_process(uint8_t flag);
+void uip_process(sUipBuff *uipBuff, uint8_t flag);
 
   /* The following flags are passed as an argument to the uip_process()
    function. They are used to distinguish between the two cases where
@@ -1606,13 +1560,6 @@ struct uip_tcp_hdr {
   uint8_t urgp[2];
   uint8_t optdata[4];
 };
-
-/* The ICMP headers. */
-struct uip_icmp_hdr {
-  uint8_t type, icode;
-  uint16_t icmpchksum;
-};
-
 
 /* The UDP headers. */
 struct uip_udp_hdr {
@@ -1969,35 +1916,6 @@ extern uip_lladdr_t uip_lladdr;
 #define UIP_FW_DROPPED   5
 
 /**
- * Calculate the Internet checksum over a buffer.
- *
- * The Internet checksum is the one's complement of the one's
- * complement sum of all 16-bit words in the buffer.
- *
- * See RFC1071.
- *
- * \param data A pointer to the buffer over which the checksum is to be
- * computed.
- *
- * \param len The length of the buffer over which the checksum is to
- * be computed.
- *
- * \return The Internet checksum of the buffer.
- */
-uint16_t uip_chksum(uint16_t *data, uint16_t len);
-
-/**
- * Calculate the IP header checksum of the packet header in uip_buf.
- *
- * The IP header checksum is the Internet checksum of the 20 bytes of
- * the IP header.
- *
- * \return The IP header checksum of the IP header in the uip_buf
- * buffer.
- */
-uint16_t uip_ipchksum(void);
-
-/**
  * Calculate the TCP checksum of the packet in uip_buf and uip_appdata.
  *
  * The TCP checksum is the Internet checksum of data contents of the
@@ -2032,10 +1950,23 @@ uint16_t uip_icmp6chksum(void);
  *
  * \return true upon success, false otherwise.
  */
-uint8_t uip_remove_ext_hdr(void);
+uint8_t uip_remove_ext_hdr(sUipBuff *uipBuff);
+
+/**
+ * \brief          Updates the length field in the uIP buffer
+ * \param buffer   The IPv6 header
+ * \param len      The new length value
+ */
+void uip6_uipHdrSetLen(struct uip_ip_hdr *hdr, uint16_t len);
+
+/**
+ * \brief          Returns the value of the length field in the uIP buffer
+ * \param buffer   The IPv6 header
+ * \retvel         The length value
+ */
+uint16_t uip6_uipHdrGetLen(struct uip_ip_hdr *hdr);
 
 char *uip6_printAddr(const uip_ip6addr_t*, int16_t*);
-void uip6_init(void);
 
 #endif /* UIP_H_ */
 

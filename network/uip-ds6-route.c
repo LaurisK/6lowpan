@@ -91,30 +91,23 @@ static void rm_routelist_callback(nbr_table_item_t *ptr);
 
 /* Default routes are held on the defaultrouterlist and their
    structures are allocated from the defaultroutermemb memory block.*/
-LIST(defaultrouterlist);
-MEMB(defaultroutermemb, uip_ds6_defrt_t, UIP_DS6_DEFRT_NB);
+static uip_ds6_defrt_t *dfltRouterListHead = NULL;
 
 #if UIP_DS6_NOTIFICATIONS
 LIST(notificationlist);
 #endif
 
 /*---------------------------------------------------------------------------*/
-static void
-assert_nbr_routes_list_sane(void)
+static void assert_nbr_routes_list_sane(void)
 {
   uip_ds6_route_t *r;
   int count;
 
   /* Check if the route list has an infinite loop. */
-  for(r = uip_ds6_route_head(),
-        count = 0;
-      r != NULL &&
-        count < UIP_DS6_ROUTE_NB * 2;
-      r = uip_ds6_route_next(r),
-        count++);
+  for(r = uip_ds6_route_head(), count = 0; r != NULL && count < UIP_DS6_ROUTE_NB * 2; r = uip_ds6_route_next(r), count++);
 
   if(count > UIP_DS6_ROUTE_NB) {
-    printf("uip-ds6-route.c: assert_nbr_routes_list_sane route list is in infinite loop\n");
+	  TRice(iD(6184), "uip-ds6-route.c: assert_nbr_routes_list_sane route list is in infinite loop\n");
   }
 
 #if (UIP_MAX_ROUTES != 0)
@@ -173,9 +166,6 @@ uip_ds6_route_init(void)
   nbr_table_register(nbr_routes,
                      (nbr_table_callback *)rm_routelist_callback);
 #endif /* (UIP_MAX_ROUTES != 0) */
-
-  memb_init(&defaultroutermemb);
-  list_init(defaultrouterlist);
 
 #if UIP_DS6_NOTIFICATIONS
   list_init(notificationlist);
@@ -319,7 +309,7 @@ uip_ds6_route_add(const uip_ipaddr_t *ipaddr, uint8_t length,
   uip_ds6_route_t *r;
   struct uip_ds6_route_neighbor_route *nbrr;
 
-  if(LOG_DBG_ENABLED) {
+  if(1/*LOG_DBG_ENABLED*/) {
     assert_nbr_routes_list_sane();
   }
 
@@ -452,7 +442,7 @@ uip_ds6_route_add(const uip_ipaddr_t *ipaddr, uint8_t length,
   call_route_callback(UIP_DS6_NOTIFICATION_ROUTE_ADD, ipaddr, nexthop);
 #endif
 
-  if(LOG_DBG_ENABLED) {
+  if(1/*LOG_DBG_ENABLED*/) {
     assert_nbr_routes_list_sane();
   }
   return r;
@@ -469,7 +459,7 @@ uip_ds6_route_rm(uip_ds6_route_t *route)
 #if (UIP_MAX_ROUTES != 0)
   struct uip_ds6_route_neighbor_route *neighbor_route;
 
-  if(LOG_DBG_ENABLED) {
+  if(1/*LOG_DBG_ENABLED*/) {
     assert_nbr_routes_list_sane();
   }
 
@@ -491,12 +481,6 @@ uip_ds6_route_rm(uip_ds6_route_t *route)
     if(list_head(route->neighbor_routes->route_list) == NULL) {
       /* If this was the only route using this neighbor, remove the
          neighbor from the table - this implicitly unlocks nexthop */
-#if LOG_WITH_ANNOTATE
-      const uip_ipaddr_t *nexthop = uip_ds6_route_nexthop(route);
-      if(nexthop != NULL) {
-        LOG_ANNOTATE("#L %u 0\n", nexthop->u8[sizeof(uip_ipaddr_t) - 1]);
-      }
-#endif /* LOG_WITH_ANNOTATE */
       TRice(iD(5667), "msg:Rm: removing neighbor too\n");
       nbr_table_remove(nbr_routes, route->neighbor_routes->route_list);
 #ifdef NETSTACK_CONF_ROUTING_NEIGHBOR_REMOVED_CALLBACK
@@ -517,7 +501,7 @@ uip_ds6_route_rm(uip_ds6_route_t *route)
 #endif
   }
 
-  if(LOG_DBG_ENABLED) {
+  if(1/*LOG_DBG_ENABLED*/) {
     assert_nbr_routes_list_sane();
   }
 
@@ -529,7 +513,7 @@ uip_ds6_route_rm(uip_ds6_route_t *route)
 static void
 rm_routelist(struct uip_ds6_route_neighbor_routes *routes)
 {
-  if(LOG_DBG_ENABLED) {
+  if(1/*LOG_DBG_ENABLED*/) {
     assert_nbr_routes_list_sane();
   }
 
@@ -543,7 +527,7 @@ rm_routelist(struct uip_ds6_route_neighbor_routes *routes)
     nbr_table_remove(nbr_routes, routes);
   }
 
-  if(LOG_DBG_ENABLED) {
+  if(1/*LOG_DBG_ENABLED*/) {
     assert_nbr_routes_list_sane();
   }
 }
@@ -571,17 +555,11 @@ uip_ds6_route_rm_by_nexthop(const uip_ipaddr_t *nexthop)
 }
 /*---------------------------------------------------------------------------*/
 uip_ds6_defrt_t *
-uip_ds6_defrt_head(void)
-{
-  return list_head(defaultrouterlist);
-}
-/*---------------------------------------------------------------------------*/
-uip_ds6_defrt_t *
 uip_ds6_defrt_add(const uip_ipaddr_t *ipaddr, unsigned long interval)
 {
   uip_ds6_defrt_t *d;
 
-  if(LOG_DBG_ENABLED) {
+  if(1/*LOG_DBG_ENABLED*/) {
     assert_nbr_routes_list_sane();
   }
 
@@ -591,7 +569,7 @@ uip_ds6_defrt_add(const uip_ipaddr_t *ipaddr, unsigned long interval)
 
   d = uip_ds6_defrt_lookup(ipaddr);
   if(d == NULL) {
-    d = memb_alloc(&defaultroutermemb);
+    d = pvPortMalloc(sizeof(uip_ds6_defrt_t));
     if(d == NULL) {
       TRiceS(iD(6538), "msg:Add default: could not add default route to %s, out of memory\n", uip6_printAddr(ipaddr, NULL));
       return NULL;
@@ -599,7 +577,8 @@ uip_ds6_defrt_add(const uip_ipaddr_t *ipaddr, unsigned long interval)
       TRiceS(iD(4922), "msg:Add default: adding default route to %s\n", uip6_printAddr(ipaddr, NULL));
     }
 
-    list_push(defaultrouterlist, d);
+    d->next = dfltRouterListHead;
+    dfltRouterListHead = d;
   }
   else {
 	  TRice(iD(4751), "msg:Refreshing default\n");
@@ -613,13 +592,11 @@ uip_ds6_defrt_add(const uip_ipaddr_t *ipaddr, unsigned long interval)
     d->isinfinite = 1;
   }
 
-  LOG_ANNOTATE("#L %u 1\n", ipaddr->u8[sizeof(uip_ipaddr_t) - 1]);
-
 #if UIP_DS6_NOTIFICATIONS
   call_route_callback(UIP_DS6_NOTIFICATION_DEFRT_ADD, ipaddr, ipaddr);
 #endif
 
-if(LOG_DBG_ENABLED) {
+if(1/*LOG_DBG_ENABLED*/) {
   assert_nbr_routes_list_sane();
 }
 
@@ -631,19 +608,30 @@ uip_ds6_defrt_rm(uip_ds6_defrt_t *defrt)
 {
   uip_ds6_defrt_t *d;
 
-  if(LOG_DBG_ENABLED) {
+  if(1/*LOG_DBG_ENABLED*/) {
     assert_nbr_routes_list_sane();
   }
 
   /* Make sure that the defrt is in the list before we remove it. */
-  for(d = list_head(defaultrouterlist);
-      d != NULL;
-      d = list_item_next(d)) {
+  for(d = dfltRouterListHead; d != NULL; d = d->next) {
     if(d == defrt) {
-    	TRice(iD(7117), "msg:Removing default\n");
-      list_remove(defaultrouterlist, defrt);
-      memb_free(&defaultroutermemb, defrt);
-      LOG_ANNOTATE("#L %u 0\n", defrt->ipaddr.u8[sizeof(uip_ipaddr_t) - 1]);
+      uip_ds6_defrt_t *walker = dfltRouterListHead, *follower = NULL;
+      TRice(iD(7117), "msg:Removing default\n");
+      /* Remove default router from list */
+      while (NULL != walker) {
+    	  if (defrt == walker) {
+    		  if (NULL != follower) {
+    			  follower->next = walker->next;
+    		  } else {
+    			  dfltRouterListHead = walker->next;
+    		  }
+    		  walker->next = NULL;
+    		  break;
+    	  }
+    	  follower = walker;
+    	  walker = walker->next;
+      }
+      vPortFree(defrt);
 #if UIP_DS6_NOTIFICATIONS
       call_route_callback(UIP_DS6_NOTIFICATION_DEFRT_RM,
 			  &defrt->ipaddr, &defrt->ipaddr);
@@ -652,7 +640,7 @@ uip_ds6_defrt_rm(uip_ds6_defrt_t *defrt)
     }
   }
 
-  if(LOG_DBG_ENABLED) {
+  if(1/*LOG_DBG_ENABLED*/) {
     assert_nbr_routes_list_sane();
   }
 }
@@ -664,9 +652,7 @@ uip_ds6_defrt_lookup(const uip_ipaddr_t *ipaddr)
   if(ipaddr == NULL) {
     return NULL;
   }
-  for(d = list_head(defaultrouterlist);
-      d != NULL;
-      d = list_item_next(d)) {
+  for(d = dfltRouterListHead; d != NULL; d = d->next) {
     if(uip_ipaddr_cmp(&d->ipaddr, ipaddr)) {
       return d;
     }
@@ -674,17 +660,14 @@ uip_ds6_defrt_lookup(const uip_ipaddr_t *ipaddr)
   return NULL;
 }
 /*---------------------------------------------------------------------------*/
-const uip_ipaddr_t *
-uip_ds6_defrt_choose(void)
+const uip_ipaddr_t * uip_ds6_defrt_choose(void)
 {
   uip_ds6_defrt_t *d;
   uip_ds6_nbr_t *bestnbr;
   uip_ipaddr_t *addr;
 
   addr = NULL;
-  for(d = list_head(defaultrouterlist);
-      d != NULL;
-      d = list_item_next(d)) {
+  for(d = dfltRouterListHead; d != NULL; d = d->next) {
     TRiceS(iD(6349), "msg:Default route, IP address %s\n", uip6_printAddr(&d->ipaddr, NULL));
     bestnbr = uip_ds6_nbr_lookup(&d->ipaddr);
     if(bestnbr != NULL && bestnbr->state != NBR_INCOMPLETE) {
@@ -702,15 +685,14 @@ void
 uip_ds6_defrt_periodic(void)
 {
   uip_ds6_defrt_t *d;
-  d = list_head(defaultrouterlist);
+  d = dfltRouterListHead;
   while(d != NULL) {
-    if(!d->isinfinite &&
-    		Time_TimerExpired(&d->lifetime)) {
-    	TRice(iD(3584), "msg:Default route periodic: defrt lifetime expired\n");
+    if(!d->isinfinite && Time_TimerExpired(&d->lifetime)) {
+      TRice(iD(3584), "msg:Default route periodic: defrt lifetime expired\n");
       uip_ds6_defrt_rm(d);
-      d = list_head(defaultrouterlist);
+      d = dfltRouterListHead;
     } else {
-      d = list_item_next(d);
+      d = d->next;
     }
   }
 }

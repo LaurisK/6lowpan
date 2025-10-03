@@ -142,15 +142,6 @@
 #define PACKETBUF_6LO_HC_UDP_PORTS         4 /* 8 bit */
 #define PACKETBUF_6LO_HC_UDP_CHKSUM        5 /* 16 bit */
 
-/** \name Pointers in the sicslowpan and uip buffer
- *  @{
- */
-
-/* NOTE: In the multiple-reassembly context there is only room for the header / first fragment */
-#define SICSLOWPAN_IP_BUF(buf)   ((struct uip_ip_hdr *)buf)
-#define SICSLOWPAN_UDP_BUF(buf)  ((struct uip_udp_hdr *)&buf[UIP_IPH_LEN])
-#define SICSLOWPAN_IPPAYLOAD_BUF(buf) (&buf[UIP_IPH_LEN])
-
 #define UIP_EXT_HDR_LEN                    2
 
 /** @} */
@@ -1082,21 +1073,21 @@ static void uncompress_hdr_iphc(sPacket *packet, uint8_t *buf, uint16_t buf_size
       /* Flow label are carried inline */
       if((iphc0 & SICSLOWPAN_IPHC_TC_C) == 0) {
         /* Traffic class is carried inline */
-        memcpy(&SICSLOWPAN_IP_BUF(buf)->tcflow, hc06_ptr + 1, 3);
+        memcpy(&IP_HDR_CAST_TO_BUFF(buf)->tcflow, hc06_ptr + 1, 3);
         tmp = *hc06_ptr;
         hc06_ptr += 4;
         /* IPHC format of tc is ECN | DSCP , original is DSCP | ECN */
         /* set version, pick highest DSCP bits and set in vtc */
-        SICSLOWPAN_IP_BUF(buf)->vtc = 0x60 | ((tmp >> 2) & 0x0f);
+        IP_HDR_CAST_TO_BUFF(buf)->vtc = 0x60 | ((tmp >> 2) & 0x0f);
         /* ECN rolled down two steps + lowest DSCP bits at top two bits */
-        SICSLOWPAN_IP_BUF(buf)->tcflow = ((tmp >> 2) & 0x30) | (tmp << 6) |
-          (SICSLOWPAN_IP_BUF(buf)->tcflow & 0x0f);
+        IP_HDR_CAST_TO_BUFF(buf)->tcflow = ((tmp >> 2) & 0x30) | (tmp << 6) |
+          (IP_HDR_CAST_TO_BUFF(buf)->tcflow & 0x0f);
       } else {
         /* Traffic class is compressed (set version and no TC)*/
-        SICSLOWPAN_IP_BUF(buf)->vtc = 0x60;
+    	  IP_HDR_CAST_TO_BUFF(buf)->vtc = 0x60;
         /* highest flow label bits + ECN bits */
-        SICSLOWPAN_IP_BUF(buf)->tcflow = (*hc06_ptr & 0x0F) | ((*hc06_ptr >> 2) & 0x30);
-        memcpy(&SICSLOWPAN_IP_BUF(buf)->flow, hc06_ptr + 1, 2);
+        IP_HDR_CAST_TO_BUFF(buf)->tcflow = (*hc06_ptr & 0x0F) | ((*hc06_ptr >> 2) & 0x30);
+        memcpy(&IP_HDR_CAST_TO_BUFF(buf)->flow, hc06_ptr + 1, 2);
         hc06_ptr += 3;
       }
     } else {
@@ -1104,31 +1095,31 @@ static void uncompress_hdr_iphc(sPacket *packet, uint8_t *buf, uint16_t buf_size
       /* Version and flow label are compressed */
       if((iphc0 & SICSLOWPAN_IPHC_TC_C) == 0) {
         /* Traffic class is inline */
-        SICSLOWPAN_IP_BUF(buf)->vtc = 0x60 | ((*hc06_ptr >> 2) & 0x0f);
-          SICSLOWPAN_IP_BUF(buf)->tcflow = ((*hc06_ptr << 6) & 0xC0) | ((*hc06_ptr >> 2) & 0x30);
-          SICSLOWPAN_IP_BUF(buf)->flow = 0;
+    	  IP_HDR_CAST_TO_BUFF(buf)->vtc = 0x60 | ((*hc06_ptr >> 2) & 0x0f);
+        IP_HDR_CAST_TO_BUFF(buf)->tcflow = ((*hc06_ptr << 6) & 0xC0) | ((*hc06_ptr >> 2) & 0x30);
+          IP_HDR_CAST_TO_BUFF(buf)->flow = 0;
           hc06_ptr += 1;
       } else {
         /* Traffic class is compressed */
-        SICSLOWPAN_IP_BUF(buf)->vtc = 0x60;
-        SICSLOWPAN_IP_BUF(buf)->tcflow = 0;
-        SICSLOWPAN_IP_BUF(buf)->flow = 0;
+    	  IP_HDR_CAST_TO_BUFF(buf)->vtc = 0x60;
+        IP_HDR_CAST_TO_BUFF(buf)->tcflow = 0;
+        IP_HDR_CAST_TO_BUFF(buf)->flow = 0;
       }
     }
 
   /* Next Header */
   if((iphc0 & SICSLOWPAN_IPHC_NH_C) == 0) {
     /* Next header is carried inline */
-    SICSLOWPAN_IP_BUF(buf)->proto = *hc06_ptr;
-    TRice(iD(6014), "dbg:uncompression: next header inline: %d\n", SICSLOWPAN_IP_BUF(buf)->proto);
+	  IP_HDR_CAST_TO_BUFF(buf)->proto = *hc06_ptr;
+    TRice(iD(6014), "dbg:uncompression: next header inline: %d\n", IP_HDR_CAST_TO_BUFF(buf)->proto);
     hc06_ptr += 1;
   }
 
   /* Hop limit */
   if((iphc0 & 0x03) != SICSLOWPAN_IPHC_TTL_I) {
-    SICSLOWPAN_IP_BUF(buf)->ttl = ttl_values[iphc0 & 0x03];
+	  IP_HDR_CAST_TO_BUFF(buf)->ttl = ttl_values[iphc0 & 0x03];
   } else {
-    SICSLOWPAN_IP_BUF(buf)->ttl = *hc06_ptr;
+	  IP_HDR_CAST_TO_BUFF(buf)->ttl = *hc06_ptr;
     hc06_ptr += 1;
   }
 
@@ -1149,12 +1140,12 @@ static void uncompress_hdr_iphc(sPacket *packet, uint8_t *buf, uint16_t buf_size
       }
     }
     /* if tmp == 0 we do not have a context and therefore no prefix */
-    uncompress_addr(&SICSLOWPAN_IP_BUF(buf)->srcipaddr, (tmp != 0)
+    uncompress_addr(&IP_HDR_CAST_TO_BUFF(buf)->srcipaddr, (tmp != 0)
     													? context->prefix
     													: NULL, unc_ctxconf[tmp], (uip_lladdr_t *)packetbuf_addr(packet, PACKETBUF_ADDR_SENDER));
   } else {
     /* no compression and link local */
-    uncompress_addr(&SICSLOWPAN_IP_BUF(buf)->srcipaddr, llprefix, unc_llconf[tmp], (uip_lladdr_t *)packetbuf_addr(packet, PACKETBUF_ADDR_SENDER));
+    uncompress_addr(&IP_HDR_CAST_TO_BUFF(buf)->srcipaddr, llprefix, unc_llconf[tmp], (uip_lladdr_t *)packetbuf_addr(packet, PACKETBUF_ADDR_SENDER));
   }
 
   /* Destination address */
@@ -1178,7 +1169,7 @@ static void uncompress_hdr_iphc(sPacket *packet, uint8_t *buf, uint16_t buf_size
         hc06_ptr++;
       }
 
-      uncompress_addr(&SICSLOWPAN_IP_BUF(buf)->destipaddr, prefix, unc_mxconf[tmp], NULL);
+      uncompress_addr(&IP_HDR_CAST_TO_BUFF(buf)->destipaddr, prefix, unc_mxconf[tmp], NULL);
     }
   } else {
     /* no multicast */
@@ -1192,10 +1183,10 @@ static void uncompress_hdr_iphc(sPacket *packet, uint8_t *buf, uint16_t buf_size
     	  TRice(iD(4393), "err:uncompression: error context not found\n");
         return;
       }
-      uncompress_addr(&SICSLOWPAN_IP_BUF(buf)->destipaddr, context->prefix, unc_ctxconf[tmp], (uip_lladdr_t *)packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER));
+      uncompress_addr(&IP_HDR_CAST_TO_BUFF(buf)->destipaddr, context->prefix, unc_ctxconf[tmp], (uip_lladdr_t *)packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER));
     } else {
       /* not context based => link local M = 0, DAC = 0 - same as SAC */
-      uncompress_addr(&SICSLOWPAN_IP_BUF(buf)->destipaddr, llprefix, unc_llconf[tmp], (uip_lladdr_t *)packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER));
+      uncompress_addr(&IP_HDR_CAST_TO_BUFF(buf)->destipaddr, llprefix, unc_llconf[tmp], (uip_lladdr_t *)packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER));
     }
   }
   uncomp_hdr_len += UIP_IPH_LEN;
@@ -1203,8 +1194,8 @@ static void uncompress_hdr_iphc(sPacket *packet, uint8_t *buf, uint16_t buf_size
   /* Next header processing - continued */
   nhc = iphc0 & SICSLOWPAN_IPHC_NH_C;
   /* The next header is compressed, NHC is following */
-  last_nextheader =  &SICSLOWPAN_IP_BUF(buf)->proto;
-  ip_payload = SICSLOWPAN_IPPAYLOAD_BUF(buf);
+  last_nextheader =  &IP_HDR_CAST_TO_BUFF(buf)->proto;
+  ip_payload = &buf[UIP_IPH_LEN];
 
   while(nhc && (*hc06_ptr & SICSLOWPAN_NHC_MASK) == SICSLOWPAN_NHC_EXT_HDR) {
     uint8_t eid = (*hc06_ptr & 0x0e) >> 1;
@@ -1344,12 +1335,12 @@ static void uncompress_hdr_iphc(sPacket *packet, uint8_t *buf, uint16_t buf_size
            packetbuf_datalen(packet), packetbuf_hdr_len, uncomp_hdr_len, UIP_IPH_LEN);
 
     /* This is not a fragmented packet */
-    SICSLOWPAN_IP_BUF(buf)->len[0] = len >> 8;
-    SICSLOWPAN_IP_BUF(buf)->len[1] = len & 0x00FF;
+    IP_HDR_CAST_TO_BUFF(buf)->len[0] = len >> 8;
+    IP_HDR_CAST_TO_BUFF(buf)->len[1] = len & 0x00FF;
   } else {
     /* This is a 1st fragment */
-    SICSLOWPAN_IP_BUF(buf)->len[0] = (ip_len - UIP_IPH_LEN) >> 8;
-    SICSLOWPAN_IP_BUF(buf)->len[1] = (ip_len - UIP_IPH_LEN) & 0x00FF;
+	IP_HDR_CAST_TO_BUFF(buf)->len[0] = (ip_len - UIP_IPH_LEN) >> 8;
+    IP_HDR_CAST_TO_BUFF(buf)->len[1] = (ip_len - UIP_IPH_LEN) & 0x00FF;
   }
 }
 /** @} */
@@ -1744,7 +1735,7 @@ static uint8_t output(sUipBuff *txBuff, const linkaddr_t *localdest) {
      */
 
    if(txBuff->len < uncomp_hdr_len) {
-	   TRice(iD(7609), "err:output: uip_len is smaller than uncomp_hdr_len (%d < %d)", (int)txBuff->len, (int)uncomp_hdr_len);
+	   TRice(iD(5695), "err:output: buffer length is smaller than uncomp_hdr_len (%d < %d)", (int)txBuff->len, (int)uncomp_hdr_len);
 	   vPortFree(txPacket);
      return 0;
     }
@@ -1768,8 +1759,7 @@ static uint8_t output(sUipBuff *txBuff, const linkaddr_t *localdest) {
  * \note We do not check for overlapping sicslowpan fragments
  * (it is a SHALL in the RFC 4944 and should never happen)
  */
-static uint8_t input(sUipBuff *rxBuff)
-{
+static uint8_t input(sUipBuff *rxBuff) {
   /* size of the IP packet (read from fragment) */
   uint16_t frag_size = 0;
   /* offset of the fragment in the IP packet */
@@ -2013,8 +2003,6 @@ static uint8_t input(sUipBuff *rxBuff)
       packetbuf_attr(&rxPacket, PACKETBUF_ATTR_KEY_INDEX));
 #endif /* LLSEC802154_USES_EXPLICIT_KEYS */
 #endif /*  LLSEC802154_USES_AUX_HEADER */
-#warning "TCP_IP attaches here"
-    //tcpip_input();
     return 1;
 #if SICSLOWPAN_CONF_FRAG
   }

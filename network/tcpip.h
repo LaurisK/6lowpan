@@ -77,7 +77,6 @@ struct tcpip_uipstate {
 };
 
 #define UIP_APPCALL tcpip_uipcall
-#define UIP_UDP_APPCALL tcpip_uipcall
 #define UIP_ICMP6_APPCALL tcpip_icmp6_call
 
 /*#define UIP_APPSTATE_SIZE sizeof(struct tcpip_uipstate)*/
@@ -92,24 +91,6 @@ void tcpip_uipcall(void);
  * \name TCP functions
  * @{
  */
-
-/**
- * Attach a TCP connection to the current process
- *
- * This function attaches the current process to a TCP
- * connection. Each TCP connection must be attached to a process in
- * order for the process to be able to receive and send
- * data. Additionally, this function can add a pointer with connection
- * state to the connection.
- *
- * \param conn A pointer to the TCP connection.
- *
- * \param appstate An opaque pointer that will be passed to the
- * process whenever an event occurs on the connection.
- *
- */
-void tcp_attach(struct uip_conn *conn, void *appstate);
-#define tcp_markconn(conn, appstate) tcp_attach(conn, appstate)
 
 /**
  * Open a TCP port.
@@ -187,25 +168,6 @@ void tcpip_poll_tcp(struct uip_conn *conn);
  */
 
 struct uip_udp_conn;
-/**
- * Attach the current process to a UDP connection
- *
- * This function attaches the current process to a UDP
- * connection. Each UDP connection must have a process attached to it
- * in order for the process to be able to receive and send data over
- * the connection. Additionally, this function can add a pointer with
- * connection state to the connection.
- *
- * \param conn A pointer to the UDP connection.
- *
- * \param appstate An opaque pointer that will be passed to the
- * process whenever an event occurs on the connection.
- *
- */
-void udp_attach(struct uip_udp_conn *conn,
-		void *appstate);
-#define udp_markconn(conn, appstate) udp_attach(conn, appstate)
-
 /**
  * Create a new UDP connection.
  *
@@ -310,12 +272,6 @@ void tcpip_icmp6_call(uint8_t type);
 #endif /*UIP_CONF_ICMP6*/
 
 /** @} */
-/**
- * The uIP event.
- *
- * This event is posted to a process whenever a uIP event has occurred.
- */
-extern process_event_t tcpip_event;
 
 
 /**
@@ -332,7 +288,7 @@ extern process_event_t tcpip_event;
  *             and the length of the packet must be in the global
  *             uip_len variable.
  */
-void tcpip_input(void);
+uint16_t tcpip_input(sUipBuff *rxBuff);
 
 /**
  * \brief Output packet to layer 2

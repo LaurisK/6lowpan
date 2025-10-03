@@ -67,17 +67,6 @@ bool uipbuf_set_len(sUipBuff *uipBuff, uint16_t len) {
 }
 
 /*---------------------------------------------------------------------------*/
-void uipbuf_set_len_field(struct uip_ip_hdr *hdr, uint16_t len) {
-  hdr->len[0] = (len >> 8);
-  hdr->len[1] = (len & 0xff);
-}
-
-/*---------------------------------------------------------------------------*/
-uint16_t uipbuf_get_len_field(struct uip_ip_hdr *hdr) {
-  return ((uint16_t)(hdr->len[0]) << 8) + hdr->len[1];
-}
-
-/*---------------------------------------------------------------------------*/
 /* Get the next header given the buffer - start indicates that this is
    start of the IPv6 header - needs to be set to 0 when in an ext hdr */
 uint8_t * uipbuf_get_next_header(uint8_t *buffer, uint16_t size, uint8_t *protocol, bool start) {

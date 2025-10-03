@@ -54,26 +54,21 @@
 #include "App/common.h"
 #endif
 
-#define UIP_ICMP6_ERROR_BUF  ((struct uip_icmp6_error *)UIP_ICMP_PAYLOAD)
+/* The ICMP headers. */
+struct uip_icmp_hdr {
+  uint8_t type, icode;
+  uint16_t icmpchksum;
+};
 
-/** \brief temporary IP address */
-static uip_ipaddr_t tmp_ipaddr;
-
-LIST(echo_reply_callback_list);
+static struct uip_icmp6_echo_reply_notification *replyCbListHead = NULL, *replyCbListTail = NULL;
+static uip_icmp6_input_handler_t *inputHndlListHead = NULL;
+static sUipBuff icmpBuff = {0};
 /*---------------------------------------------------------------------------*/
-/* List of input handlers */
-LIST(input_handler_list);
-/*---------------------------------------------------------------------------*/
-static uip_icmp6_input_handler_t *input_handler_lookup(uint8_t type, uint8_t icode)
-{
+static uip_icmp6_input_handler_t *input_handler_lookup(uint8_t type, uint8_t icode) {
   uip_icmp6_input_handler_t *handler = NULL;
 
-  for(handler = list_head(input_handler_list);
-      handler != NULL;
-      handler = list_item_next(handler)) {
-    if(handler->type == type &&
-       (handler->icode == icode ||
-        handler->icode == UIP_ICMP6_HANDLER_CODE_ANY)) {
+  for(handler = inputHndlListHead; handler != NULL; handler = handler->next) {
+    if(handler->type == type && (handler->icode == icode || handler->icode == UIP_ICMP6_HANDLER_CODE_ANY)) {
       return handler;
     }
   }
@@ -81,9 +76,7 @@ static uip_icmp6_input_handler_t *input_handler_lookup(uint8_t type, uint8_t ico
   return NULL;
 }
 /*---------------------------------------------------------------------------*/
-uint8_t
-uip_icmp6_input(uint8_t type, uint8_t icode)
-{
+uint8_t uip_icmp6_input(sUipBuff *uipBuff, uint8_t type, uint8_t icode) {
   uip_icmp6_input_handler_t *handler = input_handler_lookup(type, icode);
 
   if(handler == NULL) {
@@ -94,72 +87,72 @@ uip_icmp6_input(uint8_t type, uint8_t icode)
     return UIP_ICMP6_INPUT_ERROR;
   }
 
-  handler->handler();
+  handler->handler(uipBuff);
   return UIP_ICMP6_INPUT_SUCCESS;
 }
 /*---------------------------------------------------------------------------*/
-void
-uip_icmp6_register_input_handler(uip_icmp6_input_handler_t *handler)
-{
-  list_add(input_handler_list, handler);
+void uip_icmp6_register_input_handler(uip_icmp6_input_handler_t *handler) {
+    /* Add input handler to list */
+	handler->next = inputHndlListHead;
+	inputHndlListHead = handler;
 }
 /*---------------------------------------------------------------------------*/
-static void
-echo_request_input(void)
-{
+static void echo_request_input(sUipBuff *uipBuff) {
+	/** \brief temporary IP address */
+	uip_ipaddr_t tmp_ipaddr;
   /*
    * we send an echo reply. It is trivial if there was no extension
    * headers in the request otherwise we need to remove the extension
    * headers and change a few fields
    */
-	  TRiceS(iD(3097), "msg:Received Echo Request from %s", uip6_printAddr(&UIP_IP_BUF->srcipaddr, NULL));
-	  TRiceS(iD(4343), "msg:to %s\n", uip6_printAddr(&UIP_IP_BUF->destipaddr, NULL));
+	  TRiceS(iD(3097), "msg:Received Echo Request from %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
+	  TRiceS(iD(4343), "msg:to %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
 
   /* IP header */
-  UIP_IP_BUF->ttl = Ds6_GetHopLimit();
+	  IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->ttl = Ds6_GetHopLimit();
 
-  if(uip_is_addr_mcast(&UIP_IP_BUF->destipaddr)){
-    uip_ipaddr_copy(&UIP_IP_BUF->destipaddr, &UIP_IP_BUF->srcipaddr);
-    uip_ds6_select_src(&UIP_IP_BUF->srcipaddr, &UIP_IP_BUF->destipaddr);
+  if(uip_is_addr_mcast(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr)){
+    uip_ipaddr_copy(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr);
+    uip_ds6_select_src(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr);
   } else {
-    uip_ipaddr_copy(&tmp_ipaddr, &UIP_IP_BUF->srcipaddr);
-    uip_ipaddr_copy(&UIP_IP_BUF->srcipaddr, &UIP_IP_BUF->destipaddr);
-    uip_ipaddr_copy(&UIP_IP_BUF->destipaddr, &tmp_ipaddr);
+    uip_ipaddr_copy(&tmp_ipaddr, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr);
+    uip_ipaddr_copy(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr);
+    uip_ipaddr_copy(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, &tmp_ipaddr);
   }
 
-  uip_remove_ext_hdr();
+  uip_remove_ext_hdr(uipBuff);
 
   /* Below is important for the correctness of UIP_ICMP_BUF and the
    * checksum
    */
 
   /* Note: now UIP_ICMP_BUF points to the beginning of the echo reply */
-  UIP_ICMP_BUF->type = ICMP6_ECHO_REPLY;
-  UIP_ICMP_BUF->icode = 0;
-  UIP_ICMP_BUF->icmpchksum = 0;
-  UIP_ICMP_BUF->icmpchksum = ~uip_icmp6chksum();
+  ICMP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->type = ICMP6_ECHO_REPLY;
+  ICMP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->icode = 0;
+  ICMP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->icmpchksum = 0;
+  ICMP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->icmpchksum = ~uip_icmp6chksum();
 
-  TRiceS(iD(4289), "msg:Sending Echo Reply to %s", uip6_printAddr(&UIP_IP_BUF->destipaddr, NULL));
-  TRiceS(iD(1784), "msg:from %s\n", uip6_printAddr(&UIP_IP_BUF->srcipaddr, NULL));
+  TRiceS(iD(4289), "msg:Sending Echo Reply to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
+  TRiceS(iD(1784), "msg:from %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
   UIP_STAT(++uip_stat.icmp.sent);
   return;
 }
 /*---------------------------------------------------------------------------*/
-void
-uip_icmp6_error_output(uint8_t type, uint8_t code, uint32_t param)
-{
+void uip_icmp6_error_output(sUipBuff *faultyBuff, uint8_t type, uint8_t code, uint32_t param) {
+	/** \brief temporary IP address */
+	uip_ipaddr_t tmp_ipaddr;
   /* check if originating packet is not an ICMP error */
   uint16_t shift;
 
-  if(uip_last_proto == UIP_PROTO_ICMP6 && UIP_ICMP_BUF->type < 128) {
-    uipbuf_clear();
+  if(faultyBuff->lastProto == UIP_PROTO_ICMP6 && (struct uip_icmp_hdr*)(faultyBuff->buff.u8 + UIP_IPH_LEN + faultyBuff->extLen)->type < 128) {
+    uipbuf_clear(faultyBuff);
     return;
   }
 
   /* the source should not be unspecified nor multicast */
-  if(uip_is_addr_unspecified(&UIP_IP_BUF->srcipaddr) ||
-     uip_is_addr_mcast(&UIP_IP_BUF->srcipaddr)) {
-    uipbuf_clear();
+  if(uip_is_addr_unspecified(&IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8)->srcipaddr) ||
+     uip_is_addr_mcast(&IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8)->srcipaddr)) {
+    uipbuf_clear(faultyBuff);
     return;
   }
 
@@ -170,143 +163,149 @@ uip_icmp6_error_output(uint8_t type, uint8_t code, uint32_t param)
   }
 
   /* remember data of original packet before shifting */
-  uip_ipaddr_copy(&tmp_ipaddr, &UIP_IP_BUF->destipaddr);
+  uip_ipaddr_copy(&tmp_ipaddr, &IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8)->destipaddr);
 
   /* The ICMPv6 error message contains as much of possible of the invoking packet
    * (see RFC 4443 section 3). Make space for the additional IPv6 and
    * ICMPv6 headers here and move payload to the "right". What we move includes
     * extension headers */
   shift = UIP_IPH_LEN + UIP_ICMPH_LEN + UIP_ICMP6_ERROR_LEN;
-  uip_len += shift;
-  uip_len = MIN(uip_len, UIP_LINK_MTU);
-  uip_ext_len = 0;
-  memmove(uip_buf + shift, (void *)UIP_IP_BUF, uip_len - shift);
+  faultyBuff->len += shift;
+  faultyBuff->len = MIN(faultyBuff->len, UIP_LINK_MTU);
+  faultyBuff->extLen = 0;
+  memmove(faultyBuff->buff.u8 + shift, faultyBuff->buff.u8, faultyBuff->len - shift);
 
-  UIP_IP_BUF->vtc = 0x60;
-  UIP_IP_BUF->tcflow = 0;
-  UIP_IP_BUF->flow = 0;
-  UIP_IP_BUF->proto = UIP_PROTO_ICMP6;
-  UIP_IP_BUF->ttl = Ds6_GetHopLimit();
+  IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8)->vtc = 0x60;
+  IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8)->tcflow = 0;
+  IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8)->flow = 0;
+  IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8)->proto = UIP_PROTO_ICMP6;
+  IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8)->ttl = Ds6_GetHopLimit();
 
-  uip_ipaddr_copy(&UIP_IP_BUF->destipaddr, &UIP_IP_BUF->srcipaddr);
+  uip_ipaddr_copy(&IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8)->destipaddr, &IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8)->srcipaddr);
 
   if(uip_is_addr_mcast(&tmp_ipaddr)){
     if(type == ICMP6_PARAM_PROB && code == ICMP6_PARAMPROB_OPTION){
-      uip_ds6_select_src(&UIP_IP_BUF->srcipaddr, &tmp_ipaddr);
+      uip_ds6_select_src(&IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8)->srcipaddr, &tmp_ipaddr);
     } else {
-      uipbuf_clear();
+      uipbuf_clear(faultyBuff);
       return;
     }
   } else {
     /* need to pick a source that corresponds to this node */
-    uip_ds6_select_src(&UIP_IP_BUF->srcipaddr, &tmp_ipaddr);
+    uip_ds6_select_src(&IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8)->srcipaddr, &tmp_ipaddr);
   }
 
-  UIP_ICMP_BUF->type = type;
-  UIP_ICMP_BUF->icode = code;
-  UIP_ICMP6_ERROR_BUF->param = __REV(param);
-  uipbuf_set_len_field(UIP_IP_BUF, uip_len - UIP_IPH_LEN);
-  UIP_ICMP_BUF->icmpchksum = 0;
-  UIP_ICMP_BUF->icmpchksum = ~uip_icmp6chksum();
+  ICMP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8 + UIP_IPH_LEN + faultyBuff->extLen)->type = type;
+  ICMP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8 + UIP_IPH_LEN + faultyBuff->extLen)->icode = code;
+  ((struct uip_icmp6_error*)(faultyBuff->buff.u8 + UIP_IPH_LEN + faultyBuff->extLen))->param = __REV(param);
+  uipbuf_set_len_field(IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8), faultyBuff->len - UIP_IPH_LEN);
+  ICMP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8 + UIP_IPH_LEN + faultyBuff->extLen)->icmpchksum = 0;
+  ICMP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8 + UIP_IPH_LEN + faultyBuff->extLen)->icmpchksum = ~uip_icmp6chksum();
 
   UIP_STAT(++uip_stat.icmp.sent);
 
-  TRiceS(iD(2033), "wrn:to %s\n", uip6_printAddr(&UIP_IP_BUF->destipaddr, NULL));
+  TRiceS(iD(2033), "wrn:to %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8)->destipaddr, NULL));
   TRice(iD(1187), "wrn:Sending ICMPv6 ERROR message type %d code %d to ", type, code);
-  TRiceS(iD(4532), "wrn:%s", uip6_printAddr(&UIP_IP_BUF->destipaddr, NULL));
-  TRiceS(iD(4511), "wrn: from %s\n", uip6_printAddr(&UIP_IP_BUF->srcipaddr, NULL));
+  TRiceS(iD(4532), "wrn:%s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8)->destipaddr, NULL));
+  TRiceS(iD(4511), "wrn: from %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8)->srcipaddr, NULL));
   return;
 }
 
 /*---------------------------------------------------------------------------*/
-void
-uip_icmp6_send(const uip_ipaddr_t *dest, int type, int code, int payload_len)
-{
-  UIP_IP_BUF->vtc = 0x60;
-  UIP_IP_BUF->tcflow = 0;
-  UIP_IP_BUF->flow = 0;
-  UIP_IP_BUF->proto = UIP_PROTO_ICMP6;
-  UIP_IP_BUF->ttl = Ds6_GetHopLimit();
-  uipbuf_set_len_field(UIP_IP_BUF, UIP_ICMPH_LEN + payload_len);
+void uip_icmp6_send(const uip_ipaddr_t *dest, int type, int code, int payload_len) {
+  uipbuf_clear(&icmpBuff);
+  ((struct uip_ip_hdr *)(icmpBuff.buff.u8))->vtc = 0x60;
+  ((struct uip_ip_hdr *)(icmpBuff.buff.u8))->tcflow = 0;
+  ((struct uip_ip_hdr *)(icmpBuff.buff.u8))->flow = 0;
+  ((struct uip_ip_hdr *)(icmpBuff.buff.u8))->proto = UIP_PROTO_ICMP6;
+  ((struct uip_ip_hdr *)(icmpBuff.buff.u8))->ttl = Ds6_GetHopLimit();
+  uipbuf_set_len_field(((struct uip_ip_hdr *)(icmpBuff.buff.u8)), UIP_ICMPH_LEN + payload_len);
 
   if(dest == NULL) {
 	  TRice(iD(6972), "err:invalid argument; dest is NULL\n");
     return;
   }
 
-  memcpy(&UIP_IP_BUF->destipaddr, dest, sizeof(*dest));
-  uip_ds6_select_src(&UIP_IP_BUF->srcipaddr, &UIP_IP_BUF->destipaddr);
+  memcpy(&((struct uip_ip_hdr *)(icmpBuff.buff.u8))->destipaddr, dest, sizeof(*dest));
+  uip_ds6_select_src(&IP_HDR_CAST_TO_BUFF(icmpBuff.buff.u8)->srcipaddr, &IP_HDR_CAST_TO_BUFF(icmpBuff.buff.u8)->destipaddr);
 
-  UIP_ICMP_BUF->type = type;
-  UIP_ICMP_BUF->icode = code;
+  ICMP_HDR_CAST_TO_BUFF(icmpBuff.buff.u8 + UIP_IPH_LEN + icmpBuff.extLen)->type = type;
+  ICMP_HDR_CAST_TO_BUFF(icmpBuff.buff.u8 + UIP_IPH_LEN + icmpBuff.extLen)->icode = code;
 
-  UIP_ICMP_BUF->icmpchksum = 0;
-  UIP_ICMP_BUF->icmpchksum = ~uip_icmp6chksum();
+  ICMP_HDR_CAST_TO_BUFF(icmpBuff.buff.u8 + UIP_IPH_LEN + icmpBuff.extLen)->icmpchksum = 0;
+  ICMP_HDR_CAST_TO_BUFF(icmpBuff.buff.u8 + UIP_IPH_LEN + icmpBuff.extLen)->icmpchksum = ~uip_icmp6chksum();
 
-  uip_len = UIP_IPH_LEN + UIP_ICMPH_LEN + payload_len;
+  icmpBuff.len = UIP_IPH_LEN + UIP_ICMPH_LEN + payload_len;
 
   UIP_STAT(++uip_stat.icmp.sent);
   UIP_STAT(++uip_stat.ip.sent);
 
-  TRiceS(iD(6461), "msg:Sending ICMPv6 packet to %s", uip6_printAddr(&UIP_IP_BUF->destipaddr, NULL));
+  TRiceS(iD(6461), "msg:Sending ICMPv6 packet to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(icmpBuff.buff.u8)->destipaddr, NULL));
   TRice(iD(4169), "msg:, type %u, code %u, len %u\n", type, code, payload_len);
 
-  tcpip_ipv6_output();
+  tcpip_ipv6_output(&icmpBuff);
 }
 /*---------------------------------------------------------------------------*/
-static void
-echo_reply_input(void)
-{
+static void echo_reply_input(sUipBuff *uipBuff) {
   int ttl;
   uip_ipaddr_t sender;
 
-  TRiceS(iD(5328), "msg:Received Echo Reply from %s", uip6_printAddr(&UIP_IP_BUF->srcipaddr, NULL));
-  TRiceS(iD(5095), "msg:to %s\n", uip6_printAddr(&UIP_IP_BUF->destipaddr, NULL));
+  TRiceS(iD(5328), "msg:Received Echo Reply from %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
+  TRiceS(iD(5095), "msg:to %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
 
-  uip_ipaddr_copy(&sender, &UIP_IP_BUF->srcipaddr);
-  ttl = UIP_IP_BUF->ttl;
+  uip_ipaddr_copy(&sender, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr);
+  ttl = IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->ttl;
 
-  uip_remove_ext_hdr();
+  uip_remove_ext_hdr(uipBuff);
 
   /* Call all registered applications to let them know an echo reply
      has been received. */
   {
     struct uip_icmp6_echo_reply_notification *n;
-    for(n = list_head(echo_reply_callback_list);
-        n != NULL;
-        n = list_item_next(n)) {
+    for(n = replyCbListHead; n != NULL; n = n->next) {
       if(n->callback != NULL) {
-        n->callback(&sender, ttl,
-                    (uint8_t *)UIP_ICMP_PAYLOAD,
-                    uip_len - sizeof(struct uip_icmp_hdr) - UIP_IPH_LEN);
+        n->callback(&sender, ttl, (uint8_t *)UIP_ICMP_PAYLOAD, uip_len - sizeof(struct uip_icmp_hdr) - UIP_IPH_LEN);
       }
     }
   }
 
-  uipbuf_clear();
+  uipbuf_clear(uipBuff);
   return;
 }
 /*---------------------------------------------------------------------------*/
-void
-uip_icmp6_echo_reply_callback_add(struct uip_icmp6_echo_reply_notification *n,
-                                  uip_icmp6_echo_reply_callback_t c)
-{
+void uip_icmp6_echo_reply_callback_add(struct uip_icmp6_echo_reply_notification *n, uip_icmp6_echo_reply_callback_t c) {
   if(n != NULL && c != NULL) {
     n->callback = c;
-    list_add(echo_reply_callback_list, n);
+    /* Add callback to list */
+    n->next = NULL;
+    if (NULL != replyCbListTail) {
+    	replyCbListTail->next = n;
+    } else {
+    	replyCbListHead = n;
+    }
+    replyCbListTail = n;
   }
 }
 /*---------------------------------------------------------------------------*/
-void
-uip_icmp6_echo_reply_callback_rm(struct uip_icmp6_echo_reply_notification *n)
-{
-  list_remove(echo_reply_callback_list, n);
+void uip_icmp6_echo_reply_callback_rm(struct uip_icmp6_echo_reply_notification *n) {
+	struct uip_icmp6_echo_reply_notification *walker = replyCbListHead, *follower = NULL;
+	while (NULL != walker) {
+		if (n == walker) {
+			if (NULL != follower) {
+				follower->next = walker->next;
+			} else {
+				replyCbListHead = walker->next;
+			}
+			walker->next = NULL;
+			break;
+		}
+		follower = walker;
+		walker = walker->next;
+	}
 }
 /*---------------------------------------------------------------------------*/
-UIP_ICMP6_HANDLER(echo_request_handler, ICMP6_ECHO_REQUEST,
-                  UIP_ICMP6_HANDLER_CODE_ANY, echo_request_input);
-UIP_ICMP6_HANDLER(echo_reply_handler, ICMP6_ECHO_REPLY,
-                  UIP_ICMP6_HANDLER_CODE_ANY, echo_reply_input);
+static uip_icmp6_input_handler_t echo_request_handler = {NULL, ICMP6_ECHO_REQUEST, UIP_ICMP6_HANDLER_CODE_ANY, echo_request_input};
+static uip_icmp6_input_handler_t echo_reply_handler = {NULL, ICMP6_ECHO_REPLY, UIP_ICMP6_HANDLER_CODE_ANY, echo_reply_input};
 /*---------------------------------------------------------------------------*/
 void
 uip_icmp6_init()

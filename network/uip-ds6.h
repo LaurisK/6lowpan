@@ -52,6 +52,28 @@
 //#include "net/ipv6/uip-ds6-route.h"
 
 /*--------------------------------------------------*/
+/** \name RFC 4861 Host constant */
+/** @{ */
+/** \brief Maximum router solicitation delay */
+#ifndef UIP_CONF_ND6_MAX_RTR_SOLICITATION_DELAY
+#define UIP_ND6_MAX_RTR_SOLICITATION_DELAY 1
+#else
+#define UIP_ND6_MAX_RTR_SOLICITATION_DELAY UIP_CONF_ND6_MAX_RTR_SOLICITATION_DELAY
+#endif
+/** \brief Router solicitation interval */
+#ifndef UIP_CONF_ND6_RTR_SOLICITATION_INTERVAL
+#define UIP_ND6_RTR_SOLICITATION_INTERVAL  4
+#else
+#define UIP_ND6_RTR_SOLICITATION_INTERVAL  UIP_CONF_ND6_RTR_SOLICITATION_INTERVAL
+#endif
+/** \brief Maximum router solicitations */
+#ifndef UIP_CONF_ND6_MAX_RTR_SOLICITATIONS
+#define UIP_ND6_MAX_RTR_SOLICITATIONS      3
+#else
+#define UIP_ND6_MAX_RTR_SOLICITATIONS      UIP_CONF_ND6_MAX_RTR_SOLICITATIONS
+#endif
+/** @} */
+
 /** Configuration. For all tables (Neighbor cache, Prefix List, Routing Table,
  * Default Router List, Unicast address list, multicast address list, anycast address list),
  * we define:
@@ -261,9 +283,6 @@ extern uip_ds6_prefix_t uip_ds6_prefix_list[UIP_DS6_PREFIX_NB];
 /*---------------------------------------------------------------------------*/
 /** \brief Initialize data structures */
 void uip_ds6_init(void);
-
-/** \brief Periodic processing of data structures */
-void uip_ds6_periodic(void);
 
 /** \brief Generic loop routine on an abstract data structure, which generalizes
  * all data structures used in DS6 */

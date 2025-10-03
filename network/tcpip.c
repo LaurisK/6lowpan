@@ -64,7 +64,6 @@
 extern struct uip_fallback_interface UIP_FALLBACK_INTERFACE;
 #endif
 
-process_event_t tcpip_event;
 #if UIP_CONF_ICMP6
 process_event_t tcpip_icmp6_event;
 #endif /* UIP_CONF_ICMP6 */
@@ -87,12 +86,8 @@ static struct internal_state {
 static TimerHandle_t periodicTim;
 #endif
 
-enum {
-  TCP_POLL,
-  UDP_POLL,
-  PACKET_INPUT
-};
-
+static uint16_t tcpipEvtIdOffset;
+void (*tcpipIrq2Task)(uint16_t, void(*cbFunc)(void));
 /*---------------------------------------------------------------------------*/
 
 uint8_t tcpip_output(sUipBuff *tcpUipBuff, const uip_lladdr_t *addr) {
@@ -103,13 +98,14 @@ uint8_t tcpip_output(sUipBuff *tcpUipBuff, const uip_lladdr_t *addr) {
   if(uipbuf_get_attr(tcpUipBuff, UIPBUF_ATTR_MAX_MAC_TRANSMISSIONS) != UIP_MAX_MAC_TRANSMISSIONS_UNDEFINED) {
 	  TRice(iD(3667), "msg:Tagging TC with retrans: %d\n", uipbuf_get_attr(tcpUipBuff, UIPBUF_ATTR_MAX_MAC_TRANSMISSIONS));
     /* Encapsulate the MAC transmission limit in the Traffic Class field */
-    UIP_IP_BUF->vtc = 0x60 | (UIP_TC_MAC_TRANSMISSION_COUNTER_BIT >> 4);
-    UIP_IP_BUF->tcflow = uipbuf_get_attr(tcpUipBuff, UIPBUF_ATTR_MAX_MAC_TRANSMISSIONS) << 4;
+	IP_HDR_CAST_TO_BUFF(tcpUipBuff->buff.u8)->vtc = 0x60 | (UIP_TC_MAC_TRANSMISSION_COUNTER_BIT >> 4);
+    IP_HDR_CAST_TO_BUFF(tcpUipBuff->buff.u8)->tcflow = uipbuf_get_attr(tcpUipBuff, UIPBUF_ATTR_MAX_MAC_TRANSMISSIONS) << 4;
   }
 #endif
 #warning "netstack.c/h is for packet filtering, firewall or other functionality which is not needed for now"
   if(1/*netstack_process_ip_callback(NETSTACK_IP_OUTPUT, addr) == NETSTACK_IP_PROCESS*/) {
-    ret = sicslowpan_driver.output(tcpUipBuff, addr);
+#warning "uip_lladdr_t >>> linkaddr_t - why??? maybe it is same stuff?"
+    ret = sicslowpan_driver.output(tcpUipBuff, (const linkaddr_t *)addr);
     return ret;
   } else {
     /* Ok, ignore and drop... */
@@ -117,8 +113,6 @@ uint8_t tcpip_output(sUipBuff *tcpUipBuff, const uip_lladdr_t *addr) {
     return 0;
   }
 }
-
-//PROCESS(tcpip_process, "TCP/IP stack");
 
 /*---------------------------------------------------------------------------*/
 #if UIP_TCP
@@ -138,22 +132,22 @@ static void check_for_tcp_syn(void) {
      this timer.  This function is called for every incoming IP packet
      to check for such SYNs. */
 #define TCP_SYN 0x02
-  if(UIP_IP_BUF->proto == UIP_PROTO_TCP && (UIP_TCP_BUF->flags & TCP_SYN) == TCP_SYN) {
+  if(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->proto == UIP_PROTO_TCP && (UIP_TCP_BUF->flags & TCP_SYN) == TCP_SYN) {
     start_periodic_tcp_timer();
   }
 #endif /* UIP_TCP */
 }
 
 /*---------------------------------------------------------------------------*/
-static void packet_input(void) {
-  if(uip_len > 0) {
-	  TRice(iD(7186), "msg:input: received %u bytes\n", uip_len);
+static uint16_t packet_input(sUipBuff *rxBuff) {
+  if(rxBuff->len > 0) {
+	TRice(iD(7186), "msg:input: received %u bytes\n", rxBuff->len);
 
     check_for_tcp_syn();
 
 #if UIP_TAG_TC_WITH_VARIABLE_RETRANSMISSIONS
     {
-      uint8_t traffic_class = (UIP_IP_BUF->vtc << 4) | (UIP_IP_BUF->tcflow >> 4);
+      uint8_t traffic_class = (IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->vtc << 4) | (IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->tcflow >> 4);
       if(traffic_class & UIP_TC_MAC_TRANSMISSION_COUNTER_BIT) {
         uint8_t max_mac_transmissions = traffic_class & UIP_TC_MAC_TRANSMISSION_COUNTER_MASK;
         uipbuf_set_attr(UIPBUF_ATTR_MAX_MAC_TRANSMISSIONS, max_mac_transmissions);
@@ -163,9 +157,9 @@ static void packet_input(void) {
     }
 #endif /* UIP_TAG_TC_WITH_VARIABLE_RETRANSMISSIONS */
 
-    uip_input();
-    if(uip_len > 0) {
-      tcpip_ipv6_output();
+    uip_process(rxBuff, UIP_DATA);
+    if(rxBuff->len > 0) {
+      tcpip_ipv6_output(rxBuff);
     }
   }
 }
@@ -225,21 +219,21 @@ tcp_listen(uint16_t port)
     ++l;
   }
 }
-/*---------------------------------------------------------------------------*/
-void
-tcp_attach(struct uip_conn *conn, void *appstate)
-{
-  //init_appstate(&conn->appstate, appstate);
-}
+///*---------------------------------------------------------------------------*/
+//void
+//tcp_attach(struct uip_conn *conn, void *appstate)
+//{
+//  //init_appstate(&conn->appstate, appstate);
+//}
 #endif /* UIP_TCP */
 /*---------------------------------------------------------------------------*/
 #if UIP_UDP
-void
-udp_attach(struct uip_udp_conn *conn, void *appstate)
-{
-  //init_appstate(&conn->appstate, appstate);
-}
-/*---------------------------------------------------------------------------*/
+//void
+//udp_attach(struct uip_udp_conn *conn, void *appstate)
+//{
+//  //init_appstate(&conn->appstate, appstate);
+//}
+///*---------------------------------------------------------------------------*/
 struct uip_udp_conn *
 udp_new(const uip_ipaddr_t *ripaddr, uint16_t port, void *appstate)
 {
@@ -254,8 +248,7 @@ udp_new(const uip_ipaddr_t *ripaddr, uint16_t port, void *appstate)
   return c;
 }
 /*---------------------------------------------------------------------------*/
-struct uip_udp_conn *
-udp_broadcast_new(uint16_t port, void *appstate)
+struct uip_udp_conn *udp_broadcast_new(uint16_t port, void *appstate)
 {
   uip_ipaddr_t addr;
   struct uip_udp_conn *conn;
@@ -271,8 +264,7 @@ udp_broadcast_new(uint16_t port, void *appstate)
 #endif /* UIP_UDP */
 /*---------------------------------------------------------------------------*/
 #if UIP_CONF_ICMP6
-uint8_t
-icmp6_new(void *appstate) {
+uint8_t icmp6_new(void *appstate) {
   if(uip_icmp6_conns.appstate.p == PROCESS_NONE) {
     //init_appstate(&uip_icmp6_conns.appstate, appstate);
     return 0;
@@ -292,101 +284,24 @@ tcpip_icmp6_call(uint8_t type)
 }
 #endif /* UIP_CONF_ICMP6 */
 /*---------------------------------------------------------------------------*/
-static void
-eventhandler(process_event_t ev, process_data_t data)
+uint16_t tcpip_input(sUipBuff *rxBuff)
 {
-#if UIP_TCP
-  unsigned char i;
-  register struct listenport *l;
-#endif /*UIP_TCP*/
-  struct process *p;
-
-  switch(ev) {
-  case PROCESS_EVENT_EXITED:
-    /* This is the event we get if a process has exited. We go through
-         the TCP/IP tables to see if this process had any open
-         connections or listening TCP ports. If so, we'll close those
-         connections. */
-
-    p = (struct process *)data;
-#if UIP_TCP
-    l = s.listenports;
-    for(i = 0; i < UIP_LISTENPORTS; ++i) {
-      if(l->p == p) {
-        uip_unlisten(l->port);
-        l->port = 0;
-        l->p = PROCESS_NONE;
-      }
-      ++l;
-    }
-
-    {
-      struct uip_conn *cptr;
-
-      for(cptr = &uip_conns[0]; cptr < &uip_conns[UIP_TCP_CONNS]; ++cptr) {
-        if(cptr->appstate.p == p) {
-          cptr->appstate.p = PROCESS_NONE;
-          cptr->tcpstateflags = UIP_CLOSED;
-        }
-      }
-    }
-#endif /* UIP_TCP */
-#if UIP_UDP
-    {
-      struct uip_udp_conn *cptr;
-
-      for(cptr = &uip_udp_conns[0];
-          cptr < &uip_udp_conns[UIP_UDP_CONNS]; ++cptr) {
-        if(cptr->appstate.p == p) {
-          cptr->lport = 0;
-        }
-      }
-    }
-#endif /* UIP_UDP */
-    break;
-
-#if UIP_TCP
-  case TCP_POLL:
-    if(data != NULL) {
-      uip_poll_conn(data);
-      tcpip_ipv6_output();
-      /* Start the periodic polling, if it isn't already active. */
-      start_periodic_tcp_timer();
-    }
-    break;
-#endif /* UIP_TCP */
-#if UIP_UDP
-  case UDP_POLL:
-    if(data != NULL) {
-      uip_udp_periodic_conn(data);
-      tcpip_ipv6_output();
-    }
-    break;
-#endif /* UIP_UDP */
-
-  case PACKET_INPUT:
-    packet_input();
-    break;
-  };
-}
-/*---------------------------------------------------------------------------*/
-void
-tcpip_input(void)
-{
+	if (sicslowpan_driver.input(rxBuff)) {
 #warning "netstack.c/h is for packet filtering, firewall or other functionality which is not needed for now"
   if(1/*netstack_process_ip_callback(NETSTACK_IP_INPUT, NULL) == NETSTACK_IP_PROCESS*/) {
-    process_post_synch(&tcpip_process, PACKET_INPUT, NULL);
+	    return packet_input(rxBuff);
   } /* else - do nothing and drop */
-  uipbuf_clear();
+  //uipbuf_clear(); do not care - we clear it at start of reception. and now use different buffers for RX/TX and stuff.
+	}
+	return 0;
 }
 /*---------------------------------------------------------------------------*/
 static void
 output_fallback(void)
 {
 #ifdef UIP_FALLBACK_INTERFACE
-  uip_last_proto = *((uint8_t *)UIP_IP_BUF + 40);
-  TRice(iD(1848), "msg:fallback: removing ext hdrs & setting proto %d %d\n",
-         uip_ext_len, uip_last_proto);
+  uip_last_proto = *(uipBuff->buff.u8 + UIP_IPH_LEN);
+  TRice(iD(1848), "msg:fallback: removing ext hdrs & setting proto %d %d\n", uip_ext_len, uip_last_proto);
   uip_remove_ext_hdr();
   /* Inform the other end that the destination is not reachable. If it's
    * not informed routes might get lost unexpectedly until there's a need
@@ -419,15 +334,13 @@ annotate_transmission(const uip_ipaddr_t *nexthop)
 #endif /* TCPIP_CONF_ANNOTATE_TRANSMISSIONS */
 }
 /*---------------------------------------------------------------------------*/
-static const uip_ipaddr_t*
-get_nexthop(uip_ipaddr_t *addr)
-{
+static const uip_ipaddr_t* get_nexthop(sUipBuff *uipBuff, uip_ipaddr_t *addr) {
   const uip_ipaddr_t *nexthop;
   uip_ds6_route_t *route;
 
-  TRice(iD(7782), "msg:output: processing %u bytes packet from ", uip_len);
-  TRiceS(iD(4692), "msg:%s\n", uip6_printAddr(&UIP_IP_BUF->srcipaddr, NULL));
-  TRiceS(iD(6621), "msg: to %s\n", uip6_printAddr(&UIP_IP_BUF->destipaddr, NULL));
+  TRice(iD(7782), "msg:output: processing %u bytes packet from ", uipBuff->len);
+  TRiceS(iD(4692), "msg:%s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
+  TRiceS(iD(6621), "msg: to %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
 
   if(NETSTACK_ROUTING.ext_header_srh_get_next_hop(addr)) {
     TRiceS(iD(6149), "msg:output: selected next hop from SRH: %s\n", uip6_printAddr(addr, NULL));
@@ -437,19 +350,19 @@ get_nexthop(uip_ipaddr_t *addr)
   /* We first check if the destination address is on our immediate
      link. If so, we simply use the destination address as our
      nexthop address. */
-  if(uip_ds6_is_addr_onlink(&UIP_IP_BUF->destipaddr)) {
+  if(uip_ds6_is_addr_onlink(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr)) {
 	  TRice(iD(2024), "msg:output: destination is on link\n");
-    return &UIP_IP_BUF->destipaddr;
+    return &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr;
   }
 
   /* Check if we have a route to the destination address. */
-  route = uip_ds6_route_lookup(&UIP_IP_BUF->destipaddr);
+  route = uip_ds6_route_lookup(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr);
 
   /* No route was found - we send to the default route instead. */
   if(route == NULL) {
     nexthop = uip_ds6_defrt_choose();
     if(nexthop == NULL) {
-      output_fallback();
+      output_fallback(uipBuff);
     } else {
       TRiceS(iD(5465), "msg:output: no route found, using default route: %s\n", uip6_printAddr(nexthop, NULL));
     }
@@ -546,23 +459,23 @@ send_nd6_ns(const uip_ipaddr_t *nexthop)
   return err;
 }
 /*---------------------------------------------------------------------------*/
-void tcpip_ipv6_output(void)
+void tcpip_ipv6_output(sUipBuff *uipBuff)
 {
   uip_ipaddr_t ipaddr;
   uip_ds6_nbr_t *nbr = NULL;
   const uip_lladdr_t *linkaddr;
   const uip_ipaddr_t *nexthop;
 
-  if(uip_len == 0) {
+  if(uipBuff->len == 0) {
     return;
   }
 
-  if(uip_len > UIP_LINK_MTU) {
+  if(uipBuff->len > UIP_LINK_MTU) {
 	  TRice(iD(7953), "err:output: Packet too big");
     goto exit;
   }
 
-  if(uip_is_addr_unspecified(&UIP_IP_BUF->destipaddr)){
+  if(uip_is_addr_unspecified(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr)){
 	  TRice(iD(5311), "err:output: Destination address unspecified");
     goto exit;
   }
@@ -571,20 +484,20 @@ void tcpip_ipv6_output(void)
   if(!NETSTACK_ROUTING.ext_header_update()) {
     /* Packet can not be forwarded */
 	  TRice(iD(4730), "err:output: routing protocol extension header update error\n");
-    uipbuf_clear();
+    uipbuf_clear(uipBuff);
     return;
   }
 
-  if(uip_is_addr_mcast(&UIP_IP_BUF->destipaddr)) {
+  if(uip_is_addr_mcast(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr)) {
     linkaddr = NULL;
     goto send_packet;
   }
 
   /* We first check if the destination address is one of ours. There is no
    * loopback interface -- instead, process this directly as incoming. */
-  if(uip_ds6_is_my_addr(&UIP_IP_BUF->destipaddr)) {
+  if(uip_ds6_is_my_addr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr)) {
 	  TRice(iD(5659), "msg:output: sending to ourself\n");
-    packet_input();
+    packet_input(uipBuff);
     return;
   }
 
@@ -647,30 +560,49 @@ send_packet:
 
   TRice(iD(2213), "msg:output: sending to ");
   linkaddr_print((linkaddr_t *)linkaddr);
-  LOG_INFO_("\n");
-  tcpip_output(linkaddr);
+  TRice(iD(5271), "\n");
+  tcpip_output(uipBuff, linkaddr);
 
   if(nbr) {
     send_queued(nbr);
   }
 
 exit:
-  uipbuf_clear();
+  uipbuf_clear(uipBuff);
   return;
 }
 /*---------------------------------------------------------------------------*/
 #if UIP_UDP
-void
-tcpip_poll_udp(struct uip_udp_conn *conn)
-{
-  process_post(&tcpip_process, UDP_POLL, conn);
+static struct uip_udp_conn *pollUdpConn = NULL;
+static void PollUdp(void) {
+    if(NULL != pollUdpConn) {
+      uip_udp_periodic_conn(pollUdpConn);
+      tcpip_ipv6_output();
+    }
+    pollUdpConn = NULL;
+}
+
+void tcpip_poll_udp(struct uip_udp_conn *conn) {
+	pollUdpConn = conn;
+	tcpipIrq2Task(tcpipEvtIdOffset + radio_taskCall, PollUdp);
 }
 #endif /* UIP_UDP */
 /*---------------------------------------------------------------------------*/
 #if UIP_TCP
-void
-tcpip_poll_tcp(struct uip_conn *conn)
-{
+static struct uip_conn *pollTcpConn = NULL;
+static void PollTcp(void) {
+    if(NULL != pollTcpConn) {
+      uip_poll_conn(pollTcpConn);
+      tcpip_ipv6_output();
+      /* Start the periodic polling, if it isn't already active. */
+      start_periodic_tcp_timer();
+    }
+    pollTcpConn = NULL;
+}
+
+void tcpip_poll_tcp(struct uip_conn *conn) {
+	pollTcpConn = conn;
+	tcpipIrq2Task(tcpipEvtIdOffset + radio_taskCall, PollTcp);
   process_post(&tcpip_process, TCP_POLL, conn);
 }
 #endif /* UIP_TCP */
@@ -678,17 +610,17 @@ tcpip_poll_tcp(struct uip_conn *conn)
 void
 tcpip_uipcall(void)
 {
-  uip_udp_appstate_t *ts;
-
-#if UIP_UDP
-  if(uip_conn != NULL) {
-    ts = &uip_conn->appstate;
-  } else {
-    ts = &uip_udp_conn->appstate;
-  }
-#else /* UIP_UDP */
-  ts = &uip_conn->appstate;
-#endif /* UIP_UDP */
+//  uip_udp_appstate_t *ts;
+//
+//#if UIP_UDP
+//  if(uip_conn != NULL) {
+//    ts = &uip_conn->appstate;
+//  } else {
+//    ts = &uip_udp_conn->appstate;
+//  }
+//#else /* UIP_UDP */
+//  ts = &uip_conn->appstate;
+//#endif /* UIP_UDP */
 
 #if UIP_TCP
   {
@@ -715,41 +647,11 @@ tcpip_uipcall(void)
   }
 #endif /* UIP_TCP */
 
-  if(ts->p != NULL) {
-    process_post_synch(ts->p, tcpip_event, ts->state);
-  }
+//  if(ts->p != NULL) {
+//    process_post_synch(ts->p, tcpip_event, ts->state);
+//  }
 }
 /*---------------------------------------------------------------------------*/
-PROCESS_THREAD(tcpip_process, ev, data)
-{
-  PROCESS_BEGIN();
-
-#if UIP_TCP
-  memset(s.listenports, 0, UIP_LISTENPORTS*sizeof(*(s.listenports)));
-  s.p = PROCESS_CURRENT();
-#endif
-
-  tcpip_event = process_alloc_event();
-#if UIP_CONF_ICMP6
-  tcpip_icmp6_event = process_alloc_event();
-#endif /* UIP_CONF_ICMP6 */
-
-#ifdef UIP_FALLBACK_INTERFACE
-  UIP_FALLBACK_INTERFACE.init();
-#endif
-  /* Initialize routing protocol */
-#warning "NETSTACK_ROUTING init here."
-  uip6_init();
-  //NETSTACK_ROUTING.init();
-
-  while(1) {
-    PROCESS_YIELD();
-    eventhandler(ev, data);
-  }
-
-  PROCESS_END();
-}
-
 #if UIP_TCP
 static void HandleTcpipPeriodicTimer(TimerHandle_t periodicTim) {
 	uint8_t i = UIP_TCP_CONNS;
@@ -774,8 +676,62 @@ void tcpip_init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void
 #if UIP_TCP
 	  periodicTim = xTimerCreate("tcpipPeriodicTimer", pdMS_TO_TICKS(500), pdTRUE, 0, HandleTcpipPeriodicTimer);
 	  xTimerStart(periodicTim, 0);
+
+	  memset(s.listenports, 0, UIP_LISTENPORTS*sizeof(*(s.listenports)));
+	  s.p = PROCESS_CURRENT();
 #endif
+
+#ifdef UIP_FALLBACK_INTERFACE
+  UIP_FALLBACK_INTERFACE.init();
+#endif
+  /* Initialize routing protocol */
+#warning "NETSTACK_ROUTING init here."
+  //NETSTACK_ROUTING.init();
+
   uip_init();
-  sicslowpan_driver.init((uint16_t)radio_radioEvent, SendPackedEvent);
+  sicslowpan_driver.init(evtOffset, packedEvtHndl);
+}
+
+void tcpip_deinit() {
+    /* This is the event we get if a process has exited. We go through
+         the TCP/IP tables to see if this process had any open
+         connections or listening TCP ports. If so, we'll close those
+         connections. */
+
+//    p = (struct process *)data;
+#if UIP_TCP
+    l = s.listenports;
+    for(i = 0; i < UIP_LISTENPORTS; ++i) {
+      if(l->p == p) {
+        uip_unlisten(l->port);
+        l->port = 0;
+        l->p = PROCESS_NONE;
+      }
+      ++l;
+    }
+
+    {
+      struct uip_conn *cptr;
+
+      for(cptr = &uip_conns[0]; cptr < &uip_conns[UIP_TCP_CONNS]; ++cptr) {
+        if(cptr->appstate.p == p) {
+          cptr->appstate.p = PROCESS_NONE;
+          cptr->tcpstateflags = UIP_CLOSED;
+        }
+      }
+    }
+#endif /* UIP_TCP */
+#if UIP_UDP
+    {
+      struct uip_udp_conn *cptr;
+
+      for(cptr = &uip_udp_conns[0];
+          cptr < &uip_udp_conns[UIP_UDP_CONNS]; ++cptr) {
+//        if(cptr->appstate.p == p) {
+//          cptr->lport = 0;
+//        }
+      }
+    }
+#endif /* UIP_UDP */
 }
 /*---------------------------------------------------------------------------*/

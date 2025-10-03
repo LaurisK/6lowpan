@@ -316,6 +316,7 @@ void uip_log(char *msg);
  * \defgroup uipopttcp TCP configuration options
  * @{
  */
+#define UIP_CONF_ROUTER                 1
 
 /**
  * Toggles whether TCP support should be compiled in or not.
@@ -373,17 +374,6 @@ void uip_log(char *msg);
 #else /* UIP_CONF_MAX_LISTENPORTS */
 #define UIP_LISTENPORTS (UIP_CONF_MAX_LISTENPORTS)
 #endif /* UIP_CONF_MAX_LISTENPORTS */
-
-/**
- * Determines if support for TCP urgent data notification should be
- * compiled in.
- *
- * Urgent data (out-of-band data) is a rarely used TCP feature that
- * very seldom would be required.
- *
- * \hideinitializer
- */
-#define UIP_URGDATA      0
 
 /**
  * The initial retransmission timeout counted in timer pulses.

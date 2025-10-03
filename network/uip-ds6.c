@@ -48,6 +48,8 @@
 //#include "lib/random.h"
 //#include "uip-nd6.h"
 #include "uip-ds6.h"
+#include "uip-ds6-route.h"
+#include "uip-ds6-nbr.h"
 #include "App/Time/time.h"
 //#include "net/ipv6/multicast/uip-mcast6.h"
 //#include "net/ipv6/uip-packetqueue.h"
@@ -77,14 +79,18 @@ typedef struct uip_ds6_netif {
 #endif /* UIP_DS6_MADDR_NB */
 } uip_ds6_netif_t;
 
+#ifdef UIP_CONF_ND6_RETRANS_TIMER
+#define UIP_ND6_RETRANS_TIMER          UIP_CONF_ND6_RETRANS_TIMER
+#else
+#define UIP_ND6_RETRANS_TIMER          1000
+#endif
+
 #if UIP_CONF_ROUTER
 sTimeTimer uip_ds6_timer_ra;                                 /**< RA timer, to schedule RA sending */
 #if UIP_ND6_SEND_RA
 static uint8_t racount;                                         /**< number of RA already sent */
 static uint16_t rand_time;                                      /**< random time value for timers */
 #endif
-#else /* UIP_CONF_ROUTER */
-static uint8_t rscount;                                         /**< number of rs already sent */
 #endif /* UIP_CONF_ROUTER */
 
 /** \name "DS6" Data structures */
@@ -189,23 +195,58 @@ static void HandleDs6PeriodicTimer(TimerHandle_t periodicTim) {
 
 #if !UIP_CONF_ROUTER
 /*---------------------------------------------------------------------------*/
-static void uip_ds6_send_rs(void)
+static void uip_nd6_rs_output(sUipBuff *uipBuff)
 {
-  if((uip_ds6_defrt_choose() == NULL) && (rscount < UIP_ND6_MAX_RTR_SOLICITATIONS)) {
+  IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->vtc = 0x60;
+  IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->tcflow = 0;
+  IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->flow = 0;
+  IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->proto = UIP_PROTO_ICMP6;
+  IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->ttl = UIP_ND6_HOP_LIMIT;
+  uip_create_linklocal_allrouters_mcast(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr);
+  uip_ds6_select_src(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr);
+  UIP_ICMP_BUF->type = ICMP6_RS;
+  UIP_ICMP_BUF->icode = 0;
+
+  if(uip_is_addr_unspecified(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr)) {
+	  IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->len[1] = UIP_ICMPH_LEN + UIP_ND6_RS_LEN;
+    uip_len = uip_l3_icmp_hdr_len + UIP_ND6_RS_LEN;
+  } else {
+    uip_len = uip_l3_icmp_hdr_len + UIP_ND6_RS_LEN + UIP_ND6_OPT_LLAO_LEN;
+    uipbuf_set_len_field(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8), UIP_ICMPH_LEN + UIP_ND6_RS_LEN + UIP_ND6_OPT_LLAO_LEN);
+
+    create_llao(&uip_buf[uip_l3_icmp_hdr_len + UIP_ND6_RS_LEN], UIP_ND6_OPT_SLLAO);
+  }
+
+  UIP_ICMP_BUF->icmpchksum = 0;
+  UIP_ICMP_BUF->icmpchksum = ~uip_icmp6chksum();
+
+  UIP_STAT(++uip_stat.nd6.sent);
+  TRiceS(iD(5761), "msg:Sending RS to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
+  TRiceS(iD(5480), "msg: from %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
+  return;
+}
+/*---------------------------------------------------------------------------*/
+static void uip_ds6_send_rs(sUipBuff *uipBuff)
+{
+  static uint8_t rscount = 0;  /**< number of rs already sent */
+  uip_ipaddr_t dfltRoute = uip_ds6_defrt_choose();
+  if((NULL == dfltRoute) && (rscount < UIP_ND6_MAX_RTR_SOLICITATIONS)) {
 	TRice(iD(3460), "msg:Sending RS %u\n", rscount);
     uip_nd6_rs_output();
     rscount++;
     xTimerChangePeriod(rsSendTmo, pdMS_TO_TICKS(1000 * UIP_ND6_RTR_SOLICITATION_INTERVAL));
     xTimerStart(rsSendTmo, 0);
   } else {
-	TRice(iD(2991), "msg:Router found ? (boolean): %u\n", (uip_ds6_defrt_choose() != NULL));
+	TRiceS(iD(6546), "msg:Router found ? (boolean): %s\n", (NULL != dfltRoute)?"true":"false");
   }
   return;
 }
 
 static void HandleRsSendingTmo(TimerHandle_t rsSendTim) {
-    uip_ds6_send_rs();
-    tcpip_ipv6_output();
+#warning "rsUipBuff should be resolved with dynamic memory."
+	sUipBuff rsUipBuff;
+    uip_ds6_send_rs(&rsUipBuff);
+    tcpip_ipv6_output(&rsUipBuff);
 }
 
 #endif /* !UIP_CONF_ROUTER */
@@ -237,8 +278,7 @@ void uip_ds6_init(void)
   /* Set interface parameters */
   uip_ds6_if.link_mtu = UIP_LINK_MTU;
   uip_ds6_if.cur_hop_limit = UIP_TTL;
-  uip_ds6_if.base_reachable_time = UIP_ND6_REACHABLE_TIME;
-  uip_ds6_if.reachable_time = uip_ds6_compute_reachable_time();
+  Ds6_SetReachableTimes(UIP_ND6_REACHABLE_TIME);
   uip_ds6_if.retrans_timer = UIP_ND6_RETRANS_TIMER;
   uip_ds6_if.maxdadns = UIP_ND6_DEF_MAXDADNS;
 
@@ -265,7 +305,7 @@ void uip_ds6_init(void)
   xTimerStart(rsSendTmo, 0);
 #endif /* UIP_CONF_ROUTER */
   periodicTim = xTimerCreate("ds6PeriodicTimer", pdMS_TO_TICKS(1000 * UIP_DS6_PERIOD), pdTRUE, 0, HandleDs6PeriodicTimer);
-  TimerStart(periodicTim, 0);
+  xTimerStart(periodicTim, 0);
 
   return;
 }
@@ -780,8 +820,8 @@ void Ds6_SetReachableTimes(const uint32_t baseReachTime) {
     }
 }
 
-void Ds6_SetRetransmitTim(const uint32_t retransTmo) {
-  if(0 != UIP_ND6_RA_BUF->retrans_timer) {
+void Ds6_SetRetransmitTim(sUipBuff *uipBuff, const uint32_t retransTmo) {
+  if(0 != (uip_nd6_ra *)(uipBuff->buff.u8 + UIP_IPH_LEN + UIP_ICMPH_LEN + uipBuff->extLen)->retrans_timer) {
     uip_ds6_if.retrans_timer = retransTmo;
     TRice(iD(6951), "msg:[uIP DS6] Retransmit timeout set to - %u\n", uip_ds6_if.retrans_timer);
   }

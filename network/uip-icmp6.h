@@ -116,8 +116,7 @@ typedef struct uip_icmp6_error{
  * \param code of the error message
  * \param param 32 bit parameter of the error message, semantic depends on error
  */
-void
-uip_icmp6_error_output(uint8_t type, uint8_t code, uint32_t param);
+void uip_icmp6_error_output(sUipBuff *faultyBuff, uint8_t type, uint8_t code, uint32_t param);
 
 /**
  * \brief Send an icmpv6 message
@@ -126,8 +125,7 @@ uip_icmp6_error_output(uint8_t type, uint8_t code, uint32_t param);
  * \param code of the message
  * \param payload_len length of the payload
  */
-void
-uip_icmp6_send(const uip_ipaddr_t *dest, int type, int code, int payload_len);
+void uip_icmp6_send(const uip_ipaddr_t *dest, int type, int code, int payload_len);
 
 
 
@@ -180,27 +178,13 @@ typedef struct uip_icmp6_input_handler {
   struct uip_icmp6_input_handler *next;
   uint8_t type;
   uint8_t icode;
-  void (*handler)(void);
+  void (*handler)(sUipBuff *);
 } uip_icmp6_input_handler_t;
 
 #define UIP_ICMP6_INPUT_SUCCESS     0
 #define UIP_ICMP6_INPUT_ERROR       1
 
 #define UIP_ICMP6_HANDLER_CODE_ANY 0xFF /* Handle all codes for this type */
-
-/*
- * Initialise a variable of type uip_icmp6_input_handler, to be used later as
- * the argument to uip_icmp6_register_input_handler
- *
- * The function pointer stored in this variable will get called and will be
- * expected to handle incoming ICMPv6 datagrams of the specified type/code
- *
- * If code has a value of UIP_ICMP6_HANDLER_CODE_ANY, the same function
- * will handle all codes for this type. In other words, the ICMPv6
- * message's code is "don't care"
- */
-#define UIP_ICMP6_HANDLER(name, type, code, func) \
-  static uip_icmp6_input_handler_t name = { NULL, type, code, func }
 
 /**
  * \brief Handle an incoming ICMPv6 message
@@ -222,7 +206,7 @@ typedef struct uip_icmp6_input_handler {
  * type and that it was invoked. It does NOT provide any indication whatsoever
  * regarding whether the handler itself succeeded.
  */
-uint8_t uip_icmp6_input(uint8_t type, uint8_t icode);
+uint8_t uip_icmp6_input(sUipBuff *uipBuff, uint8_t type, uint8_t icode);
 
 /**
  * \brief Register a handler which can handle a specific ICMPv6 message type

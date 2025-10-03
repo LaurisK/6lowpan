@@ -56,28 +56,6 @@
 #define UIP_ND6_INFINITE_LIFETIME       0xFFFFFFFF
 /** @} */
 
-/** \name RFC 4861 Host constant */
-/** @{ */
-/** \brief Maximum router solicitation delay */
-#ifndef UIP_CONF_ND6_MAX_RTR_SOLICITATION_DELAY
-#define UIP_ND6_MAX_RTR_SOLICITATION_DELAY 1
-#else
-#define UIP_ND6_MAX_RTR_SOLICITATION_DELAY UIP_CONF_ND6_MAX_RTR_SOLICITATION_DELAY
-#endif
-/** \brief Router solicitation interval */
-#ifndef UIP_CONF_ND6_RTR_SOLICITATION_INTERVAL
-#define UIP_ND6_RTR_SOLICITATION_INTERVAL  4
-#else
-#define UIP_ND6_RTR_SOLICITATION_INTERVAL  UIP_CONF_ND6_RTR_SOLICITATION_INTERVAL
-#endif
-/** \brief Maximum router solicitations */
-#ifndef UIP_CONF_ND6_MAX_RTR_SOLICITATIONS
-#define UIP_ND6_MAX_RTR_SOLICITATIONS      3
-#else
-#define UIP_ND6_MAX_RTR_SOLICITATIONS      UIP_CONF_ND6_MAX_RTR_SOLICITATIONS
-#endif
-/** @} */
-
 /** \name RFC 4861 Router constants */
 /** @{ */
 #ifndef UIP_CONF_ND6_SEND_RA
@@ -143,12 +121,6 @@ be added regardless of their reachability and liveness.  */
 #else /* UIP_CONF_ND6_MAX_UNICAST_SOLICIT */
 #define UIP_ND6_MAX_UNICAST_SOLICIT    3
 #endif /* UIP_CONF_ND6_MAX_UNICAST_SOLICIT */
-
-#ifdef UIP_CONF_ND6_RETRANS_TIMER
-#define UIP_ND6_RETRANS_TIMER          UIP_CONF_ND6_RETRANS_TIMER
-#else
-#define UIP_ND6_RETRANS_TIMER          1000
-#endif
 
 #define UIP_ND6_DELAY_FIRST_PROBE_TIME 5
 /** @} */
