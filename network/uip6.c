@@ -303,6 +303,11 @@ static uint16_t chksum(uint16_t sum, const uint8_t *data, uint16_t len) {
   return sum;
 }
 /*---------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
+static uint16_t uip6_uipHdrGetLen(struct uip_ip_hdr *hdr) {
+  return ((uint16_t)(hdr->len[0]) << 8) + hdr->len[1];
+}
+
 static uint16_t
 upper_layer_chksum(sUipBuff *uipBuff, uint8_t proto)
 {
@@ -318,7 +323,7 @@ upper_layer_chksum(sUipBuff *uipBuff, uint8_t proto)
   volatile uint16_t upper_layer_len;
   uint16_t sum;
 
-  upper_layer_len = uipbuf_get_len_field(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)) - uipBuff->extLen;
+  upper_layer_len = uip6_uipHdrGetLen(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)) - uipBuff->extLen;
 
   TRice(iD(3977), "dbg:Upper layer checksum len: %d from: %d\n", upper_layer_len,
          (int)((uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen) - uipBuff->buff.u8));
@@ -483,7 +488,7 @@ bool uip_remove_ext_hdr(sUipBuff *uipBuff)
     if(uipbuf_add_ext_hdr(uipBuff, (-1 * uipBuff->extLen) == false)) {
       return false;
     }
-    uipbuf_set_len_field(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8), uipBuff->len - UIP_IPH_LEN);
+    uip6_uipHdrSetLen(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8), uipBuff->len - UIP_IPH_LEN);
   }
   return true;
 }
@@ -725,8 +730,8 @@ uip_reass(uint8_t *prev_proto_ptr)
 
       uip_reasslen += UIP_IPH_LEN + uip_ext_len;
       memcpy(UIP_IP_BUF, FBUF, uip_reasslen);
-      uipbuf_set_len_field(UIP_IP_BUF, uip_reasslen - UIP_IPH_LEN);
-      TRice(iD(1017), "msg:reassembled packet %d (%d)\n", uip_reasslen, uipbuf_get_len_field(UIP_IP_BUF));
+      uip6_uipHdrSetLen(UIP_IP_BUF, uip_reasslen - UIP_IPH_LEN);
+      TRice(iD(1017), "msg:reassembled packet %d (%d)\n", uip_reasslen, uip6_uipHdrGetLen(UIP_IP_BUF));
 
       return uip_reasslen;
 
@@ -1106,7 +1111,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
    * packet header, the packet has been padded, and we set uip_len to
    * the correct value.
    */
-  if(uipBuff->len < uipbuf_get_len_field(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8))) {
+  if(uipBuff->len < uip6_uipHdrGetLen(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8))) {
     UIP_STAT(++uip_stat.ip.drop);
     TRice(iD(1368), "err:packet shorter than reported in IP header\n");
     goto drop;
@@ -1120,7 +1125,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
    * the IPv4 header contains the length of the entire packet. But for
    * IPv6 we need to add the size of the IPv6 header (40 bytes).
    */
-  uipBuff->len = uipbuf_get_len_field(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)) + UIP_IPH_LEN;
+  uipBuff->len = uip6_uipHdrGetLen(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)) + UIP_IPH_LEN;
 
   /* Check that the packet length is acceptable given our IP buffer size. */
   if(uipBuff->len > UIP_BUFSIZE) {
@@ -1518,7 +1523,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
 
   /* For IPv6, the IP length field does not include the IPv6 IP header
      length. */
-  uipbuf_set_len_field(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8), uipBuff->len - UIP_IPH_LEN);
+  uip6_uipHdrSetLen(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8), uipBuff->len - UIP_IPH_LEN);
 
   IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->vtc = 0x60;
   IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->tcflow = 0x00;
@@ -2254,7 +2259,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
   IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->proto = UIP_PROTO_TCP;
 
   IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->ttl = Ds6_GetHopLimit();
-  uipbuf_set_len_field(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8), uipBuff->len - UIP_IPH_LEN);
+  uip6_uipHdrSetLen(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8), uipBuff->len - UIP_IPH_LEN);
 
   UIP_TCP_BUF->urgp[0] = UIP_TCP_BUF->urgp[1] = 0;
 
@@ -2269,7 +2274,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
 #endif
   IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->flow = 0x00;
   send:
-  TRice(iD(6251), "msg:Sending packet with length %d (%d)\n", uipBuff->len, uipbuf_get_len_field(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)));
+  TRice(iD(6251), "msg:Sending packet with length %d (%d)\n", uipBuff->len, uip6_uipHdrGetLen(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)));
 
   UIP_STAT(++uip_stat.ip.sent);
   /* Return and let the caller do the actual transmission. */
@@ -2368,11 +2373,5 @@ void uip6_uipHdrSetLen(struct uip_ip_hdr *hdr, uint16_t len) {
   hdr->len[0] = (len >> 8);
   hdr->len[1] = (len & 0xff);
 }
-
-/*---------------------------------------------------------------------------*/
-uint16_t uip6_uipHdrGetLen(struct uip_ip_hdr *hdr) {
-  return ((uint16_t)(hdr->len[0]) << 8) + hdr->len[1];
-}
-
 
 /** @} */

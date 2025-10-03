@@ -209,12 +209,12 @@ static void uip_nd6_rs_output(sUipBuff *uipBuff)
 
   if(uip_is_addr_unspecified(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr)) {
 	  IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->len[1] = UIP_ICMPH_LEN + UIP_ND6_RS_LEN;
-    uip_len = uip_l3_icmp_hdr_len + UIP_ND6_RS_LEN;
+    uip_len = UIP_IPH_LEN + uipBuff->extLen + UIP_ICMPH_LEN + UIP_ND6_RS_LEN;
   } else {
-    uip_len = uip_l3_icmp_hdr_len + UIP_ND6_RS_LEN + UIP_ND6_OPT_LLAO_LEN;
-    uipbuf_set_len_field(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8), UIP_ICMPH_LEN + UIP_ND6_RS_LEN + UIP_ND6_OPT_LLAO_LEN);
+    uip_len = UIP_IPH_LEN + uipBuff->extLen + UIP_ICMPH_LEN + UIP_ND6_RS_LEN + UIP_ND6_OPT_LLAO_LEN;
+    uip6_uipHdrSetLen(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8), UIP_ICMPH_LEN + UIP_ND6_RS_LEN + UIP_ND6_OPT_LLAO_LEN);
 
-    create_llao(&uip_buf[uip_l3_icmp_hdr_len + UIP_ND6_RS_LEN], UIP_ND6_OPT_SLLAO);
+    create_llao(&uip_buf[UIP_IPH_LEN + uipBuff->extLen + UIP_ICMPH_LEN + UIP_ND6_RS_LEN], UIP_ND6_OPT_SLLAO);
   }
 
   UIP_ICMP_BUF->icmpchksum = 0;

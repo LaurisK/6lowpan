@@ -66,7 +66,7 @@
 //#include "net/link-stats.h"
 //#include "net/ipv6/uipopt.h"
 //#include "net/ipv6/tcpip.h"
-//#include "uip.h"
+#include "uip.h"
 //#include "net/ipv6/uip-ds6.h"
 #include "sicslowpan.h"
 //#include "net/netstack.h"

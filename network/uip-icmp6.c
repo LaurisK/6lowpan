@@ -130,7 +130,7 @@ static void echo_request_input(sUipBuff *uipBuff) {
   ICMP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->type = ICMP6_ECHO_REPLY;
   ICMP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->icode = 0;
   ICMP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->icmpchksum = 0;
-  ICMP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->icmpchksum = ~uip_icmp6chksum();
+  ICMP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->icmpchksum = ~uip_icmp6chksum(uipBuff);
 
   TRiceS(iD(4289), "msg:Sending Echo Reply to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
   TRiceS(iD(1784), "msg:from %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
@@ -144,7 +144,7 @@ void uip_icmp6_error_output(sUipBuff *faultyBuff, uint8_t type, uint8_t code, ui
   /* check if originating packet is not an ICMP error */
   uint16_t shift;
 
-  if(faultyBuff->lastProto == UIP_PROTO_ICMP6 && (struct uip_icmp_hdr*)(faultyBuff->buff.u8 + UIP_IPH_LEN + faultyBuff->extLen)->type < 128) {
+  if(faultyBuff->lastProto == UIP_PROTO_ICMP6 && ICMP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8 + UIP_IPH_LEN + faultyBuff->extLen)->type < 128) {
     uipbuf_clear(faultyBuff);
     return;
   }
@@ -198,9 +198,9 @@ void uip_icmp6_error_output(sUipBuff *faultyBuff, uint8_t type, uint8_t code, ui
   ICMP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8 + UIP_IPH_LEN + faultyBuff->extLen)->type = type;
   ICMP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8 + UIP_IPH_LEN + faultyBuff->extLen)->icode = code;
   ((struct uip_icmp6_error*)(faultyBuff->buff.u8 + UIP_IPH_LEN + faultyBuff->extLen))->param = __REV(param);
-  uipbuf_set_len_field(IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8), faultyBuff->len - UIP_IPH_LEN);
+  uip6_uipHdrSetLen(IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8), faultyBuff->len - UIP_IPH_LEN);
   ICMP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8 + UIP_IPH_LEN + faultyBuff->extLen)->icmpchksum = 0;
-  ICMP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8 + UIP_IPH_LEN + faultyBuff->extLen)->icmpchksum = ~uip_icmp6chksum();
+  ICMP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8 + UIP_IPH_LEN + faultyBuff->extLen)->icmpchksum = ~uip_icmp6chksum(faultyBuff);
 
   UIP_STAT(++uip_stat.icmp.sent);
 
@@ -219,7 +219,7 @@ void uip_icmp6_send(const uip_ipaddr_t *dest, int type, int code, int payload_le
   ((struct uip_ip_hdr *)(icmpBuff.buff.u8))->flow = 0;
   ((struct uip_ip_hdr *)(icmpBuff.buff.u8))->proto = UIP_PROTO_ICMP6;
   ((struct uip_ip_hdr *)(icmpBuff.buff.u8))->ttl = Ds6_GetHopLimit();
-  uipbuf_set_len_field(((struct uip_ip_hdr *)(icmpBuff.buff.u8)), UIP_ICMPH_LEN + payload_len);
+  uip6_uipHdrSetLen(((struct uip_ip_hdr *)(icmpBuff.buff.u8)), UIP_ICMPH_LEN + payload_len);
 
   if(dest == NULL) {
 	  TRice(iD(6972), "err:invalid argument; dest is NULL\n");
@@ -233,7 +233,7 @@ void uip_icmp6_send(const uip_ipaddr_t *dest, int type, int code, int payload_le
   ICMP_HDR_CAST_TO_BUFF(icmpBuff.buff.u8 + UIP_IPH_LEN + icmpBuff.extLen)->icode = code;
 
   ICMP_HDR_CAST_TO_BUFF(icmpBuff.buff.u8 + UIP_IPH_LEN + icmpBuff.extLen)->icmpchksum = 0;
-  ICMP_HDR_CAST_TO_BUFF(icmpBuff.buff.u8 + UIP_IPH_LEN + icmpBuff.extLen)->icmpchksum = ~uip_icmp6chksum();
+  ICMP_HDR_CAST_TO_BUFF(icmpBuff.buff.u8 + UIP_IPH_LEN + icmpBuff.extLen)->icmpchksum = ~uip_icmp6chksum(&icmpBuff);
 
   icmpBuff.len = UIP_IPH_LEN + UIP_ICMPH_LEN + payload_len;
 
@@ -264,7 +264,7 @@ static void echo_reply_input(sUipBuff *uipBuff) {
     struct uip_icmp6_echo_reply_notification *n;
     for(n = replyCbListHead; n != NULL; n = n->next) {
       if(n->callback != NULL) {
-        n->callback(&sender, ttl, (uint8_t *)UIP_ICMP_PAYLOAD, uip_len - sizeof(struct uip_icmp_hdr) - UIP_IPH_LEN);
+        n->callback(&sender, ttl, (uipBuff->buff.u8 + UIP_IPH_LEN + UIP_ICMPH_LEN + uipBuff->extLen), uipBuff->len - sizeof(struct uip_icmp_hdr) - UIP_IPH_LEN);
       }
     }
   }

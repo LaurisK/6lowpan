@@ -73,14 +73,12 @@
 #define UIP_IPUDPH_LEN (UIP_UDPH_LEN + UIP_IPH_LEN)   /* Size of IP + UDP header */
 #define UIP_IPTCPH_LEN (UIP_TCPH_LEN + UIP_IPH_LEN)   /* Size of IP + TCP header */
 
-#define uip_l3_icmp_hdr_len (UIP_IPH_LEN + uip_ext_len + UIP_ICMPH_LEN)
-
 /**
  * Direct access to IPv6 header
  */
-#define IP_HDR_CAST_TO_BUFF(buff)   ((struct uip_ip_hdr *)buff)
-#define UDP_HDR_CAST_TO_BUFF(buff)  ((struct uip_udp_hdr *)buff)
-#define ICMP_HDR_CAST_TO_BUFF(buff) ((struct uip_icmp_hdr *)buff)
+#define IP_HDR_CAST_TO_BUFF(buff)   ((struct uip_ip_hdr *)(buff))
+#define UDP_HDR_CAST_TO_BUFF(buff)  ((struct uip_udp_hdr *)(buff))
+#define ICMP_HDR_CAST_TO_BUFF(buff) ((struct uip_icmp_hdr *)(buff))
 
 #define UIP_IP_BUF                             ((struct uip_ip_hdr *)uip_buf)
 #define UIP_IP_PAYLOAD(ext)                        ((unsigned char *)uip_buf + UIP_IPH_LEN + (ext))
@@ -1924,7 +1922,7 @@ extern uip_lladdr_t uip_lladdr;
  * \return The TCP checksum of the TCP segment in uip_buf and pointed
  * to by uip_appdata.
  */
-uint16_t uip_tcpchksum(void);
+uint16_t uip_tcpchksum(sUipBuff *uipBuff);
 
 /**
  * Calculate the UDP checksum of the packet in uip_buf and uip_appdata.
@@ -1935,14 +1933,14 @@ uint16_t uip_tcpchksum(void);
  * \return The UDP checksum of the UDP segment in uip_buf and pointed
  * to by uip_appdata.
  */
-uint16_t uip_udpchksum(void);
+uint16_t uip_udpchksum(sUipBuff *uipBuff);
 
 /**
  * Calculate the ICMP checksum of the packet in uip_buf.
  *
  * \return The ICMP checksum of the ICMP packet in uip_buf
  */
-uint16_t uip_icmp6chksum(void);
+uint16_t uip_icmp6chksum(sUipBuff *uipBuff);
 
 /**
  * Removes all IPv6 extension headers from uip_buf, updates length fields
@@ -1958,13 +1956,6 @@ uint8_t uip_remove_ext_hdr(sUipBuff *uipBuff);
  * \param len      The new length value
  */
 void uip6_uipHdrSetLen(struct uip_ip_hdr *hdr, uint16_t len);
-
-/**
- * \brief          Returns the value of the length field in the uIP buffer
- * \param buffer   The IPv6 header
- * \retvel         The length value
- */
-uint16_t uip6_uipHdrGetLen(struct uip_ip_hdr *hdr);
 
 char *uip6_printAddr(const uip_ip6addr_t*, int16_t*);
 
