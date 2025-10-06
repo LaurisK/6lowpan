@@ -48,11 +48,14 @@
 #include "uip-ds6.h"
 #include "uip-ds6-nbr.h"
 #include "uip-ds6-route.h"
+#include "uip-nd6.h"
+#include "../addressing.h"
 //#include "net/linkaddr.h"
 //#include "net/routing/routing.h"
 #include "sicslowpan.h"
 #include "uipopt.h"
 #include "cmsis_os.h"
+#include "../evt_radio.h"
 #if defined(STM32H753xx)
 #include "trice.h"
 #else
@@ -297,7 +300,7 @@ uint16_t tcpip_input(sUipBuff *rxBuff)
 }
 /*---------------------------------------------------------------------------*/
 static void
-output_fallback(void)
+output_fallback(sUipBuff *uipBuff)
 {
 #ifdef UIP_FALLBACK_INTERFACE
   uip_last_proto = *(uipBuff->buff.u8 + UIP_IPH_LEN);
@@ -426,7 +429,7 @@ send_queued(uip_ds6_nbr_t *nbr)
 }
 /*---------------------------------------------------------------------------*/
 static int
-send_nd6_ns(const uip_ipaddr_t *nexthop)
+send_nd6_ns(sUipBuff *uipBuff, const uip_ipaddr_t *nexthop)
 {
   int err = 1;
 
@@ -442,8 +445,8 @@ send_nd6_ns(const uip_ipaddr_t *nexthop)
    * address SHOULD be placed in the IP Source Address of the outgoing
    * solicitation.  Otherwise, any one of the addresses assigned to the
    * interface should be used."*/
-   if(uip_ds6_is_my_addr(&UIP_IP_BUF->srcipaddr)){
-      uip_nd6_ns_output(&UIP_IP_BUF->srcipaddr, NULL, &nbr->ipaddr);
+   if(uip_ds6_is_my_addr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr)){
+      uip_nd6_ns_output(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL, &nbr->ipaddr);
     } else {
       uip_nd6_ns_output(NULL, NULL, &nbr->ipaddr);
     }
@@ -502,13 +505,12 @@ void tcpip_ipv6_output(sUipBuff *uipBuff)
   }
 
   /* Look for a next hop */
-  if((nexthop = get_nexthop(&ipaddr)) == NULL) {
+  if((nexthop = get_nexthop(uipBuff, &ipaddr)) == NULL) {
     goto exit;
   }
   annotate_transmission(nexthop);
 
   nbr = uip_ds6_nbr_lookup(nexthop);
-#warning "UIP_ND6_AUTOFILL_NBR_CACHE"
 #if UIP_ND6_AUTOFILL_NBR_CACHE
   if(nbr == NULL) {
     /* Neighbor not found in cache? Derive its link-layer address from it's
@@ -516,17 +518,17 @@ void tcpip_ipv6_output(sUipBuff *uipBuff)
     standard-compliant but this is a convenient way to keep the
     neighbor cache out of the way in cases ND is not used */
     uip_lladdr_t lladdr;
-    uip_ds6_set_lladdr_from_iid(&lladdr, nexthop);
+    Addr_GetInterfId(&lladdr, nexthop);
     if((nbr = uip_ds6_nbr_add(nexthop, &lladdr, 0, NBR_REACHABLE, NBR_TABLE_REASON_IPV6_ND_AUTOFILL, NULL)) == NULL) {
       TRiceS(iD(4860), "err:output: failed to autofill neighbor cache for host %s", uip6_printAddr(nexthop, NULL));
-      TRiceS(iD(7549), "err:, link-layer addr  %s\n", linkaddr_printAddr(&lladdr));
+      TRiceS(iD(7549), "err:, link-layer addr  %s\n", (char*)linkaddr_printAddr((linkaddr_t*)&lladdr));
       goto exit;
     }
    }
 #endif /* UIP_ND6_AUTOFILL_NBR_CACHE */
 
   if(nbr == NULL) {
-    if(send_nd6_ns(nexthop)) {
+    if(send_nd6_ns(uipBuff, nexthop)) {
     	TRice(iD(7570), "err:output: failed to add neighbor to cache\n");
       goto exit;
     } else {
@@ -571,13 +573,16 @@ exit:
   uipbuf_clear(uipBuff);
   return;
 }
+
+sUipBuff uipPollBuff;
 /*---------------------------------------------------------------------------*/
 #if UIP_UDP
 static struct uip_udp_conn *pollUdpConn = NULL;
 static void PollUdp(void) {
     if(NULL != pollUdpConn) {
-      uip_udp_periodic_conn(pollUdpConn);
-      tcpip_ipv6_output();
+      uip_udp_conn = pollUdpConn;
+      uip_process(&uipPollBuff, UIP_UDP_TIMER);
+      tcpip_ipv6_output(&uipPollBuff);
     }
     pollUdpConn = NULL;
 }
@@ -592,8 +597,9 @@ void tcpip_poll_udp(struct uip_udp_conn *conn) {
 static struct uip_conn *pollTcpConn = NULL;
 static void PollTcp(void) {
     if(NULL != pollTcpConn) {
-      uip_poll_conn(pollTcpConn);
-      tcpip_ipv6_output();
+      uip_conn = pollTcpConn;
+      uip_process(&uipPollBuff, UIP_POLL_REQUEST);
+      tcpip_ipv6_output(&uipPollBuff);
       /* Start the periodic polling, if it isn't already active. */
       start_periodic_tcp_timer();
     }
@@ -603,7 +609,6 @@ static void PollTcp(void) {
 void tcpip_poll_tcp(struct uip_conn *conn) {
 	pollTcpConn = conn;
 	tcpipIrq2Task(tcpipEvtIdOffset + radio_taskCall, PollTcp);
-  process_post(&tcpip_process, TCP_POLL, conn);
 }
 #endif /* UIP_TCP */
 /*---------------------------------------------------------------------------*/

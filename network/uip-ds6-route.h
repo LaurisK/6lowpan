@@ -71,7 +71,7 @@
 
 #endif /* UIP_CONF_MAX_ROUTES */
 
-NBR_TABLE_DECLARE(nbr_routes);
+//extern nbr_table_t *nbr_routes;
 
 void uip_ds6_route_init(void);
 

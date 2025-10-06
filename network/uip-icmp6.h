@@ -103,10 +103,18 @@
 /** \brief ICMPv6 Error message constant part length */
 #define UIP_ICMP6_ERROR_LEN               4
 
+#define ICMP_HDR_CAST_TO_BUFF(buff) ((struct uip_icmp_hdr *)(buff))
+
 /** \brief ICMPv6 Error message constant part */
 typedef struct uip_icmp6_error{
   uint32_t param;
 } uip_icmp6_error;
+
+/* The ICMP headers. */
+struct uip_icmp_hdr {
+  uint8_t type, icode;
+  uint16_t icmpchksum;
+};
 
 /** \name ICMPv6 RFC4443 Message processing and sending */
 /** @{ */

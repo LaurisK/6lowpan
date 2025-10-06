@@ -78,7 +78,6 @@
  */
 #define IP_HDR_CAST_TO_BUFF(buff)   ((struct uip_ip_hdr *)(buff))
 #define UDP_HDR_CAST_TO_BUFF(buff)  ((struct uip_udp_hdr *)(buff))
-#define ICMP_HDR_CAST_TO_BUFF(buff) ((struct uip_icmp_hdr *)(buff))
 
 #define UIP_IP_BUF                             ((struct uip_ip_hdr *)uip_buf)
 #define UIP_IP_PAYLOAD(ext)                        ((unsigned char *)uip_buf + UIP_IPH_LEN + (ext))

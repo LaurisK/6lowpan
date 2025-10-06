@@ -235,7 +235,7 @@ void uip_ds6_link_callback(int status, int numtx);
 /**
  * The housekeeping function called periodically
  */
-void uip_ds6_neighbor_periodic(void);
+void uip_ds6_neighbor_periodic(sUipBuff *dsPeriodicBuff);
 
 #if UIP_ND6_SEND_NS
 /**

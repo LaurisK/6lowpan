@@ -44,6 +44,7 @@
 //#include "net/ipv6/uip-udp-packet.h"
 //#include "net/ipv6/multicast/uip-mcast6.h"
 #include "uip-udp-packet.h"
+#include "tcpip.h"
 
 #include <string.h>
 
@@ -69,12 +70,12 @@ void uip_udp_packet_send(struct uip_udp_conn *c, const void *data, int len)
 #if NETSTACK_CONF_WITH_IPV6
     tcpip_ipv6_output(&txUipBuff);
 #else
-    if(uip_len > 0) {
+    if(txUipBuff.len > 0) {
       tcpip_output();
     }
 #endif
   }
-  uip_slen = 0;
+  txUipBuff.sLen = 0;
 #endif /* UIP_UDP */
 }
 /*---------------------------------------------------------------------------*/

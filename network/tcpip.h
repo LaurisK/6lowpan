@@ -299,7 +299,7 @@ uint8_t tcpip_output(sUipBuff *tcpUipBuff, const uip_lladdr_t *);
 /**
  * \brief This function does address resolution and then calls tcpip_output
  */
-void tcpip_ipv6_output(void);
+void tcpip_ipv6_output(sUipBuff *uipBuff);
 
 /**
  * \brief Is forwarding generally enabled?
@@ -315,8 +315,6 @@ extern unsigned char tcpip_is_forwarding;
 #define tcpip_set_forwarding(forwarding) tcpip_do_forwarding = (forwarding)
 
 /** @} */
-
-PROCESS_NAME(tcpip_process);
 
 void tcpip_init(uint16_t, void (*)(uint16_t, void(*)(void)));
 

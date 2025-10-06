@@ -53,7 +53,8 @@
 //#include "net/ipv6/uip-ds6.h"
 #include "uip-ds6-nbr.h"
 #include "uip-ds6.h"
-//#include "net/ipv6/uip-nd6.h"
+#include "uip-nd6.h"
+#include "uip-ds6-route.h"
 //#include "net/routing/routing.h"
 
 #if UIP_DS6_NBR_MULTI_IPV6_ADDRS
@@ -192,14 +193,14 @@ uip_ds6_nbr_add(const uip_ipaddr_t *ipaddr, const uip_lladdr_t *lladdr,
     nbr->nscount = 0;
 #endif /* UIP_ND6_SEND_NS */
     TRiceS(iD(3927), "msg:Adding neighbor with ip addr %s link addr ", uip6_printAddr(ipaddr, NULL));
-    TRiceS(iD(1818), "msg:%s", linkaddr_printAddr(lladdr));
+    TRiceS(iD(1818), "msg:%s", (char*)linkaddr_printAddr((linkaddr_t*)lladdr));
     TRice(iD(1877), "msg: state %u\n", state);
     NETSTACK_ROUTING.neighbor_state_changed(nbr);
     return nbr;
   } else {
     TRiceS(iD(4677), "msg:Add drop ip addr %s link addr ", uip6_printAddr(&nbr->ipaddr, NULL));
     TRice(iD(4378), "msg:(%p) ", lladdr);
-    TRiceS(iD(2272), "msg:%s", linkaddr_printAddr(lladdr));
+    TRiceS(iD(2272), "msg:%s", (char*)linkaddr_printAddr((linkaddr_t*)lladdr));
     TRice(iD(7292), "msg: state %u\n", state);
     return NULL;
   }
@@ -211,8 +212,7 @@ static void
 add_uip_ds6_nbr_to_nbr_entry(uip_ds6_nbr_t *nbr,
                                uip_ds6_nbr_entry_t *nbr_entry)
 {
-	TRice(iD(2777), "dbg:%s: add nbr(%p) to nbr_entry (%p)\n",
-          __func__, nbr, nbr_entry);
+	TRice(iD(2777), "dbg:%s: add nbr(%p) to nbr_entry (%p)\n", __func__, nbr, nbr_entry);
   nbr->nbr_entry = nbr_entry;
   list_add(nbr_entry->uip_ds6_nbrs, nbr);
 }
@@ -311,7 +311,7 @@ uip_ds6_nbr_update_ll(uip_ds6_nbr_t **nbr_pp, const uip_lladdr_t *new_ll_addr)
 #endif /* UIP_DS6_NBR_MULTI_IPV6_ADDRS */
 
   if(nbr_pp == NULL || new_ll_addr == NULL) {
-	  TRice(iD(2966), "err:%s: invalid argument\n", __func__);
+	  TRiceS(iD(4078), "err:%s: invalid argument\n", (char*)__func__);
     return -1;
   }
 
@@ -324,8 +324,8 @@ uip_ds6_nbr_update_ll(uip_ds6_nbr_t **nbr_pp, const uip_lladdr_t *new_ll_addr)
         nbr_table_add_lladdr(uip_ds6_nbr_entries,
                              (const linkaddr_t*)new_ll_addr,
                              NBR_TABLE_REASON_IPV6_ND, NULL)) == NULL) {
-    	TRiceS(iD(2644), "err:%s: cannot allocate a nbr_entry for", __func__);
-    	TRiceS(iD(5764), "err:%s\n", linkaddr_printAddr(new_ll_addr));
+    	TRiceS(iD(2644), "err:%s: cannot allocate a nbr_entry for", (char*)__func__);
+    	TRiceS(iD(5764), "err:%s\n", (char*)linkaddr_printAddr(new_ll_addr));
       return -1;
     } else {
       LIST_STRUCT_INIT(nbr_entry, uip_ds6_nbrs);
@@ -344,21 +344,21 @@ uip_ds6_nbr_update_ll(uip_ds6_nbr_t **nbr_pp, const uip_lladdr_t *new_ll_addr)
 
   /* make sure new_ll_addr is not used in some other nbr */
   if(uip_ds6_nbr_ll_lookup(new_ll_addr) != NULL) {
-	TRiceS(iD(5535), "err:%s: new_ll_addr, ", __func__);
-  	TRiceS(iD(7841), "err:%s, is already used in another nbr\n", linkaddr_printAddr(new_ll_addr));
+	TRiceS(iD(5535), "err:%s: new_ll_addr, ", (char*)__func__);
+  	TRiceS(iD(7841), "err:%s, is already used in another nbr\n", (char*)linkaddr_printAddr((linkaddr_t*)new_ll_addr));
     return -1;
   }
 
   memcpy(&nbr_backup, *nbr_pp, sizeof(uip_ds6_nbr_t));
   if(uip_ds6_nbr_rm(*nbr_pp) == 0) {
-	  TRiceS(iD(3317), "err:%s: input nbr cannot be removed\n", __func__);
+	  TRiceS(iD(3317), "err:%s: input nbr cannot be removed\n", (char*)__func__);
     return -1;
   }
 
   if((*nbr_pp = uip_ds6_nbr_add(&nbr_backup.ipaddr, new_ll_addr,
                                 nbr_backup.isrouter, nbr_backup.state,
                                 NBR_TABLE_REASON_IPV6_ND, NULL)) == NULL) {
-	  TRiceS(iD(5709), "err:%s: cannot allocate a new nbr for new_ll_addr\n", __func__);
+	  TRiceS(iD(5709), "err:%s: cannot allocate a new nbr for new_ll_addr\n", (char*)__func__);
     return -1;
   }
   memcpy(*nbr_pp, &nbr_backup, sizeof(uip_ds6_nbr_t));
@@ -510,7 +510,7 @@ update_nbr_reachable_state_by_ack(uip_ds6_nbr_t *nbr, const linkaddr_t *lladdr)
     nbr->state = NBR_REACHABLE;
     Time_TimerSet(&nbr->reachable, UIP_ND6_REACHABLE_TIME / 1000);
     TRice(iD(2536), "msg:received a link layer ACK : ");
-  	TRiceS(iD(4690), "msg:%s is reachable.\n", linkaddr_printAddr(lladdr));
+  	TRiceS(iD(4690), "msg:%s is reachable.\n", (char*)linkaddr_printAddr(lladdr));
   }
 }
 #endif /* UIP_DS6_LL_NUD */
@@ -563,9 +563,7 @@ uip_ds6_link_callback(int status, int numtx)
 #if UIP_ND6_SEND_NS
 /*---------------------------------------------------------------------------*/
 /** Periodic processing on neighbors */
-void
-uip_ds6_neighbor_periodic(void)
-{
+void uip_ds6_neighbor_periodic(sUipBuff *dsPeriodicBuff) {
   uip_ds6_nbr_t *nbr = uip_ds6_nbr_head();
   while(nbr != NULL) {
     switch(nbr->state) {
@@ -596,7 +594,7 @@ uip_ds6_neighbor_periodic(void)
     case NBR_INCOMPLETE:
       if(nbr->nscount >= UIP_ND6_MAX_MULTICAST_SOLICIT) {
         uip_ds6_nbr_rm(nbr);
-      } else if(Time_TimerExpired(&nbr->sendns) && (uip_len == 0)) {
+      } else if(Time_TimerExpired(&nbr->sendns) && (dsPeriodicBuff->len == 0)) {
         nbr->nscount++;
         TRice(iD(2949), "msg:NBR_INCOMPLETE: NS %u\n", nbr->nscount);
         uip_nd6_ns_output(NULL, NULL, &nbr->ipaddr);
@@ -621,7 +619,7 @@ uip_ds6_neighbor_periodic(void)
           }
         }
         uip_ds6_nbr_rm(nbr);
-      } else if(Time_TimerExpired(&nbr->sendns) && (uip_len == 0)) {
+      } else if(Time_TimerExpired(&nbr->sendns) && (dsPeriodicBuff->len == 0)) {
         nbr->nscount++;
         TRice(iD(4144), "msg:PROBE: NS %u\n", nbr->nscount);
         uip_nd6_ns_output(NULL, &nbr->ipaddr, &nbr->ipaddr);
@@ -654,7 +652,7 @@ uip_ds6_get_least_lifetime_neighbor(void)
   uip_ds6_nbr_t *nbr_expiring = NULL;
   while(nbr != NULL) {
     if(nbr_expiring != NULL) {
-      clock_time_t curr = Time_TimerRemaining(&nbr->reachable);
+      int32_t curr = Time_TimerRemaining(&nbr->reachable);
       if(curr < Time_TimerRemaining(&nbr->reachable)) {
         nbr_expiring = nbr;
       }

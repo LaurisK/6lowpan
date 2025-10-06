@@ -46,6 +46,7 @@
 //#include "net/ipv6/uip-ds6.h"
 #include "uip-icmp6.h"
 #include "uip-ds6.h"
+#include "tcpip.h"
 //#include "contiki-default-conf.h"
 //#include "net/routing/routing.h"
 #if defined(STM32H753xx)
@@ -54,14 +55,9 @@
 #include "App/common.h"
 #endif
 
-/* The ICMP headers. */
-struct uip_icmp_hdr {
-  uint8_t type, icode;
-  uint16_t icmpchksum;
-};
-
 static struct uip_icmp6_echo_reply_notification *replyCbListHead = NULL, *replyCbListTail = NULL;
 static uip_icmp6_input_handler_t *inputHndlListHead = NULL;
+#warning "for icmp, ra, ns and other sUipBuff will need to have some dynamic memory handler or other way to obtaing and release memeory only when needed - not to waste it like now it is done."
 static sUipBuff icmpBuff = {0};
 /*---------------------------------------------------------------------------*/
 static uip_icmp6_input_handler_t *input_handler_lookup(uint8_t type, uint8_t icode) {

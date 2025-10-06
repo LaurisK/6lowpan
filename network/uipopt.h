@@ -256,6 +256,22 @@ void uip_log(char *msg);
 #endif
 /** @} */
 
+#ifndef UIP_CONF_ND6_SEND_RA
+#define UIP_ND6_SEND_RA                     1   /* enable/disable RA sending */
+#else
+#define UIP_ND6_SEND_RA UIP_CONF_ND6_SEND_RA
+#endif
+#ifndef UIP_CONF_ND6_SEND_NS
+#define UIP_ND6_SEND_NS                     1   /* enable/disable NS sending */
+#else
+#define UIP_ND6_SEND_NS UIP_CONF_ND6_SEND_NS
+#endif
+#ifndef UIP_CONF_ND6_SEND_NA
+#define UIP_ND6_SEND_NA                     1   /* enable/disable NA sending */
+#else
+#define UIP_ND6_SEND_NA UIP_CONF_ND6_SEND_NA
+#endif
+
 /*------------------------------------------------------------------------------*/
 /**
  * \defgroup uipoptudp UDP configuration options

@@ -73,9 +73,6 @@ typedef struct nbr_table {
   static nbr_table_t name##_struct = { 0, sizeof(type), NULL, (nbr_table_item_t *)_##name##_mem }; \
   nbr_table_t *name = &name##_struct \
 
-/** \brief Declaration of non-static neighbor tables */
-#define NBR_TABLE_DECLARE(name) extern nbr_table_t *name
-
 typedef enum {
         NBR_TABLE_REASON_UNDEFINED,
 	NBR_TABLE_REASON_RPL_DIO,

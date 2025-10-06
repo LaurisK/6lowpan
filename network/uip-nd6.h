@@ -56,23 +56,23 @@
 #define UIP_ND6_INFINITE_LIFETIME       0xFFFFFFFF
 /** @} */
 
+/* To speed up the neighbor cache construction,
+   enable UIP_CONF_ND6_AUTOFILL_NBR_CACHE. When a node does not the link-layer
+   address of a neighbor, it will infer it from the link-local IPv6, assuming
+   the node used autoconfiguration. Note that RPL uses its own freshness
+   mechanism to select whether neighbors are still usable as a parent
+   or not, regardless of the neighbor cache. Note that this is not
+   standard-compliant (RFC 4861), as neighbors will be added regardless of
+   their reachability and liveness. */
+#ifndef UIP_CONF_ND6_AUTOFILL_NBR_CACHE
+#if UIP_CONF_ND6_SEND_NS
+#define UIP_CONF_ND6_AUTOFILL_NBR_CACHE 0
+#else /* UIP_CONF_ND6_SEND_NS */
+#define UIP_CONF_ND6_AUTOFILL_NBR_CACHE 1
+#endif /* UIP_CONF_ND6_SEND_NS */
+#endif /* UIP_CONF_ND6_AUTOFILL_NBR_CACHE */
 /** \name RFC 4861 Router constants */
 /** @{ */
-#ifndef UIP_CONF_ND6_SEND_RA
-#define UIP_ND6_SEND_RA                     1   /* enable/disable RA sending */
-#else
-#define UIP_ND6_SEND_RA UIP_CONF_ND6_SEND_RA
-#endif
-#ifndef UIP_CONF_ND6_SEND_NS
-#define UIP_ND6_SEND_NS                     1   /* enable/disable NS sending */
-#else
-#define UIP_ND6_SEND_NS UIP_CONF_ND6_SEND_NS
-#endif
-#ifndef UIP_CONF_ND6_SEND_NA
-#define UIP_ND6_SEND_NA                     1   /* enable/disable NA sending */
-#else
-#define UIP_ND6_SEND_NA UIP_CONF_ND6_SEND_NA
-#endif
 #ifndef UIP_CONF_ND6_AUTOFILL_NBR_CACHE
 /* Neighbor not found in cache? Derive its link-layer address from it's
 link-local IPv6, assuming it used autoconfiguration. This is not
@@ -349,7 +349,7 @@ uip_nd6_ns_output(uip_ipaddr_t *src, uip_ipaddr_t *dest, uip_ipaddr_t *tgt);
  *
  * Only for router, for periodic as well as sollicited RA
  */
-void uip_nd6_ra_output(uip_ipaddr_t *dest);
+void uip_nd6_ra_output(sUipBuff *dsPeriodicBuff, uip_ipaddr_t *dest);
 #endif /* UIP_ND6_SEND_RA */
 #endif /*UIP_CONF_ROUTER*/
 

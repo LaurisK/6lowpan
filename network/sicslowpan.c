@@ -615,12 +615,6 @@ static uint8_t compress_addr_64(uint8_t bitpos, uip_ipaddr_t *ipaddr, linkaddr_t
   }
 }
 
-#warning "it is taken from uip-ds6.c"
-static void uip_ds6_set_addr_iid(uip_ipaddr_t *ipaddr, uip_lladdr_t *lladdr)
-{
-  memcpy(ipaddr->u8 + 8, lladdr, UIP_LLADDR_LEN);
-  ipaddr->u8[8] ^= 0x02;
-}
 /*-------------------------------------------------------------------- */
 /* Uncompress addresses based on a prefix and a postfix with zeroes in
  * between. If the postfix is zero in length it will use the link address
@@ -651,7 +645,7 @@ static void uncompress_addr(uip_ipaddr_t *ipaddr, uint8_t const prefix[], uint8_
     hc06_ptr += postcount;
   } else if (prefcount > 0) {
     /* no IID based configuration if no prefix and no data => unspec */
-    uip_ds6_set_addr_iid(ipaddr, lladdr);
+	  Addr_SetInterfId(ipaddr, lladdr);
   }
   TRice(iD(6143), "dbg:uncompression: address %d %d %04X:%04X:%04X:%04X:%04X:%04X:%04X:%04X\n",
 		 prefcount, postcount, ipaddr->u16[0], ipaddr->u16[1], ipaddr->u16[2], ipaddr->u16[3], ipaddr->u16[4], ipaddr->u16[5], ipaddr->u16[6], ipaddr->u16[7]);

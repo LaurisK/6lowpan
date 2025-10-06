@@ -46,7 +46,8 @@
 #include <stdlib.h>
 #include <stddef.h>
 //#include "lib/random.h"
-//#include "uip-nd6.h"
+#include "tcpip.h"
+#include "uip-nd6.h"
 #include "uip-ds6.h"
 #include "uip-ds6-route.h"
 #include "uip-ds6-nbr.h"
@@ -123,8 +124,11 @@ static uip_ip6addr_t default_prefix = {
     .u16 = { 0, 0, 0, 0, 0, 0, 0, 0 }
 };
 
-static TimerHandle_t periodicTim;
+#if !UIP_CONF_ROUTER
 static TimerHandle_t rsSendTmo;
+#endif /* !UIP_CONF_ROUTER */
+static TimerHandle_t periodicTim;
+sUipBuff dsPeriodicBuff;
 
 /*---------------------------------------------------------------------------*/
 const uip_ip6addr_t *
@@ -139,8 +143,32 @@ uip_ds6_set_default_prefix(const uip_ip6addr_t *prefix)
   uip_ip6addr_copy(&default_prefix, prefix);
 }
 
+#if UIP_CONF_ROUTER && UIP_ND6_SEND_RA
 /*---------------------------------------------------------------------------*/
-static void uip_ds6_periodic(void)
+static void uip_ds6_send_ra_periodic(sUipBuff *dsPeriodicBuff) {
+  if(racount > 0) {
+    /* send previously scheduled RA */
+    uip_nd6_ra_output(dsPeriodicBuff, NULL);
+    TRice(iD(7091), "msg:Sending periodic RA\n");
+  }
+
+  rand_time = UIP_ND6_MIN_RA_INTERVAL + System_Random(UIP_ND6_MAX_RA_INTERVAL - UIP_ND6_MIN_RA_INTERVAL);
+  TRice(iD(4040), "dbg:Random time 1 = %u\n", rand_time);
+
+  if(racount < UIP_ND6_MAX_INITIAL_RAS) {
+    if(rand_time > UIP_ND6_MAX_INITIAL_RA_INTERVAL) {
+      rand_time = UIP_ND6_MAX_INITIAL_RA_INTERVAL;
+      TRice(iD(4005), "dbg:Random time 2 = %u\n", rand_time);
+    }
+    racount++;
+  }
+  TRice(iD(1439), "dbg:Random time 3 = %u\n", rand_time);
+  Time_TimerSet(&uip_ds6_timer_ra, rand_time);
+}
+#endif /* UIP_CONF_ROUTER && UIP_ND6_SEND_RA */
+
+/*---------------------------------------------------------------------------*/
+static void uip_ds6_periodic(sUipBuff *dsPeriodicBuff)
 {
 
   /* Periodic processing on unicast addresses */
@@ -153,7 +181,7 @@ static void uip_ds6_periodic(void)
       } else if((locaddr->state == ADDR_TENTATIVE)
                 && (locaddr->dadnscount <= uip_ds6_if.maxdadns)
                 && (timer_expired(&locaddr->dadtimer))
-                && (uip_len == 0)) {
+                && (dsPeriodicBuff->len == 0)) {
         uip_ds6_dad(locaddr);
 #endif /* UIP_ND6_DEF_MAXDADNS > 0 */
       }
@@ -176,21 +204,21 @@ static void uip_ds6_periodic(void)
 #endif /* !UIP_CONF_ROUTER */
 
 #if UIP_ND6_SEND_NS
-  uip_ds6_neighbor_periodic();
+  uip_ds6_neighbor_periodic(dsPeriodicBuff);
 #endif /* UIP_ND6_SEND_NS */
 
 #if UIP_CONF_ROUTER && UIP_ND6_SEND_RA
   /* Periodic RA sending */
-  if(Time_TimerExpired(&uip_ds6_timer_ra) && (uip_len == 0)) {
-    uip_ds6_send_ra_periodic();
+  if(Time_TimerExpired(&uip_ds6_timer_ra) && (dsPeriodicBuff->len == 0)) {
+    uip_ds6_send_ra_periodic(dsPeriodicBuff);
   }
 #endif /* UIP_CONF_ROUTER && UIP_ND6_SEND_RA */
   return;
 }
 
 static void HandleDs6PeriodicTimer(TimerHandle_t periodicTim) {
-    uip_ds6_periodic();
-    tcpip_ipv6_output();
+    uip_ds6_periodic(&dsPeriodicBuff);
+    tcpip_ipv6_output(&dsPeriodicBuff);
 }
 
 #if !UIP_CONF_ROUTER
@@ -209,16 +237,16 @@ static void uip_nd6_rs_output(sUipBuff *uipBuff)
 
   if(uip_is_addr_unspecified(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr)) {
 	  IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->len[1] = UIP_ICMPH_LEN + UIP_ND6_RS_LEN;
-    uip_len = UIP_IPH_LEN + uipBuff->extLen + UIP_ICMPH_LEN + UIP_ND6_RS_LEN;
+	uipBuff->len = UIP_IPH_LEN + uipBuff->extLen + UIP_ICMPH_LEN + UIP_ND6_RS_LEN;
   } else {
-    uip_len = UIP_IPH_LEN + uipBuff->extLen + UIP_ICMPH_LEN + UIP_ND6_RS_LEN + UIP_ND6_OPT_LLAO_LEN;
+	uipBuff->len = UIP_IPH_LEN + uipBuff->extLen + UIP_ICMPH_LEN + UIP_ND6_RS_LEN + UIP_ND6_OPT_LLAO_LEN;
     uip6_uipHdrSetLen(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8), UIP_ICMPH_LEN + UIP_ND6_RS_LEN + UIP_ND6_OPT_LLAO_LEN);
 
     create_llao(&uip_buf[UIP_IPH_LEN + uipBuff->extLen + UIP_ICMPH_LEN + UIP_ND6_RS_LEN], UIP_ND6_OPT_SLLAO);
   }
 
   UIP_ICMP_BUF->icmpchksum = 0;
-  UIP_ICMP_BUF->icmpchksum = ~uip_icmp6chksum();
+  UIP_ICMP_BUF->icmpchksum = ~uip_icmp6chksum(uipBuff);
 
   UIP_STAT(++uip_stat.nd6.sent);
   TRiceS(iD(5761), "msg:Sending RS to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
@@ -289,7 +317,7 @@ void uip_ds6_init(void)
 #else /* UIP_CONF_ROUTER */
   uip_ds6_prefix_add(&loc_fipaddr, UIP_DEFAULT_PREFIX_LEN, 0);
 #endif /* UIP_CONF_ROUTER */
-  uip_ds6_set_addr_iid(&loc_fipaddr, &uip_lladdr);
+  Addr_SetInterfId(&loc_fipaddr, &uip_lladdr);
   uip_ds6_addr_add(&loc_fipaddr, 0, ADDR_AUTOCONF);
 
   uip_create_linklocal_allnodes_mcast(&loc_fipaddr);
@@ -445,9 +473,7 @@ uip_ds6_addr_add(uip_ipaddr_t *ipaddr, uint32_t vlifetime, uint8_t type)
     }
 #if UIP_ND6_DEF_MAXDADNS > 0
     locaddr->state = ADDR_TENTATIVE;
-    timer_set(&locaddr->dadtimer,
-              random_rand() % (UIP_ND6_MAX_RTR_SOLICITATION_DELAY *
-                               CLOCK_SECOND));
+    timer_set(&locaddr->dadtimer, System_Random(UIP_ND6_MAX_RTR_SOLICITATION_DELAY * CLOCK_SECOND));
     locaddr->dadnscount = 0;
 #else /* UIP_ND6_DEF_MAXDADNS > 0 */
     locaddr->state = ADDR_PREFERRED;
@@ -643,41 +669,6 @@ uip_ds6_select_src(uip_ipaddr_t *src, uip_ipaddr_t *dst)
 }
 
 /*---------------------------------------------------------------------------*/
-void
-uip_ds6_set_addr_iid(uip_ipaddr_t *ipaddr, uip_lladdr_t *lladdr)
-{
-#if (UIP_LLADDR_LEN == 8)
-  memcpy(ipaddr->u8 + 8, lladdr, UIP_LLADDR_LEN);
-  ipaddr->u8[8] ^= 0x02;
-#elif (UIP_LLADDR_LEN == 6)
-  memcpy(ipaddr->u8 + 8, lladdr, 3);
-  ipaddr->u8[11] = 0xff;
-  ipaddr->u8[12] = 0xfe;
-  memcpy(ipaddr->u8 + 13, (uint8_t *)lladdr + 3, 3);
-  ipaddr->u8[8] ^= 0x02;
-#elif (UIP_LLADDR_LEN == 2)
-  /* derive IID as per RFC 6282 */
-  memcpy(ipaddr->u8 + 8, iid_prefix, 6);
-  memcpy(ipaddr->u8 + 8 + 6, lladdr, UIP_LLADDR_LEN);
-#else
-#error uip-ds6.c cannot build interface address when UIP_LLADDR_LEN is not 6, 8, or 2
-#endif
-}
-/*---------------------------------------------------------------------------*/
-void
-uip_ds6_set_lladdr_from_iid(uip_lladdr_t *lladdr, const uip_ipaddr_t *ipaddr)
-{
-#if (UIP_LLADDR_LEN == 8)
-  memcpy(lladdr, ipaddr->u8 + 8, UIP_LLADDR_LEN);
-  lladdr->addr[0] ^= 0x02;
-#elif (UIP_LLADDR_LEN == 2)
-  memcpy(lladdr, ipaddr->u8 + 6, UIP_LLADDR_LEN);
-#else
-#error uip-ds6.c cannot build lladdr address when UIP_LLADDR_LEN is not 8 or 2
-#endif
-}
-
-/*---------------------------------------------------------------------------*/
 uint8_t
 get_match_length(uip_ipaddr_t *src, uip_ipaddr_t *dst)
 {
@@ -769,31 +760,6 @@ uip_ds6_send_ra_sollicited(void)
   }
 }
 
-/*---------------------------------------------------------------------------*/
-void
-uip_ds6_send_ra_periodic(void)
-{
-  if(racount > 0) {
-    /* send previously scheduled RA */
-    uip_nd6_ra_output(NULL);
-    TRice(iD(7091), "msg:Sending periodic RA\n");
-  }
-
-  rand_time = UIP_ND6_MIN_RA_INTERVAL + random_rand() %
-    (uint16_t) (UIP_ND6_MAX_RA_INTERVAL - UIP_ND6_MIN_RA_INTERVAL);
-  TRice(iD(4040), "dbg:Random time 1 = %u\n", rand_time);
-
-  if(racount < UIP_ND6_MAX_INITIAL_RAS) {
-    if(rand_time > UIP_ND6_MAX_INITIAL_RA_INTERVAL) {
-      rand_time = UIP_ND6_MAX_INITIAL_RA_INTERVAL;
-      TRice(iD(4005), "dbg:Random time 2 = %u\n", rand_time);
-    }
-    racount++;
-  }
-  TRice(iD(1439), "dbg:Random time 3 = %u\n", rand_time);
-  Time_TimerSet(&uip_ds6_timer_ra, rand_time);
-}
-
 #endif /* UIP_ND6_SEND_RA */
 #endif /* UIP_CONF_ROUTER */
 /*---------------------------------------------------------------------------*/
@@ -820,8 +786,8 @@ void Ds6_SetReachableTimes(const uint32_t baseReachTime) {
     }
 }
 
-void Ds6_SetRetransmitTim(sUipBuff *uipBuff, const uint32_t retransTmo) {
-  if(0 != (uip_nd6_ra *)(uipBuff->buff.u8 + UIP_IPH_LEN + UIP_ICMPH_LEN + uipBuff->extLen)->retrans_timer) {
+void Ds6_SetRetransmitTim(const uint32_t retransTmo) {
+  if(0 != retransTmo) {
     uip_ds6_if.retrans_timer = retransTmo;
     TRice(iD(6951), "msg:[uIP DS6] Retransmit timeout set to - %u\n", uip_ds6_if.retrans_timer);
   }

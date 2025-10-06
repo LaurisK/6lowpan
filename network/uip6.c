@@ -1406,7 +1406,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
 
 #if UIP_CONF_IPV6_CHECKS
   /* Compute and check the ICMP header checksum */
-  if(uip_icmp6chksum() != 0xffff) {
+  if(uip_icmp6chksum(uipBuff) != 0xffff) {
     UIP_STAT(++uip_stat.icmp.drop);
     UIP_STAT(++uip_stat.icmp.chkerr);
     TRice(iD(1204), "err:icmpv6 bad checksum\n");
