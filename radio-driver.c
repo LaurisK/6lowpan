@@ -128,7 +128,7 @@ static int16_t Radio_read_from_fifo(sPacket *packet) {
 		packetbuf_set_attr(packet, PACKETBUF_ATTR_RSSI, last_packet_rssi);
 		packetbuf_set_attr(packet, PACKETBUF_ATTR_LINK_QUALITY, last_packet_lqi);
 	} else {
-		TRice(iD(1878), "msg:Buf too small (%d bytes to hold %d bytes)\n", packetbuf_remaininglen(packet), rx_bytes);
+		TRice("msg:Buf too small (%d bytes to hold %d bytes)\n", packetbuf_remaininglen(packet), rx_bytes);
 	}
 //	if (polling_mode) {
 		S2LP_CMD_StrobeFlushRxFifo();
@@ -142,7 +142,7 @@ static int16_t Radio_read_from_fifo(sPacket *packet) {
  */
 //static void radio_set_polling_mode(uint8_t enable) {
 //	/* Polling Mode  must be fully validated. */
-//	TRiceS(iD(3281), "msg:POLLING MODE is %s.\r\n", enable?"ENABLED":"DISABLED");
+//	TRiceS("msg:POLLING MODE is %s.\r\n", enable?"ENABLED":"DISABLED");
 //	polling_mode = enable;
 //	if (polling_mode) {
 //		/* Disable interrupts */
@@ -163,21 +163,21 @@ static int16_t Radio_read_from_fifo(sPacket *packet) {
 static void radio_print_status(void) {
 	S2LPState s = radio_refresh_status();
 	if (s == MC_STATE_STANDBY) {
-		TRice(iD(3890), "radio-driver: MC_STATE_STANDBY\n");
+		TRice("radio-driver: MC_STATE_STANDBY\n");
 	} else if (s == MC_STATE_SLEEP) {
-		TRice(iD(2814), "radio-driver: MC_STATE_SLEEP\n");
+		TRice("radio-driver: MC_STATE_SLEEP\n");
 	} else if (s == MC_STATE_READY) {
-		TRice(iD(5051), "radio-driver: MC_STATE_READY\n");
+		TRice("radio-driver: MC_STATE_READY\n");
 	} else if (s == MC_STATE_TX) {
-		TRice(iD(4764), "radio-driver: MC_STATE_TX\n");
+		TRice("radio-driver: MC_STATE_TX\n");
 	} else if (s == MC_STATE_RX) {
-		TRice(iD(2291), "radio-driver: MC_STATE_RX\n");
+		TRice("radio-driver: MC_STATE_RX\n");
 	} else if (s == MC_STATE_SLEEP_NOFIFO) {
-		TRice(iD(5372), "radio-driver: MC_STATE_SLEEP_NOFIFO\n");
+		TRice("radio-driver: MC_STATE_SLEEP_NOFIFO\n");
 	} else if (s == MC_STATE_SYNTH_SETUP) {
-		TRice(iD(5947), "radio-driver: MC_STATE_SYNTH_SETUP\n");
+		TRice("radio-driver: MC_STATE_SYNTH_SETUP\n");
 	} else {
-		TRice(iD(5407), "radio-driver: status: %X\n", (uint8_t) s);
+		TRice("radio-driver: status: %X\n", (uint8_t) s);
 	}
 }
 
@@ -219,7 +219,7 @@ static uint8_t radio_get_channel(void) {
 	/*Next statement is mainly for debugging purpose, it can be commented out. */
 	register_channel = S2LP_RADIO_GetChannel();
 	if (register_channel != radioInfo.operatingChannel) {
-		TRice(iD(5269), "wrn:Warning retrieved channel %d != saved channel %d\n", register_channel, radioInfo.operatingChannel );
+		TRice("wrn:Warning retrieved channel %d != saved channel %d\n", register_channel, radioInfo.operatingChannel );
 		radioInfo.operatingChannel = register_channel;
 	}
 
@@ -232,7 +232,7 @@ static uint8_t radio_get_channel(void) {
  */
 static void radio_set_channel(uint8_t channel) {
 	/*Channel value has been validated in the calling function. */
-	TRice(iD(1479), "msg:SET CHANNEL %d.\r\n", channel);
+	TRice("msg:SET CHANNEL %d.\r\n", channel);
 
 	radioInfo.operatingChannel = channel;
 	S2LP_RADIO_SetChannel(radioInfo.operatingChannel);
@@ -247,7 +247,7 @@ static int32_t radio_get_txpower(void) {
 	int32_t register_tx_power;
 	register_tx_power = S2LP_RADIO_GetPALeveldBm(POWER_INDEX);
 	if (register_tx_power != conf_tx_power) {
-		TRice(iD(4189), "wrn:Warning retrieved tx power %d != saved tx power %d\n", register_tx_power, conf_tx_power );
+		TRice("wrn:Warning retrieved tx power %d != saved tx power %d\n", register_tx_power, conf_tx_power );
 		conf_tx_power = register_tx_power;
 	}
 	return register_tx_power;
@@ -269,7 +269,7 @@ static void radio_set_txpower(int8_t power) {
  * @param  enable - desired state of auto packet filter function.
  */
 static void radio_set_auto_pkt_filter(uint8_t enable) {
-	TRice(iD(6953), "msg:Set Auto Packet Filtering %d\n", enable);
+	TRice("msg:Set Auto Packet Filtering %d\n", enable);
 	auto_pkt_filter = enable;
 	S2LP_PCKT_HNDL_SetAutoPcktFilter(enable ? S_ENABLE : S_DISABLE);
 }
@@ -299,13 +299,13 @@ static void radio_set_csma(uint8_t enable) {
  */
 static uint32_t radio_get_packet_timestamp(void) {
 //@TODO: This is to be validated.
-	TRice(iD(5623), "msg:radio_get_packet_timestamp: %u\r\n", last_packet_timestamp);
+	TRice("msg:radio_get_packet_timestamp: %u\r\n", last_packet_timestamp);
 	return last_packet_timestamp;
 }
 
 /* API Realization ----------------------------------------------------------*/
 static int8_t Radio_on(void) {
-	TRice(iD(2951), "msg:Radio: on\n");
+	TRice("msg:Radio: on\n");
 
 	if (radio_off == radio_status) {
 #if RADIO_SNIFF_MODE
@@ -346,7 +346,7 @@ static int8_t Radio_off(void) {
 				RADIO_WAIT_TIMEOUT);
 
 		if (radio_refresh_status() != MC_STATE_READY) {
-			TRice(iD(6294), "Radio: failed off->ready\n");
+			TRice("Radio: failed off->ready\n");
 			return 1;
 		}
 		/* Puts the Radio in STANDBY */
@@ -355,7 +355,7 @@ static int8_t Radio_off(void) {
 				RADIO_WAIT_TIMEOUT);
 
 		if (radio_refresh_status() != MC_STATE_STANDBY) {
-			TRice(iD(5624), "err:Radio: failed off->stdby\n");
+			TRice("err:Radio: failed off->stdby\n");
 			return 1;
 		}
 
@@ -366,7 +366,7 @@ static int8_t Radio_off(void) {
 }
 
 static int8_t Radio_init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void))) {
-	TRice(iD(4217), "msg:RADIO INIT IN\n");
+	TRice("msg:RADIO INIT IN\n");
 	radioEvtIdOffset = evtOffset;
 	radioIrq2Task = packedEvtHndl;
 	S2LPInterfaceInit();
@@ -401,7 +401,7 @@ static int8_t Radio_init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, voi
 	S2LP_PCKT_HNDL_SetAutoPcktFilter(S_ENABLE);
 	S2LP_PCKT_HNDL_SelectSecondarySync(S_DISABLE);
 	xAddressInit.cMyAddress = linkaddr_node_addr.u8[LINKADDR_SIZE - 1];
-	S2LP_PCKT_BASIC_AddressesInit(&xAddressInit); TRice(iD(2332), "msg:Node Source address %2X\n", xAddressInit.cMyAddress);
+	S2LP_PCKT_BASIC_AddressesInit(&xAddressInit); TRice("msg:Node Source address %2X\n", xAddressInit.cMyAddress);
 #endif /*RADIO_ADDRESS_FILTERING*/
 
 #if RADIO_HW_CSMA
@@ -468,7 +468,7 @@ static int8_t Radio_init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, voi
 	S2LP_CMD_StrobeRx();
 	radio_status = radio_on;
 
-	TRice(iD(1178), "msg:Radio init done\n");
+	TRice("msg:Radio init done\n");
 	return 0;
 }
 
@@ -477,7 +477,7 @@ static eTransmitRes Radio_prepare(sPacket *packet) {
 
 	/* Checks if the payload length is supported: actually this can't happen, by system design, but it is safer to have this for sanity check. */
 	if (PACKETBUF_SIZE < packetbuf_totlen(packet)) {
-		TRice(iD(4935), "msg:Payload len too big (> %d), error.\n", PACKETBUF_SIZE);
+		TRice("msg:Payload len too big (> %d), error.\n", PACKETBUF_SIZE);
 		return tx_err;
 	}
 
@@ -486,7 +486,7 @@ static eTransmitRes Radio_prepare(sPacket *packet) {
 
 	radio_set_ready_state();
 	if (radio_refresh_status() != MC_STATE_READY) {
-		TRice(iD(6098), "Set Ready State failed.\n");
+		TRice("Set Ready State failed.\n");
 		radio_print_status();
 		S2LP_CMD_StrobeSabort();
 #if RADIO_SNIFF_MODE
@@ -520,7 +520,7 @@ static eTransmitRes Radio_prepare(sPacket *packet) {
 
 	/* Currently does no happen since S2LP_RX_FIFO_SIZE == MAX_PACKET_LEN also note that S2LP_RX_FIFO_SIZE == S2LP_TX_FIFO_SIZE */
 	if (packetbuf_totlen(packet) > S2LP_TX_FIFO_SIZE) {
-		TRice(iD(3093), "msg:Payload bigger than FIFO size.'n");
+		TRice("msg:Payload bigger than FIFO size.'n");
 	} else {
 		S2LP_WriteFIFO(packetbuf_totlen(packet), (uint8_t*)packetbuf_hdrptr(packet));
 //    S2LP_WriteFIFO(payload_len, (uint8_t *)payload);
@@ -537,7 +537,7 @@ static eTransmitRes Radio_transmit(uint16_t payloadLen) {
 
 	/* This function blocks until the packet has been transmitted */
 	if (!packet_is_prepared) {
-		TRice(iD(3252), "msg:Radio TRANSMIT: ERROR, packet is NOT prepared.\n");
+		TRice("msg:Radio TRANSMIT: ERROR, packet is NOT prepared.\n");
 		return tx_err;
 	}
 
@@ -568,9 +568,9 @@ static eTransmitRes Radio_transmit(uint16_t payloadLen) {
 	if (transmitting_packet) {
 		S2LP_CMD_StrobeSabort();
 		if (xTxDoneFlag == RESET) {
-			TRice(iD(2219), "Packet not transmitted: TIMEOUT\n\r");
+			TRice("Packet not transmitted: TIMEOUT\n\r");
 		} else {
-			TRice(iD(1445), "Packet not transmitted: ERROR\n\r");
+			TRice("Packet not transmitted: ERROR\n\r");
 		}
 		transmitting_packet = 0;
 	} else {
@@ -626,7 +626,7 @@ static eTransmitRes Radio_send(sPacket *packet) {
     S2LP_TIM_FastRxTermTimer(S_ENABLE);
     S2LP_GPIO_IrqConfig(RX_DATA_READY,S_ENABLE);
 #endif /*RADIO_SNIFF_MODE*/
-		S2LP_CMD_StrobeRx(); TRice(iD(7332), "msg:PREPARE FAILED\n");
+		S2LP_CMD_StrobeRx(); TRice("msg:PREPARE FAILED\n");
 		return tx_err;
 	}
 	return Radio_transmit(packetbuf_totlen(packet));
@@ -651,7 +651,7 @@ static int8_t Radio_channel_clear(void) {
 	/* Local variable used to memorize the S2LP state */
 	eRadioStatus radio_state = radio_status;
 
-	TRice(iD(6434), "msg:CHANNEL CLEAR IN\n");
+	TRice("msg:CHANNEL CLEAR IN\n");
 
 	if (radio_off == radio_status) {
 		/* Wakes up the Radio */
@@ -757,7 +757,7 @@ static eRadioRes Radio_get_value(radio_param_t parameter, radio_value_t *ret_val
 		get_value_result = radio_ok;
 		break;
 	default:
-		TRice(iD(5016), "dbg:Radio_get_value(%d) - radio_notSupported.\n", parameter);
+		TRice("dbg:Radio_get_value(%d) - radio_notSupported.\n", parameter);
 	}
 
 	return get_value_result;
@@ -900,7 +900,7 @@ void Radio_process_irq_cb(void) {
 #if RADIO_HW_CSMA
 	if (x_irq_status.IRQ_MAX_BO_CCA_REACH) {
 		/* Send a Tx command: i.e. keep on trying */
-		TRice(iD(1994), "dbg:IRQ_MAX_BO_CCA_REACH\n");
+		TRice("dbg:IRQ_MAX_BO_CCA_REACH\n");
 		S2LP_CMD_StrobeTx();
 		return;
 	}
@@ -922,7 +922,7 @@ void Radio_process_irq_cb(void) {
 
 #if !RADIO_SNIFF_MODE
 	if (x_irq_status.IRQ_RX_DATA_DISC && !transmitting_packet) {
-		TRice(iD(1886), "dbg:IRQ_RX_DATA_DISC\r\n");
+		TRice("dbg:IRQ_RX_DATA_DISC\r\n");
 		/* RX command - to ensure the device will be ready for the next reception */
 		if (x_irq_status.IRQ_RX_TIMEOUT) {
 			S2LP_CMD_StrobeFlushRxFifo();

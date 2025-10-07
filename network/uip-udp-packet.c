@@ -75,7 +75,6 @@ void uip_udp_packet_send(struct uip_udp_conn *c, const void *data, int len)
     }
 #endif
   }
-  txUipBuff.sLen = 0;
 #endif /* UIP_UDP */
 }
 /*---------------------------------------------------------------------------*/

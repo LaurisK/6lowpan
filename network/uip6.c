@@ -75,7 +75,9 @@
 #include <stdio.h>
 #include "uip.h"
 #include "uip-ds6.h"
+#include "uip-nd6.h"
 #include "uip-icmp6.h"
+#include "tcpip.h"
 //#include "net/ipv6/uip-arch.h"
 //#include "net/ipv6/uipopt.h"
 //#include "net/ipv6/uip-nd6.h"
@@ -90,7 +92,7 @@
 #endif
 
 #if UIP_ND6_SEND_NS
-#include "net/ipv6/uip-ds6-nbr.h"
+#include "uip-ds6-nbr.h"
 #endif /* UIP_ND6_SEND_NS */
 
 #if UIP_STATISTICS == 1
@@ -133,10 +135,6 @@ uip_lladdr_t uip_lladdr = {{0x00,0x06,0x98,0x00,0x02,0x32}};
  * \name Buffer variables
  * @{
  */
-/** Packet buffer for incoming and outgoing packets */
-#ifndef UIP_CONF_EXTERNAL_BUFFER
-uip_buf_t uip_aligned_buf;
-#endif /* UIP_CONF_EXTERNAL_BUFFER */
 
 /* The uip_appdata pointer points to application data. */
 void *uip_appdata;
@@ -325,7 +323,7 @@ upper_layer_chksum(sUipBuff *uipBuff, uint8_t proto)
 
   upper_layer_len = uip6_uipHdrGetLen(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)) - uipBuff->extLen;
 
-  TRice(iD(3977), "dbg:Upper layer checksum len: %d from: %d\n", upper_layer_len,
+  TRice("dbg:Upper layer checksum len: %d from: %d\n", upper_layer_len,
          (int)((uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen) - uipBuff->buff.u8));
 
   /* First sum pseudoheader. */
@@ -471,18 +469,18 @@ uip_connect(const uip_ipaddr_t *ripaddr, uint16_t rport)
 bool uip_remove_ext_hdr(sUipBuff *uipBuff)
 {
   /* Remove ext header before TCP/UDP processing. */
-  if(uip_ext_len > 0) {
-	  TRice(iD(3147), "dbg:Removing IPv6 extension headers (extlen: %d, uiplen: %d)\n", uipBuff->extLen, uipBuff->len);
+  if(uipBuff->extLen > 0) {
+	  TRice("dbg:Removing IPv6 extension headers (extlen: %d, uiplen: %d)\n", uipBuff->extLen, uipBuff->len);
     if(uipBuff->len < UIP_IPH_LEN + uipBuff->extLen) {
-    	TRice(iD(7289), "err:uip_len too short compared to ext len\n");
+    	TRice("err:uip_len too short compared to ext len\n");
       uipbuf_clear(uipBuff);
       return false;
     }
 
     /* Set proto */
-    IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->proto = uip_last_proto;
+    IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->proto = uipBuff->lastProto;
     /* Move IP payload to the "left"*/
-    memmove((uipBuff->buff.u8 + UIP_IPH_LEN + 0), (uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen), uipBuff->extLen - UIP_IPH_LEN - uipBuff->extLen);
+    memmove((uipBuff->buff.u8 + UIP_IPH_LEN), (uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen), (uipBuff->len - UIP_IPH_LEN - uipBuff->extLen));
 
     /* Update the IP length. */
     if(uipbuf_add_ext_hdr(uipBuff, (-1 * uipBuff->extLen) == false)) {
@@ -612,7 +610,7 @@ uip_reass(uint8_t *prev_proto_ptr)
   /* We first write the unfragmentable part of IP header into the reassembly
      buffer. The reset the other reassembly variables. */
   if(uip_reass_on == 0) {
-	TRice(iD(2821), "msg:Starting reassembly\n");
+	TRice("msg:Starting reassembly\n");
     memcpy(FBUF, IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8), uip_ext_len + UIP_IPH_LEN);
     /* temporary in case we do not receive the fragment with offset 0 first */
     xTimerStart(reassemblyTmo, 0);
@@ -633,7 +631,7 @@ uip_reass(uint8_t *prev_proto_ptr)
     len = uip_len - uip_ext_len - UIP_IPH_LEN - UIP_FRAGH_LEN;
     offset = (uip_ntohs(frag_buf->offsetresmore) & 0xfff8);
     /* in byte, originaly in multiple of 8 bytes*/
-    TRice(iD(5923), "msg:len %d\noffset %d\n", len, offset);
+    TRice("msg:len %d\noffset %d\n", len, offset);
     if(offset == 0){
       uip_reassflags |= UIP_REASS_FLAG_FIRSTFRAG;
       /*
@@ -643,9 +641,9 @@ uip_reass(uint8_t *prev_proto_ptr)
        */
       *prev_proto_ptr = frag_buf->next;
       memcpy(FBUF, UIP_IP_BUF, uip_ext_len + UIP_IPH_LEN);
-      TRiceS(iD(6067), "msg:src %s ", uip6_printAddr(&UIP_IP_BUF->srcipaddr, NULL));
-      TRiceS(iD(5664), "msg:dest %s", uip6_printAddr(&UIP_IP_BUF->destipaddr, NULL));
-      TRice(iD(3609), "msg:next %d\n", UIP_IP_BUF->proto);
+      TRiceS("msg:src %s ", uip6_printAddr(&UIP_IP_BUF->srcipaddr, NULL));
+      TRiceS("msg:dest %s", uip6_printAddr(&UIP_IP_BUF->destipaddr, NULL));
+      TRice("msg:next %d\n", UIP_IP_BUF->proto);
 
     }
 
@@ -664,7 +662,7 @@ uip_reass(uint8_t *prev_proto_ptr)
       uip_reassflags |= UIP_REASS_FLAG_LASTFRAG;
       /*calculate the size of the entire packet*/
       uip_reasslen = offset + len;
-      TRice(iD(3046), "msg:last fragment reasslen %d\n", uip_reasslen);
+      TRice("msg:last fragment reasslen %d\n", uip_reasslen);
     } else {
       /* If len is not a multiple of 8 octets and the M flag of that fragment
          is 1, then that fragment must be discarded and an ICMP Parameter
@@ -731,13 +729,13 @@ uip_reass(uint8_t *prev_proto_ptr)
       uip_reasslen += UIP_IPH_LEN + uip_ext_len;
       memcpy(UIP_IP_BUF, FBUF, uip_reasslen);
       uip6_uipHdrSetLen(UIP_IP_BUF, uip_reasslen - UIP_IPH_LEN);
-      TRice(iD(1017), "msg:reassembled packet %d (%d)\n", uip_reasslen, uip6_uipHdrGetLen(UIP_IP_BUF));
+      TRice("msg:reassembled packet %d (%d)\n", uip_reasslen, uip6_uipHdrGetLen(UIP_IP_BUF));
 
       return uip_reasslen;
 
     }
   } else {
-	  TRice(iD(4038), "wrn:Already reassembling another paquet\n");
+	  TRice("wrn:Already reassembling another paquet\n");
   }
   return 0;
 }
@@ -750,7 +748,7 @@ static void uip_reass_over(void)
   xTimerStop(reassemblyTmo, 0);
 
   if(uip_reassflags & UIP_REASS_FLAG_FIRSTFRAG){
-	  TRice(iD(1542), "err:fragmentation timeout\n");
+	  TRice("err:fragmentation timeout\n");
     /* If the first fragment has been received, an ICMP Time Exceeded
        -- Fragment Reassembly Time Exceeded message should be sent to the
        source of that fragment. */
@@ -809,7 +807,7 @@ static uint8_t ext_hdr_options_process(sUipBuff *uipBuff, uint8_t *ext_buf) {
     uint16_t opt_len = opt_hdr->len + 2;
 
     if(opt_offset + opt_len > ext_hdr_len) {
-    	TRice(iD(3623), "err:Extension header option too long: dropping packet\n");
+    	TRice("err:Extension header option too long: dropping packet\n");
       uip_icmp6_error_output(uipBuff, ICMP6_PARAM_PROB, ICMP6_PARAMPROB_OPTION, (ext_buf + opt_offset) - uipBuff->buff.u8);
       return 2;
     }
@@ -821,11 +819,11 @@ static uint8_t ext_hdr_options_process(sUipBuff *uipBuff, uint8_t *ext_buf) {
      * hence we can only have
      */
     case UIP_EXT_HDR_OPT_PAD1:
-    	TRice(iD(3168), "dbg:Processing PAD1 option\n");
+    	TRice("dbg:Processing PAD1 option\n");
       opt_offset += 1;
       break;
     case UIP_EXT_HDR_OPT_PADN:
-    	TRice(iD(4649), "dbg:Processing PADN option\n");
+    	TRice("dbg:Processing PADN option\n");
       opt_offset += opt_len;
       break;
     case UIP_EXT_HDR_OPT_RPL:
@@ -837,9 +835,9 @@ static uint8_t ext_hdr_options_process(sUipBuff *uipBuff, uint8_t *ext_buf) {
        * Using this fix, the header is ignored, and the next header (if
        * present) is processed.
        */
-    	TRice(iD(3155), "dbg:Processing RPL option\n");
-      if(!NETSTACK_ROUTING.ext_header_hbh_update(ext_buf, opt_offset)) {
-    	  TRice(iD(5895), "err:RPL Option Error: Dropping Packet\n");
+    	TRice("dbg:Processing RPL option\n");
+      if(!1/*NETSTACK_ROUTING.ext_header_hbh_update(ext_buf, opt_offset)*/) {
+    	  TRice("err:RPL Option Error: Dropping Packet\n");
         return 1;
       }
       opt_offset += opt_len;
@@ -850,7 +848,7 @@ static uint8_t ext_hdr_options_process(sUipBuff *uipBuff, uint8_t *ext_buf) {
       *  recognise the option should drop the packet. Since we want to keep the packet,
       *  we want to process the option and not revert to the default case.
       */
-    	TRice(iD(4950), "dbg:Processing MPL option\n");
+    	TRice("dbg:Processing MPL option\n");
       opt_offset += opt_len + opt_len;
       break;
 #endif
@@ -868,7 +866,7 @@ static uint8_t ext_hdr_options_process(sUipBuff *uipBuff, uint8_t *ext_buf) {
        *   Problem, Code 2, message to the packet's Source Address,
        *   pointing to the unrecognized Option Type.
        */
-    	TRice(iD(5909), "dbg:Unrecognized option, MSB 0x%x\n", opt_hdr->type);
+    	TRice("dbg:Unrecognized option, MSB 0x%x\n", opt_hdr->type);
       switch(opt_hdr->type & 0xC0) {
       case 0:
         break;
@@ -879,7 +877,7 @@ static uint8_t ext_hdr_options_process(sUipBuff *uipBuff, uint8_t *ext_buf) {
           return 1;
         }
       case 0x80:
-        uip_icmp6_error_output(uipBuff, ICMP6_PARAM_PROB, ICMP6_PARAMPROB_OPTION, (ext_buf + opt_offset) - uip_buf);
+        uip_icmp6_error_output(uipBuff, ICMP6_PARAM_PROB, ICMP6_PARAMPROB_OPTION, ((ext_buf + opt_offset) - uipBuff->buff.u8));
         return 2;
       }
       /* in the cases were we did not discard, update ext_opt* */
@@ -1090,7 +1088,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
   /* First check that we have received a full IPv6 header. */
   if(uipBuff->len < UIP_IPH_LEN) {
     UIP_STAT(++uip_stat.ip.drop);
-    TRice(iD(6082), "wrn:incomplete IPv6 header received (%d bytes)\n", (int)uipBuff->len);
+    TRice("wrn:incomplete IPv6 header received (%d bytes)\n", (int)uipBuff->len);
     goto drop;
   }
 
@@ -1098,7 +1096,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
   if((IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->vtc & 0xf0) != 0x60)  { /* IP version and header length. */
     UIP_STAT(++uip_stat.ip.drop);
     UIP_STAT(++uip_stat.ip.vhlerr);
-    TRice(iD(3290), "err:invalid version\n");
+    TRice("err:invalid version\n");
     goto drop;
   }
 
@@ -1113,7 +1111,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
    */
   if(uipBuff->len < uip6_uipHdrGetLen(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8))) {
     UIP_STAT(++uip_stat.ip.drop);
-    TRice(iD(1368), "err:packet shorter than reported in IP header\n");
+    TRice("err:packet shorter than reported in IP header\n");
     goto drop;
   }
 
@@ -1130,7 +1128,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
   /* Check that the packet length is acceptable given our IP buffer size. */
   if(uipBuff->len > UIP_BUFSIZE) {
     UIP_STAT(++uip_stat.ip.drop);
-    TRice(iD(2318), "wrn:dropping packet with length %d > %d\n", uipBuff->len, UIP_BUFSIZE);
+    TRice("wrn:dropping packet with length %d > %d\n", uipBuff->len, UIP_BUFSIZE);
     goto drop;
   }
 
@@ -1139,18 +1137,18 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
   uipBuff->lastProto = 0;
   last_header = uipbuf_get_last_header(uipBuff->buff.u8, uipBuff->len, &uipBuff->lastProto);
   if(last_header == NULL) {
-	  TRice(iD(2281), "err:invalid extension header chain\n");
+	  TRice("err:invalid extension header chain\n");
     goto drop;
   }
   /* Set uip_ext_len */
   uipBuff->extLen = last_header - (uipBuff->buff.u8 + UIP_IPH_LEN);
 
-  TRiceS(iD(1100), "msg:packet received from %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
-  TRiceS(iD(5037), "msg: to %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
+  TRiceS("msg:packet received from %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
+  TRiceS("msg: to %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
 
   if(uip_is_addr_mcast(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr)){
     UIP_STAT(++uip_stat.ip.drop);
-    TRice(iD(5554), "err:Dropping packet, src is mcast\n");
+    TRice("err:Dropping packet, src is mcast\n");
     goto drop;
   }
 
@@ -1216,7 +1214,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
         goto send;
       }
 
-      TRiceS(iD(4282), "msg:Forwarding packet to next hop %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
+      TRiceS("msg:Forwarding packet to next hop %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
       UIP_STAT(++uip_stat.ip.forwarded);
       goto send;
     } else {
@@ -1225,11 +1223,11 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
          (!uip_is_addr_loopback(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr)) &&
          (!uip_is_addr_mcast(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr)) &&
          (!uip_ds6_is_addr_onlink((&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr)))) {
-    	  TRice(iD(2491), "err:LL source address with off link destination, dropping\n");
+    	  TRice("err:LL source address with off link destination, dropping\n");
         uip_icmp6_error_output(uipBuff, ICMP6_DST_UNREACH, ICMP6_DST_UNREACH_NOTNEIGHBOR, 0);
         goto send;
       }
-      TRice(iD(1307), "err:Dropping packet, not for me and link local or multicast\n");
+      TRice("err:Dropping packet, not for me and link local or multicast\n");
       UIP_STAT(++uip_stat.ip.drop);
       goto drop;
     }
@@ -1238,7 +1236,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
   if(!uip_ds6_is_my_addr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr) &&
      !uip_ds6_is_my_maddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr) &&
      !uip_is_addr_mcast(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr)) {
-	  TRice(iD(1174), "err:Dropping packet, not for me\n");
+	  TRice("err:Dropping packet, not for me\n");
     UIP_STAT(++uip_stat.ip.drop);
     goto drop;
   }
@@ -1257,7 +1255,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
     ext_ptr = (struct uip_ext_hdr *)next_header;
     switch(protocol) {
     case UIP_PROTO_HBHO:
-    	TRice(iD(3825), "dbg:Processing hbh header\n");
+    	TRice("dbg:Processing hbh header\n");
       /* Hop by hop option header */
 #if UIP_CONF_IPV6_CHECKS
       /* Hop by hop option header. If we saw one HBH already, drop */
@@ -1279,7 +1277,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
     case UIP_PROTO_DESTO:
 #if UIP_CONF_IPV6_CHECKS
       /* Destination option header. if we saw two already, drop */
-    	TRice(iD(7934), "dbg:Processing desto header\n");
+    	TRice("dbg:Processing desto header\n");
       if(uip_ext_bitmap & UIP_EXT_HDR_BITMAP_DESTO1) {
         if(uip_ext_bitmap & UIP_EXT_HDR_BITMAP_DESTO2) {
           goto bad_hdr;
@@ -1316,10 +1314,10 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
        * to the routing type
        */
 
-      TRice(iD(5681), "dbg:Processing Routing header\n");
+      TRice("dbg:Processing Routing header\n");
       if(((struct uip_routing_hdr *)ext_ptr)->seg_left > 0) {
         /* Process source routing header */
-        if(NETSTACK_ROUTING.ext_header_srh_update()) {
+        if(1/*NETSTACK_ROUTING.ext_header_srh_update()*/) {
 
           /* The MTU and TTL were not checked and updated yet, because with
            * a routing header, the IPv6 destination address was set to us
@@ -1329,12 +1327,12 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
             goto send;
           }
 
-          TRiceS(iD(3259), "msg:Forwarding packet to next hop %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
+          TRiceS("msg:Forwarding packet to next hop %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
           UIP_STAT(++uip_stat.ip.forwarded);
 
           goto send; /* Proceed to forwarding */
         } else {
-        	TRice(iD(2333), "err:Unrecognized routing type\n");
+        	TRice("err:Unrecognized routing type\n");
           goto bad_hdr;
         }
       }
@@ -1342,7 +1340,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
     case UIP_PROTO_FRAG:
       /* Fragmentation header:call the reassembly function, then leave */
 #if UIP_CONF_IPV6_REASSEMBLY
-    	TRice(iD(5314), "msg:Processing fragmentation header\n");
+    	TRice("msg:Processing fragmentation header\n");
     	uipBuff->len = uip_reass(&ext_ptr->next);
       if(uipBuff->len == 0) {
         goto drop;
@@ -1352,14 +1350,14 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
         goto send;
       }
       /* packet is reassembled. Restart the parsing of the reassembled pkt */
-      TRice(iD(3592), "msg:Processing reassembled packet\n");
+      TRice("msg:Processing reassembled packet\n");
       uip_ext_bitmap = 0;
       next_header = uipbuf_get_next_header(uipBuff->buff.u8, uipBuff->len, &protocol, true);
       break;
 #else /* UIP_CONF_IPV6_REASSEMBLY */
       UIP_STAT(++uip_stat.ip.drop);
       UIP_STAT(++uip_stat.ip.fragerr);
-      TRice(iD(5207), "err:fragment dropped.");
+      TRice("err:fragment dropped.");
       goto drop;
 #endif /* UIP_CONF_IPV6_REASSEMBLY */
     case UIP_PROTO_NONE:
@@ -1396,20 +1394,20 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
   uip_icmp6_error_output(uipBuff, ICMP6_PARAM_PROB, ICMP6_PARAMPROB_NEXTHEADER, (uint32_t)(next_header - uipBuff->buff.u8));
   UIP_STAT(++uip_stat.ip.drop);
   UIP_STAT(++uip_stat.ip.protoerr);
-  TRice(iD(5251), "err:unrecognized header\n");
+  TRice("err:unrecognized header\n");
   goto send;
   /* End of headers processing */
 
   icmp6_input:
   /* This is IPv6 ICMPv6 processing code. */
-  TRice(iD(4207), "msg:icmpv6 input length %d type: %d \n", uipBuff->len, IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->type);
+  TRice("msg:icmpv6 input length %d type: %d \n", uipBuff->len, ((struct uip_icmp_hdr*)(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen))->type);
 
 #if UIP_CONF_IPV6_CHECKS
   /* Compute and check the ICMP header checksum */
   if(uip_icmp6chksum(uipBuff) != 0xffff) {
     UIP_STAT(++uip_stat.icmp.drop);
     UIP_STAT(++uip_stat.icmp.chkerr);
-    TRice(iD(1204), "err:icmpv6 bad checksum\n");
+    TRice("err:icmpv6 bad checksum\n");
     goto drop;
   }
 #endif /*UIP_CONF_IPV6_CHECKS*/
@@ -1432,8 +1430,8 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
    * Search generic input handlers.
    * The handler is in charge of setting uip_len to 0
    */
-  if(uip_icmp6_input(uipBuff, IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->type, IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->icode) == UIP_ICMP6_INPUT_ERROR) {
-	  TRice(iD(5728), "err:Unknown ICMPv6 message type/code %d\n", IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->type);
+  if(uip_icmp6_input(uipBuff, ((struct uip_icmp_hdr*)(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen))->type, ((struct uip_icmp_hdr*)(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen))->icode) == UIP_ICMP6_INPUT_ERROR) {
+	TRice("err:Unknown ICMPv6 message type/code %d\n", ((struct uip_icmp_hdr*)(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen))->type);
     UIP_STAT(++uip_stat.icmp.drop);
     UIP_STAT(++uip_stat.icmp.typeerr);
     uipbuf_clear(uipBuff);
@@ -1453,7 +1451,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
 
   uip_remove_ext_hdr(uipBuff);
 
-  TRice(iD(5831), "msg:Receiving UDP packet\n");
+  TRice("msg:Receiving UDP packet\n");
 
   /* UDP processing is really just a hack. We don't do anything to the
      UDP/IP headers, but let the UDP application do all the hard
@@ -1468,14 +1466,14 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
   if(UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->udpchksum != 0 && uip_udpchksum(uipBuff) != 0xffff) {
     UIP_STAT(++uip_stat.udp.drop);
     UIP_STAT(++uip_stat.udp.chkerr);
-    TRice(iD(6427), "err:udp: bad checksum 0x%04x 0x%04x\n", UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->udpchksum, uip_udpchksum(uipBuff));
+    TRice("err:udp: bad checksum 0x%04x 0x%04x\n", UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->udpchksum, uip_udpchksum(uipBuff));
     goto drop;
   }
 #endif /* UIP_UDP_CHECKSUMS */
 
   /* Make sure that the UDP destination port number is not zero. */
   if(UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->destport == 0) {
-	  TRice(iD(7344), "err:udp: zero port.\n");
+	  TRice("err:udp: zero port.\n");
     goto drop;
   }
 
@@ -1495,14 +1493,14 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
       goto udp_found;
     }
   }
-  TRice(iD(2097), "err:udp: no matching connection found\n");
+  TRice("err:udp: no matching connection found\n");
   UIP_STAT(++uip_stat.udp.drop);
 
   uip_icmp6_error_output(uipBuff, ICMP6_DST_UNREACH, ICMP6_DST_UNREACH_NOPORT, 0);
   goto send;
 
   udp_found:
-  TRice(iD(2060), "dbg:In udp_found\n");
+  TRice("dbg:In udp_found\n");
   UIP_STAT(++uip_stat.udp.recv);
 
   uipBuff->len = uipBuff->len - UIP_IPUDPH_LEN;
@@ -1514,7 +1512,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
   tcpip_uipcall();
 
   udp_send:
-  TRice(iD(3216), "dbg:In udp_send\n");
+  TRice("dbg:In udp_send\n");
 
   if(uipBuff->sLen == 0) {
     goto drop;
@@ -1560,21 +1558,21 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
   uip_remove_ext_hdr(uipBuff);
 
   UIP_STAT(++uip_stat.tcp.recv);
-  TRice(iD(5697), "msg:Receiving TCP packet\n");
+  TRice("msg:Receiving TCP packet\n");
   /* Start of TCP input header processing code. */
 
   if(uip_tcpchksum() != 0xffff) {   /* Compute and check the TCP
                                        checksum. */
     UIP_STAT(++uip_stat.tcp.drop);
     UIP_STAT(++uip_stat.tcp.chkerr);
-    TRice(iD(5631), "err:tcp: bad checksum 0x%04x 0x%04x\n", UIP_TCP_BUF->tcpchksum,
+    TRice("err:tcp: bad checksum 0x%04x 0x%04x\n", UIP_TCP_BUF->tcpchksum,
            uip_tcpchksum());
     goto drop;
   }
 
   /* Make sure that the TCP port number is not zero. */
   if(UIP_TCP_BUF->destport == 0 || UIP_TCP_BUF->srcport == 0) {
-	  TRice(iD(4773), "err:tcp: zero port\n");
+	  TRice("err:tcp: zero port\n");
     goto drop;
   }
 
@@ -1610,7 +1608,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
   UIP_STAT(++uip_stat.tcp.synrst);
 
   reset:
-  TRice(iD(2802), "wrn:In reset\n");
+  TRice("wrn:In reset\n");
   /* We do not send resets in response to resets. */
   if(UIP_TCP_BUF->flags & TCP_RST) {
     goto drop;
@@ -1665,7 +1663,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
      with a connection in LISTEN. In that case, we should create a new
      connection and send a SYNACK in return. */
   found_listen:
-  TRice(iD(6301), "dbg:In found listen\n");
+  TRice("dbg:In found listen\n");
   /* First we check if there are any connections avaliable. Unused
      connections are kept in the same table as used connections, but
      unused ones have the tcpstate set to CLOSED. Also, connections in
@@ -1691,7 +1689,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
        the remote end will retransmit the packet at a time when we
        have more spare connections. */
     UIP_STAT(++uip_stat.tcp.syndrop);
-    TRice(iD(3388), "err:tcp: found no unused connections\n");
+    TRice("err:tcp: found no unused connections\n");
     goto drop;
   }
   uip_conn = uip_connr;
@@ -1774,7 +1772,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
 
   /* This label will be jumped to if we found an active connection. */
   found:
-  TRice(iD(1924), "dbg:In found\n");
+  TRice("dbg:In found\n");
   uip_conn = uip_connr;
   uip_flags = 0;
   /* We do a very naive form of TCP reset processing; we just accept
@@ -1783,7 +1781,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
      before we accept the reset. */
   if(UIP_TCP_BUF->flags & TCP_RST) {
     uip_connr->tcpstateflags = UIP_CLOSED;
-    TRice(iD(5767), "wrn:tcp: got reset, aborting connection.");
+    TRice("wrn:tcp: got reset, aborting connection.");
     uip_flags = UIP_ABORT;
     UIP_APPCALL();
     goto drop;
@@ -1795,7 +1793,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
   /* Check that the indicated length of the TCP header is not too large
      for the total packet length. */
   if(uipBuff->len < c + UIP_IPH_LEN) {
-	  TRice(iD(1321), "wrn:Dropping TCP packet with too large data offset (%u bytes)\n", (unsigned)c);
+	  TRice("wrn:Dropping TCP packet with too large data offset (%u bytes)\n", (unsigned)c);
     goto drop;
   }
 
@@ -2223,7 +2221,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
      headers before calculating the checksum and finally send the
      packet. */
   tcp_send:
-  TRice(iD(3405), "dbg:In tcp_send\n");
+  TRice("dbg:In tcp_send\n");
 
   UIP_TCP_BUF->ackno[0] = uip_connr->rcv_nxt[0];
   UIP_TCP_BUF->ackno[1] = uip_connr->rcv_nxt[1];
@@ -2243,8 +2241,8 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
 
   uip_ipaddr_copy(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, &uip_connr->ripaddr);
   uip_ds6_select_src(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr);
-  TRiceS(iD(5988), "msg:Sending TCP packet to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
-  TRiceS(iD(5523), "msg: from %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
+  TRiceS("msg:Sending TCP packet to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
+  TRiceS("msg: from %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
 
   if(uip_connr->tcpstateflags & UIP_STOPPED) {
     /* If the connection has issued uip_stop(), we advertise a zero
@@ -2274,7 +2272,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
 #endif
   IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->flow = 0x00;
   send:
-  TRice(iD(6251), "msg:Sending packet with length %d (%d)\n", uipBuff->len, uip6_uipHdrGetLen(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)));
+  TRice("msg:Sending packet with length %d (%d)\n", uipBuff->len, uip6_uipHdrGetLen(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)));
 
   UIP_STAT(++uip_stat.ip.sent);
   /* Return and let the caller do the actual transmission. */
@@ -2343,7 +2341,7 @@ char *uip6_printAddr(const uip_ipaddr_t *addr, int16_t *len)
      */
 	stringLen = snprintf(printAddrBuff, IP_STRING_LEN, "::FFFF:%u.%u.%u.%u [IPv4-Mapped Address]", addr->u8[12], addr->u8[13], addr->u8[14], addr->u8[15]);
   } else {
-    uint8_t i;
+    uint8_t i = 0;
     uint8_t zeroCompressUsed = false;
     stringLen = 0;
     while (UIP_802154_LONGADDR_LEN >= i) {

@@ -101,8 +101,8 @@ static void echo_request_input(sUipBuff *uipBuff) {
    * headers in the request otherwise we need to remove the extension
    * headers and change a few fields
    */
-	  TRiceS(iD(3097), "msg:Received Echo Request from %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
-	  TRiceS(iD(4343), "msg:to %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
+	  TRiceS("msg:Received Echo Request from %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
+	  TRiceS("msg:to %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
 
   /* IP header */
 	  IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->ttl = Ds6_GetHopLimit();
@@ -128,8 +128,8 @@ static void echo_request_input(sUipBuff *uipBuff) {
   ICMP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->icmpchksum = 0;
   ICMP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->icmpchksum = ~uip_icmp6chksum(uipBuff);
 
-  TRiceS(iD(4289), "msg:Sending Echo Reply to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
-  TRiceS(iD(1784), "msg:from %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
+  TRiceS("msg:Sending Echo Reply to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
+  TRiceS("msg:from %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
   UIP_STAT(++uip_stat.icmp.sent);
   return;
 }
@@ -154,8 +154,8 @@ void uip_icmp6_error_output(sUipBuff *faultyBuff, uint8_t type, uint8_t code, ui
 
   /* Remove all extension headers related to the routing protocol in place.
    * Keep all other extension headers, so as to match original packet. */
-  if(NETSTACK_ROUTING.ext_header_remove() == 0) {
-	  TRice(iD(6994), "wrn:Unable to remove ext header before sending ICMPv6 ERROR message\n");
+  if(1/*NETSTACK_ROUTING.ext_header_remove() == 0*/) {
+	  TRice("wrn:Unable to remove ext header before sending ICMPv6 ERROR message\n");
   }
 
   /* remember data of original packet before shifting */
@@ -200,10 +200,10 @@ void uip_icmp6_error_output(sUipBuff *faultyBuff, uint8_t type, uint8_t code, ui
 
   UIP_STAT(++uip_stat.icmp.sent);
 
-  TRiceS(iD(2033), "wrn:to %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8)->destipaddr, NULL));
-  TRice(iD(1187), "wrn:Sending ICMPv6 ERROR message type %d code %d to ", type, code);
-  TRiceS(iD(4532), "wrn:%s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8)->destipaddr, NULL));
-  TRiceS(iD(4511), "wrn: from %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8)->srcipaddr, NULL));
+  TRiceS("wrn:to %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8)->destipaddr, NULL));
+  TRice("wrn:Sending ICMPv6 ERROR message type %d code %d to ", type, code);
+  TRiceS("wrn:%s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8)->destipaddr, NULL));
+  TRiceS("wrn: from %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(faultyBuff->buff.u8)->srcipaddr, NULL));
   return;
 }
 
@@ -218,7 +218,7 @@ void uip_icmp6_send(const uip_ipaddr_t *dest, int type, int code, int payload_le
   uip6_uipHdrSetLen(((struct uip_ip_hdr *)(icmpBuff.buff.u8)), UIP_ICMPH_LEN + payload_len);
 
   if(dest == NULL) {
-	  TRice(iD(6972), "err:invalid argument; dest is NULL\n");
+	  TRice("err:invalid argument; dest is NULL\n");
     return;
   }
 
@@ -236,8 +236,8 @@ void uip_icmp6_send(const uip_ipaddr_t *dest, int type, int code, int payload_le
   UIP_STAT(++uip_stat.icmp.sent);
   UIP_STAT(++uip_stat.ip.sent);
 
-  TRiceS(iD(6461), "msg:Sending ICMPv6 packet to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(icmpBuff.buff.u8)->destipaddr, NULL));
-  TRice(iD(4169), "msg:, type %u, code %u, len %u\n", type, code, payload_len);
+  TRiceS("msg:Sending ICMPv6 packet to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(icmpBuff.buff.u8)->destipaddr, NULL));
+  TRice("msg:, type %u, code %u, len %u\n", type, code, payload_len);
 
   tcpip_ipv6_output(&icmpBuff);
 }
@@ -246,8 +246,8 @@ static void echo_reply_input(sUipBuff *uipBuff) {
   int ttl;
   uip_ipaddr_t sender;
 
-  TRiceS(iD(5328), "msg:Received Echo Reply from %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
-  TRiceS(iD(5095), "msg:to %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
+  TRiceS("msg:Received Echo Reply from %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
+  TRiceS("msg:to %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
 
   uip_ipaddr_copy(&sender, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr);
   ttl = IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->ttl;

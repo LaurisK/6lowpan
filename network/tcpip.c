@@ -72,6 +72,7 @@ process_event_t tcpip_icmp6_event;
 #endif /* UIP_CONF_ICMP6 */
 
 #if UIP_TCP
+#warning "for now lets disable TPC/IP - work with udp only"
 /**
  * \internal Structure for holding a TCP port and a process ID.
  */
@@ -99,7 +100,7 @@ uint8_t tcpip_output(sUipBuff *tcpUipBuff, const uip_lladdr_t *addr) {
   /* Tag Traffic Class if we are using TC for variable retrans */
 #if UIP_TAG_TC_WITH_VARIABLE_RETRANSMISSIONS
   if(uipbuf_get_attr(tcpUipBuff, UIPBUF_ATTR_MAX_MAC_TRANSMISSIONS) != UIP_MAX_MAC_TRANSMISSIONS_UNDEFINED) {
-	  TRice(iD(3667), "msg:Tagging TC with retrans: %d\n", uipbuf_get_attr(tcpUipBuff, UIPBUF_ATTR_MAX_MAC_TRANSMISSIONS));
+	  TRice("msg:Tagging TC with retrans: %d\n", uipbuf_get_attr(tcpUipBuff, UIPBUF_ATTR_MAX_MAC_TRANSMISSIONS));
     /* Encapsulate the MAC transmission limit in the Traffic Class field */
 	IP_HDR_CAST_TO_BUFF(tcpUipBuff->buff.u8)->vtc = 0x60 | (UIP_TC_MAC_TRANSMISSION_COUNTER_BIT >> 4);
     IP_HDR_CAST_TO_BUFF(tcpUipBuff->buff.u8)->tcflow = uipbuf_get_attr(tcpUipBuff, UIPBUF_ATTR_MAX_MAC_TRANSMISSIONS) << 4;
@@ -143,8 +144,9 @@ static void check_for_tcp_syn(void) {
 
 /*---------------------------------------------------------------------------*/
 static uint16_t packet_input(sUipBuff *rxBuff) {
+  uint16_t rxLen = 0;
   if(rxBuff->len > 0) {
-	TRice(iD(7186), "msg:input: received %u bytes\n", rxBuff->len);
+	TRice("msg:input: received %u bytes\n", rxBuff->len);
 
     check_for_tcp_syn();
 
@@ -154,7 +156,7 @@ static uint16_t packet_input(sUipBuff *rxBuff) {
       if(traffic_class & UIP_TC_MAC_TRANSMISSION_COUNTER_BIT) {
         uint8_t max_mac_transmissions = traffic_class & UIP_TC_MAC_TRANSMISSION_COUNTER_MASK;
         uipbuf_set_attr(UIPBUF_ATTR_MAX_MAC_TRANSMISSIONS, max_mac_transmissions);
-        TRice(iD(7000), "msg:Received packet tagged with TC retrans: %d (%x)",
+        TRice("msg:Received packet tagged with TC retrans: %d (%x)",
                  max_mac_transmissions, traffic_class);
       }
     }
@@ -165,6 +167,7 @@ static uint16_t packet_input(sUipBuff *rxBuff) {
       tcpip_ipv6_output(rxBuff);
     }
   }
+  return rxLen;
 }
 /*---------------------------------------------------------------------------*/
 #if UIP_TCP
@@ -304,20 +307,20 @@ output_fallback(sUipBuff *uipBuff)
 {
 #ifdef UIP_FALLBACK_INTERFACE
   uip_last_proto = *(uipBuff->buff.u8 + UIP_IPH_LEN);
-  TRice(iD(1848), "msg:fallback: removing ext hdrs & setting proto %d %d\n", uip_ext_len, uip_last_proto);
-  uip_remove_ext_hdr();
+  TRice("msg:fallback: removing ext hdrs & setting proto %d %d\n", uip_ext_len, uip_last_proto);
+  uip_remove_ext_hdr(uipBuff);
   /* Inform the other end that the destination is not reachable. If it's
    * not informed routes might get lost unexpectedly until there's a need
    * to send a new packet to the peer */
   if(UIP_FALLBACK_INTERFACE.output() < 0) {
-	  TRice(iD(6367), "err:fallback: output error. Reporting DST UNREACH\n");
+	  TRice("err:fallback: output error. Reporting DST UNREACH\n");
     uip_icmp6_error_output(ICMP6_DST_UNREACH, ICMP6_DST_UNREACH_ADDR, 0);
     uip_flags = 0;
     tcpip_ipv6_output();
     return;
   }
 #else
-  TRice(iD(5015), "err:output: destination off-link and no default route\n");
+  TRice("err:output: destination off-link and no default route\n");
 #endif /* !UIP_FALLBACK_INTERFACE */
 }
 /*---------------------------------------------------------------------------*/
@@ -341,12 +344,12 @@ static const uip_ipaddr_t* get_nexthop(sUipBuff *uipBuff, uip_ipaddr_t *addr) {
   const uip_ipaddr_t *nexthop;
   uip_ds6_route_t *route;
 
-  TRice(iD(7782), "msg:output: processing %u bytes packet from ", uipBuff->len);
-  TRiceS(iD(4692), "msg:%s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
-  TRiceS(iD(6621), "msg: to %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
+  TRice("msg:output: processing %u bytes packet from ", uipBuff->len);
+  TRiceS("msg:%s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
+  TRiceS("msg: to %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
 
-  if(NETSTACK_ROUTING.ext_header_srh_get_next_hop(addr)) {
-    TRiceS(iD(6149), "msg:output: selected next hop from SRH: %s\n", uip6_printAddr(addr, NULL));
+  if(1/*NETSTACK_ROUTING.ext_header_srh_get_next_hop(addr)*/) {
+    TRiceS("msg:output: selected next hop from SRH: %s\n", uip6_printAddr(addr, NULL));
     return addr;
   }
 
@@ -354,7 +357,7 @@ static const uip_ipaddr_t* get_nexthop(sUipBuff *uipBuff, uip_ipaddr_t *addr) {
      link. If so, we simply use the destination address as our
      nexthop address. */
   if(uip_ds6_is_addr_onlink(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr)) {
-	  TRice(iD(2024), "msg:output: destination is on link\n");
+	  TRice("msg:output: destination is on link\n");
     return &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr;
   }
 
@@ -367,7 +370,7 @@ static const uip_ipaddr_t* get_nexthop(sUipBuff *uipBuff, uip_ipaddr_t *addr) {
     if(nexthop == NULL) {
       output_fallback(uipBuff);
     } else {
-      TRiceS(iD(5465), "msg:output: no route found, using default route: %s\n", uip6_printAddr(nexthop, NULL));
+      TRiceS("msg:output: no route found, using default route: %s\n", uip6_printAddr(nexthop, NULL));
     }
 
   } else {
@@ -378,14 +381,14 @@ static const uip_ipaddr_t* get_nexthop(sUipBuff *uipBuff, uip_ipaddr_t *addr) {
     /* If the nexthop is dead, for example because the neighbor
        never responded to link-layer acks, we drop its route. */
     if(nexthop == NULL) {
-    	TRice(iD(1500), "err:output: found dead route\n");
+    	TRice("err:output: found dead route\n");
       /* Notifiy the routing protocol that we are about to remove the route */
-      NETSTACK_ROUTING.drop_route(route);
+//      NETSTACK_ROUTING.drop_route(route);
       /* Remove the route */
       uip_ds6_route_rm(route);
       /* We don't have a nexthop to send the packet to, so we drop it. */
     } else {
-      TRiceS(iD(5994), "msg:output: found next hop from routing table: %s\n", uip6_printAddr(nexthop, NULL));
+      TRiceS("msg:output: found next hop from routing table: %s\n", uip6_printAddr(nexthop, NULL));
     }
   }
 
@@ -456,7 +459,7 @@ send_nd6_ns(sUipBuff *uipBuff, const uip_ipaddr_t *nexthop)
     /* Send the first NS try from here (multicast destination IP address). */
   }
 #else
-  TRiceS(iD(2749), "err:output: neighbor not in cache: %s\n", uip6_printAddr(nexthop, NULL));
+  TRiceS("err:output: neighbor not in cache: %s\n", uip6_printAddr(nexthop, NULL));
 #endif
 
   return err;
@@ -474,19 +477,19 @@ void tcpip_ipv6_output(sUipBuff *uipBuff)
   }
 
   if(uipBuff->len > UIP_LINK_MTU) {
-	  TRice(iD(7953), "err:output: Packet too big");
+	  TRice("err:output: Packet too big");
     goto exit;
   }
 
   if(uip_is_addr_unspecified(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr)){
-	  TRice(iD(5311), "err:output: Destination address unspecified");
+	  TRice("err:output: Destination address unspecified");
     goto exit;
   }
 
 
-  if(!NETSTACK_ROUTING.ext_header_update()) {
+  if(!1/*NETSTACK_ROUTING.ext_header_update()*/) {
     /* Packet can not be forwarded */
-	  TRice(iD(4730), "err:output: routing protocol extension header update error\n");
+	  TRice("err:output: routing protocol extension header update error\n");
     uipbuf_clear(uipBuff);
     return;
   }
@@ -499,7 +502,7 @@ void tcpip_ipv6_output(sUipBuff *uipBuff)
   /* We first check if the destination address is one of ours. There is no
    * loopback interface -- instead, process this directly as incoming. */
   if(uip_ds6_is_my_addr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr)) {
-	  TRice(iD(5659), "msg:output: sending to ourself\n");
+	  TRice("msg:output: sending to ourself\n");
     packet_input(uipBuff);
     return;
   }
@@ -520,8 +523,8 @@ void tcpip_ipv6_output(sUipBuff *uipBuff)
     uip_lladdr_t lladdr;
     Addr_GetInterfId(&lladdr, nexthop);
     if((nbr = uip_ds6_nbr_add(nexthop, &lladdr, 0, NBR_REACHABLE, NBR_TABLE_REASON_IPV6_ND_AUTOFILL, NULL)) == NULL) {
-      TRiceS(iD(4860), "err:output: failed to autofill neighbor cache for host %s", uip6_printAddr(nexthop, NULL));
-      TRiceS(iD(7549), "err:, link-layer addr  %s\n", (char*)linkaddr_printAddr((linkaddr_t*)&lladdr));
+      TRiceS("err:output: failed to autofill neighbor cache for host %s", uip6_printAddr(nexthop, NULL));
+      TRiceS("err:, link-layer addr  %s\n", (char*)linkaddr_printAddr((linkaddr_t*)&lladdr));
       goto exit;
     }
    }
@@ -529,7 +532,7 @@ void tcpip_ipv6_output(sUipBuff *uipBuff)
 
   if(nbr == NULL) {
     if(send_nd6_ns(uipBuff, nexthop)) {
-    	TRice(iD(7570), "err:output: failed to add neighbor to cache\n");
+    	TRice("err:output: failed to add neighbor to cache\n");
       goto exit;
     } else {
       /* We're sending NS here instead of original packet */
@@ -539,7 +542,7 @@ void tcpip_ipv6_output(sUipBuff *uipBuff)
 
 #if UIP_ND6_SEND_NS
   if(nbr->state == NBR_INCOMPLETE) {
-	  TRice(iD(3644), "err:output: nbr cache entry incomplete\n");
+	  TRice("err:output: nbr cache entry incomplete\n");
     queue_packet(nbr);
     goto exit;
   }
@@ -549,7 +552,7 @@ void tcpip_ipv6_output(sUipBuff *uipBuff)
     nbr->state = NBR_DELAY;
     Time_TimerSet(&nbr->reachable, UIP_ND6_DELAY_FIRST_PROBE_TIME);
     nbr->nscount = 0;
-    TRice(iD(5421), "msg:output: nbr cache entry stale moving to delay\n");
+    TRice("msg:output: nbr cache entry stale moving to delay\n");
   }
 #endif /* UIP_ND6_SEND_NS */
 
@@ -560,9 +563,7 @@ send_packet:
     linkaddr = NULL;
   }
 
-  TRice(iD(2213), "msg:output: sending to ");
-  linkaddr_print((linkaddr_t *)linkaddr);
-  TRice(iD(5271), "\n");
+  TRiceS("msg:output: sending to %s\n", (char*)linkaddr_printAddr((linkaddr_t*)linkaddr));
   tcpip_output(uipBuff, linkaddr);
 
   if(nbr) {
@@ -690,8 +691,7 @@ void tcpip_init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void
   UIP_FALLBACK_INTERFACE.init();
 #endif
   /* Initialize routing protocol */
-#warning "NETSTACK_ROUTING init here."
-  //NETSTACK_ROUTING.init();
+//  NETSTACK_ROUTING.init();
 
   uip_init();
   sicslowpan_driver.init(evtOffset, packedEvtHndl);

@@ -67,10 +67,11 @@
 //#include "net/ipv6/uipopt.h"
 //#include "net/ipv6/tcpip.h"
 #include "uip.h"
-//#include "net/ipv6/uip-ds6.h"
+#include "uip-ds6-nbr.h"
 #include "sicslowpan.h"
 //#include "net/netstack.h"
 #include "../packetbuf.h"
+#include "../addressing.h"
 //#include "net/queuebuf.h"
 //
 //#include "net/routing/routing.h"
@@ -379,7 +380,7 @@ static int8_t add_fragment(sPacket *packet, uint16_t tag, uint16_t frag_size, ui
     }
 
     if(found < 0) {
-    	TRice(iD(6348), "wrn:reassembly: failed to store new fragment session - tag: %d\n", tag);
+    	TRice("wrn:reassembly: failed to store new fragment session - tag: %d\n", tag);
       return -1;
     }
 
@@ -405,7 +406,7 @@ static int8_t add_fragment(sPacket *packet, uint16_t tag, uint16_t frag_size, ui
 
   if(found < 0) {
     /* no entry found for storing the new fragment */
-	  TRice(iD(6133), "wrn:reassembly: failed to store N-fragment - could not find session - tag: %d offset: %d\n", tag, offset);
+	  TRice("wrn:reassembly: failed to store N-fragment - could not find session - tag: %d offset: %d\n", tag, offset);
     return -1;
   }
 
@@ -420,7 +421,7 @@ static int8_t add_fragment(sPacket *packet, uint16_t tag, uint16_t frag_size, ui
   } else {
     /* should we also clear all fragments since we failed to store
        this fragment? */
-	  TRice(iD(1477), "wrn:reassembly: failed to store fragment - packet reassembly will fail tag:%d l\n", frag_info[i].tag);
+	  TRice("wrn:reassembly: failed to store fragment - packet reassembly will fail tag:%d l\n", frag_info[i].tag);
     return -1;
   }
 }
@@ -433,7 +434,7 @@ static bool copy_frags2uip(uint8_t *uipBuff, int context) {
   /* Check length fields before proceeding. */
   if(frag_info[context].len < frag_info[context].first_frag_len ||
      frag_info[context].len > UIP_BUFSIZE) {
-	  TRice(iD(7340), "wrn:input: invalid total size of fragments\n");
+	  TRice("wrn:input: invalid total size of fragments\n");
     clear_fragments(context);
     return false;
   }
@@ -448,7 +449,7 @@ static bool copy_frags2uip(uint8_t *uipBuff, int context) {
     /* And also copy all matching fragments */
     if(frag_buf[i].len > 0 && frag_buf[i].index == context) {
       if((frag_buf[i].offset << 3) + frag_buf[i].len > UIP_BUFSIZE) {
-    	TRice(iD(1444), "wrn:input: invalid fragment offset\n");
+    	TRice("wrn:input: invalid fragment offset\n");
         clear_fragments(context);
         return false;
       }
@@ -647,7 +648,7 @@ static void uncompress_addr(uip_ipaddr_t *ipaddr, uint8_t const prefix[], uint8_
     /* no IID based configuration if no prefix and no data => unspec */
 	  Addr_SetInterfId(ipaddr, lladdr);
   }
-  TRice(iD(6143), "dbg:uncompression: address %d %d %04X:%04X:%04X:%04X:%04X:%04X:%04X:%04X\n",
+  TRice("dbg:uncompression: address %d %d %04X:%04X:%04X:%04X:%04X:%04X:%04X:%04X\n",
 		 prefcount, postcount, ipaddr->u16[0], ipaddr->u16[1], ipaddr->u16[2], ipaddr->u16[3], ipaddr->u16[4], ipaddr->u16[5], ipaddr->u16[6], ipaddr->u16[7]);
 }
 
@@ -693,14 +694,14 @@ static int compress_hdr_iphc(sUipBuff *uipBuff, linkaddr_t *link_destaddr) {
   struct uip_udp_hdr *udp_buf;
   struct uip_ip_hdr *ipHdr = (struct uip_ip_hdr *)uipBuff->buff.u8;
 
-  TRice(iD(6153), "dbg:compression: before (%d): \n\t", ipHdr->len[1]);
-  TRice8B(iD(6163), "%02X\n", uipBuff->buff.u8, (ipHdr->len[1] + 40));
+  TRice("dbg:compression: before (%d): \n\t", ipHdr->len[1]);
+  TRice8B("%02X\n", uipBuff->buff.u8, (ipHdr->len[1] + 40));
 
 /* Macro used only internally, during header compression. Checks if there
  * is sufficient space in packetbuf before writing any further. */
 #define CHECK_BUFFER_SPACE(writelen) do { \
   if(hc06_ptr + (writelen) >= PACKETBUF_PAYLOAD_END) { \
-	  TRice(iD(3323), "wrn:Not enough packetbuf space to compress header (%u bytes, %u left). Aborting.\n", \
+	  TRice("wrn:Not enough packetbuf space to compress header (%u bytes, %u left). Aborting.\n", \
                 (unsigned)(writelen), (unsigned)(PACKETBUF_PAYLOAD_END - hc06_ptr)); \
     return 0; \
   } \
@@ -737,7 +738,7 @@ static int compress_hdr_iphc(sUipBuff *uipBuff, linkaddr_t *link_destaddr) {
   if(addr_context_lookup_by_prefix(&ipHdr->destipaddr) != NULL ||
      addr_context_lookup_by_prefix(&ipHdr->srcipaddr) != NULL) {
     /* set context flag and increase hc06_ptr */
-	  TRice(iD(6893), "dbg:compression: dest or src ipaddr - setting CID\n");
+	  TRice("dbg:compression: dest or src ipaddr - setting CID\n");
     iphc1 |= SICSLOWPAN_IPHC_CID;
     hc06_ptr++;
   }
@@ -824,14 +825,14 @@ static int compress_hdr_iphc(sUipBuff *uipBuff, linkaddr_t *link_destaddr) {
 
   /* source address - cannot be multicast */
   if(uip_is_addr_unspecified(&ipHdr->srcipaddr)) {
-	TRice(iD(6035), "dbg:compression: addr unspecified - setting SAC\n");
+	TRice("dbg:compression: addr unspecified - setting SAC\n");
     iphc1 |= SICSLOWPAN_IPHC_SAC;
     iphc1 |= SICSLOWPAN_IPHC_SAM_00;
   } else if((context = addr_context_lookup_by_prefix(&ipHdr->srcipaddr)) != NULL) {
 	linkaddr_t srcAddr;
 	linkaddr_get_node_addr(&srcAddr);
     /* elide the prefix - indicate by CID and set context + SAC */
-	TRice(iD(1190), "dbg:compression: src with context - setting CID & SAC ctx: %d\n", context->number);
+	TRice("dbg:compression: src with context - setting CID & SAC ctx: %d\n", context->number);
     iphc1 |= SICSLOWPAN_IPHC_CID | SICSLOWPAN_IPHC_SAC;
     PACKETBUF_IPHC_BUF[2] |= context->number << 4;
     /* compession compare with this nodes address (source) */
@@ -907,9 +908,9 @@ static int compress_hdr_iphc(sUipBuff *uipBuff, linkaddr_t *link_destaddr) {
   next_nhc = hc06_ptr; /* here we set the next header is compressed. */
   ext_hdr_len = 0;
   /* reserve the write place of this next header position */
-  TRice(iD(5047), "dbg:compression: first header: %d\n", *next_hdr);
+  TRice("dbg:compression: first header: %d\n", *next_hdr);
   while(next_hdr != NULL && IS_COMPRESSABLE_PROTO(*next_hdr)) {
-	  TRice(iD(4518), "dbg:compression: next header: %d\n", *next_hdr);
+	  TRice("dbg:compression: next header: %d\n", *next_hdr);
     int proto = -1; /* used for the specific ext hdr */
     /* UDP and EXT header compression */
     switch(*next_hdr) {
@@ -927,7 +928,7 @@ static int compress_hdr_iphc(sUipBuff *uipBuff, linkaddr_t *link_destaddr) {
         proto = proto == -1 ? SICSLOWPAN_NHC_ETX_HDR_DESTO : proto;
         /* Len is defined to be in octets from the length byte */
         len = (ext_hdr->len << 3) + 8;
-        TRice(iD(4841), "dbg:compression: next header %d (len:%d)\n", *next_hdr, len);
+        TRice("dbg:compression: next header %d (len:%d)\n", *next_hdr, len);
         /* pick up the next header */
         next_hdr = &ext_hdr->next;
         /* If the next header is not compressable we need to reserve the
@@ -936,7 +937,7 @@ static int compress_hdr_iphc(sUipBuff *uipBuff, linkaddr_t *link_destaddr) {
         if(!IS_COMPRESSABLE_PROTO(*next_hdr)) {
           CHECK_BUFFER_SPACE(1);
           hc06_ptr++;
-          TRice(iD(3233), "dbg:compression: keeping the next header in this ext hdr: %d\n",
+          TRice("dbg:compression: keeping the next header in this ext hdr: %d\n",
                  ext_hdr->next);
         }
         /* copy the ext-hdr into the hc06 buffer */
@@ -960,13 +961,13 @@ static int compress_hdr_iphc(sUipBuff *uipBuff, linkaddr_t *link_destaddr) {
       /* allocate a byte for the next header posision as UDP has no next */
       hc06_ptr++;
       udp_buf = (struct uip_udp_hdr *)&uipBuff->buff.u8[UIP_IPH_LEN + (ext_hdr_len)];
-      TRice(iD(3480), "dbg:compression: inlined UDP ports on send side: %x, %x\n", __REVSH(udp_buf->srcport), __REVSH(udp_buf->destport));
+      TRice("dbg:compression: inlined UDP ports on send side: %x, %x\n", __REVSH(udp_buf->srcport), __REVSH(udp_buf->destport));
       /* Mask out the last 4 bits can be used as a mask */
       if(((__REVSH(udp_buf->srcport) & 0xfff0) == SICSLOWPAN_UDP_4_BIT_PORT_MIN) &&
          ((__REVSH(udp_buf->destport) & 0xfff0) == SICSLOWPAN_UDP_4_BIT_PORT_MIN)) {
         /* we can compress 12 bits of both source and dest */
         *next_nhc = SICSLOWPAN_NHC_UDP_CS_P_11;
-        TRice(iD(7713), "dbg:IPHC: remove 12 b of both source & dest with prefix 0xFOB\n");
+        TRice("dbg:IPHC: remove 12 b of both source & dest with prefix 0xFOB\n");
         CHECK_BUFFER_SPACE(1);
         *hc06_ptr =
           (uint8_t)((__REVSH(udp_buf->srcport) - SICSLOWPAN_UDP_4_BIT_PORT_MIN) << 4) +
@@ -975,7 +976,7 @@ static int compress_hdr_iphc(sUipBuff *uipBuff, linkaddr_t *link_destaddr) {
       } else if((__REVSH(udp_buf->destport) & 0xff00) == SICSLOWPAN_UDP_8_BIT_PORT_MIN) {
         /* we can compress 8 bits of dest, leave source. */
         *next_nhc = SICSLOWPAN_NHC_UDP_CS_P_01;
-        TRice(iD(3411), "dbg:IPHC: leave source, remove 8 bits of dest with prefix 0xF0\n");
+        TRice("dbg:IPHC: leave source, remove 8 bits of dest with prefix 0xF0\n");
         CHECK_BUFFER_SPACE(3);
         memcpy(hc06_ptr, &udp_buf->srcport, 2);
         *(hc06_ptr + 2) = (uint8_t)((__REVSH(udp_buf->destport) - SICSLOWPAN_UDP_8_BIT_PORT_MIN));
@@ -983,7 +984,7 @@ static int compress_hdr_iphc(sUipBuff *uipBuff, linkaddr_t *link_destaddr) {
       } else if((__REVSH(udp_buf->srcport) & 0xff00) == SICSLOWPAN_UDP_8_BIT_PORT_MIN) {
         /* we can compress 8 bits of src, leave dest. Copy compressed port */
         *next_nhc = SICSLOWPAN_NHC_UDP_CS_P_10;
-        TRice(iD(5483), "dbg:IPHC: remove 8 bits of source with prefix 0xF0, leave dest. hch: %i\n", *next_nhc);
+        TRice("dbg:IPHC: remove 8 bits of source with prefix 0xF0, leave dest. hch: %i\n", *next_nhc);
         CHECK_BUFFER_SPACE(3);
         *hc06_ptr = (uint8_t)((__REVSH(udp_buf->srcport) - SICSLOWPAN_UDP_8_BIT_PORT_MIN));
         memcpy(hc06_ptr + 1, &udp_buf->destport, 2);
@@ -991,7 +992,7 @@ static int compress_hdr_iphc(sUipBuff *uipBuff, linkaddr_t *link_destaddr) {
       } else {
         /* we cannot compress. Copy uncompressed ports, full checksum  */
         *next_nhc = SICSLOWPAN_NHC_UDP_CS_P_00;
-        TRice(iD(7044), "dbg:IPHC: cannot compress UDP headers\n");
+        TRice("dbg:IPHC: cannot compress UDP headers\n");
         CHECK_BUFFER_SPACE(4);
         memcpy(hc06_ptr, &udp_buf->srcport, 4);
         hc06_ptr += 4;
@@ -1005,20 +1006,20 @@ static int compress_hdr_iphc(sUipBuff *uipBuff, linkaddr_t *link_destaddr) {
       next_hdr = NULL;
       break;
     default:
-    	TRice(iD(5799), "err:compression: could not handle compression of header");
+    	TRice("err:compression: could not handle compression of header");
     }
   }
   if(next_hdr != NULL) {
     /* Last header could not be compressed - we assume that this is then OK!*/
     /* as the last EXT_HDR should be "uncompressed" and have the next there */
-	  TRice(iD(5098), "dbg:compression: last header could is not compressed: %d\n", *next_hdr);
+	  TRice("dbg:compression: last header could is not compressed: %d\n", *next_hdr);
   }
   /* before the packetbuf_hdr_len operation */
   PACKETBUF_IPHC_BUF[0] = iphc0;
   PACKETBUF_IPHC_BUF[1] = iphc1;
 
-  TRice(iD(7541), "dbg:compression: after (%d): \n\t", (int)(hc06_ptr - packetbuf_ptr));
-  TRice8B(iD(6183), "%02X\n", packetbuf_ptr, (hc06_ptr - packetbuf_ptr));
+  TRice("dbg:compression: after (%d): \n\t", (int)(hc06_ptr - packetbuf_ptr));
+  TRice8B("%02X\n", packetbuf_ptr, (hc06_ptr - packetbuf_ptr));
 
   packetbuf_hdr_len = hc06_ptr - packetbuf_ptr;
 
@@ -1058,7 +1059,7 @@ static void uncompress_hdr_iphc(sPacket *packet, uint8_t *buf, uint16_t buf_size
 
   /* another if the CID flag is set */
   if(iphc1 & SICSLOWPAN_IPHC_CID) {
-	  TRice(iD(4880), "dbg:uncompression: CID flag set - increase header with one\n");
+	  TRice("dbg:uncompression: CID flag set - increase header with one\n");
     hc06_ptr++;
   }
 
@@ -1105,7 +1106,7 @@ static void uncompress_hdr_iphc(sPacket *packet, uint8_t *buf, uint16_t buf_size
   if((iphc0 & SICSLOWPAN_IPHC_NH_C) == 0) {
     /* Next header is carried inline */
 	  IP_HDR_CAST_TO_BUFF(buf)->proto = *hc06_ptr;
-    TRice(iD(6014), "dbg:uncompression: next header inline: %d\n", IP_HDR_CAST_TO_BUFF(buf)->proto);
+    TRice("dbg:uncompression: next header inline: %d\n", IP_HDR_CAST_TO_BUFF(buf)->proto);
     hc06_ptr += 1;
   }
 
@@ -1129,7 +1130,7 @@ static void uncompress_hdr_iphc(sPacket *packet, uint8_t *buf, uint16_t buf_size
     if (tmp != 0) {
       context = addr_context_lookup_by_number(sci);
       if(context == NULL) {
-    	  TRice(iD(1904), "err:uncompression: error context not found\n");
+    	  TRice("err:uncompression: error context not found\n");
         return;
       }
     }
@@ -1174,7 +1175,7 @@ static void uncompress_hdr_iphc(sPacket *packet, uint8_t *buf, uint16_t buf_size
 
       /* all valid cases below need the context! */
       if(context == NULL) {
-    	  TRice(iD(4393), "err:uncompression: error context not found\n");
+    	  TRice("err:uncompression: error context not found\n");
         return;
       }
       uncompress_addr(&IP_HDR_CAST_TO_BUFF(buf)->destipaddr, context->prefix, unc_ctxconf[tmp], (uip_lladdr_t *)packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER));
@@ -1205,12 +1206,12 @@ static void uncompress_hdr_iphc(sPacket *packet, uint8_t *buf, uint16_t buf_size
     if(!nh) {
       next = *hc06_ptr;
       hc06_ptr++;
-      TRice(iD(6460), "dbg:uncompression: next header is inlined. Next: %d\n", next);
+      TRice("dbg:uncompression: next header is inlined. Next: %d\n", next);
     }
     len = *hc06_ptr;
     hc06_ptr++;
 
-    TRice(iD(7222), "dbg:uncompression: found ext header id: %d next: %d len: %d\n", eid, next, len);
+    TRice("dbg:uncompression: found ext header id: %d next: %d len: %d\n", eid, next, len);
     switch(eid) {
     case SICSLOWPAN_NHC_ETX_HDR_HBHO:
       proto = UIP_PROTO_HBHO;
@@ -1225,14 +1226,14 @@ static void uncompress_hdr_iphc(sPacket *packet, uint8_t *buf, uint16_t buf_size
       proto = UIP_PROTO_DESTO;
       break;
     default:
-    	TRice(iD(4888), "dbg:uncompression: error unsupported ext header\n");
+    	TRice("dbg:uncompression: error unsupported ext header\n");
       return;
     }
     *last_nextheader = proto;
 
     /* Check that there is enough room to write the extension header. */
     if((ip_payload - buf) + UIP_EXT_HDR_LEN + len > buf_size) {
-    	TRice(iD(4058), "wrn:uncompression: cannot write ext header beyond target buffer\n");
+    	TRice("wrn:uncompression: cannot write ext header beyond target buffer\n");
       return;
     }
 
@@ -1240,7 +1241,7 @@ static void uncompress_hdr_iphc(sPacket *packet, uint8_t *buf, uint16_t buf_size
     exthdr = (struct uip_ext_hdr *)ip_payload;
     exthdr->len = (UIP_EXT_HDR_LEN + len) / 8;
     if(exthdr->len == 0) {
-    	TRice(iD(6908), "wrn:Extension header length is below 8\n");
+    	TRice("wrn:Extension header length is below 8\n");
       return;
     }
     exthdr->len--;
@@ -1253,7 +1254,7 @@ static void uncompress_hdr_iphc(sPacket *packet, uint8_t *buf, uint16_t buf_size
     ip_payload += (exthdr->len + 1) * 8;
     ext_hdr_len += (exthdr->len + 1) * 8;
 
-    TRice(iD(6193), "dbg:uncompression: %d len: %d exthdr len: %d (calc: %d)\n",
+    TRice("dbg:uncompression: %d len: %d exthdr len: %d (calc: %d)\n",
             proto, len, exthdr->len, (exthdr->len + 1) * 8);
   }
 
@@ -1264,31 +1265,31 @@ static void uncompress_hdr_iphc(sPacket *packet, uint8_t *buf, uint16_t buf_size
     uint8_t checksum_compressed;
     *last_nextheader = UIP_PROTO_UDP;
     checksum_compressed = *hc06_ptr & SICSLOWPAN_NHC_UDP_CHECKSUMC;
-    TRice(iD(3728), "dbg:uncompression: incoming header value: %i\n", *hc06_ptr);
+    TRice("dbg:uncompression: incoming header value: %i\n", *hc06_ptr);
     switch(*hc06_ptr & SICSLOWPAN_NHC_UDP_CS_P_11) {
     case SICSLOWPAN_NHC_UDP_CS_P_00:
       /* 1 byte for NHC, 4 byte for ports, 2 bytes chksum */
       memcpy(&udp_buf->srcport, hc06_ptr + 1, 2);
       memcpy(&udp_buf->destport, hc06_ptr + 3, 2);
-      TRice(iD(5417), "dbg:uncompression: UDP ports (ptr+5): %x, %x\n", __REVSH(udp_buf->srcport), __REVSH(udp_buf->destport));
+      TRice("dbg:uncompression: UDP ports (ptr+5): %x, %x\n", __REVSH(udp_buf->srcport), __REVSH(udp_buf->destport));
       hc06_ptr += 5;
       break;
 
     case SICSLOWPAN_NHC_UDP_CS_P_01:
       /* 1 byte for NHC + source 16bit inline, dest = 0xF0 + 8 bit inline */
-    	TRice(iD(6934), "dbg:uncompression: destination address\n");
+    	TRice("dbg:uncompression: destination address\n");
       memcpy(&udp_buf->srcport, hc06_ptr + 1, 2);
       udp_buf->destport = __REVSH(SICSLOWPAN_UDP_8_BIT_PORT_MIN + (*(hc06_ptr + 3)));
-      TRice(iD(7717), "dbg:uncompression: UDP ports (ptr+4): %x, %x\n", __REVSH(udp_buf->srcport), __REVSH(udp_buf->destport));
+      TRice("dbg:uncompression: UDP ports (ptr+4): %x, %x\n", __REVSH(udp_buf->srcport), __REVSH(udp_buf->destport));
       hc06_ptr += 4;
       break;
 
     case SICSLOWPAN_NHC_UDP_CS_P_10:
       /* 1 byte for NHC + source = 0xF0 + 8bit inline, dest = 16 bit inline*/
-    	TRice(iD(7379), "dbg:uncompression: source address\n");
+    	TRice("dbg:uncompression: source address\n");
       udp_buf->srcport = __REVSH(SICSLOWPAN_UDP_8_BIT_PORT_MIN + (*(hc06_ptr + 1)));
       memcpy(&udp_buf->destport, hc06_ptr + 2, 2);
-      TRice(iD(5552), "dbg:uncompression: UDP ports (ptr+4): %x, %x\n", __REVSH(udp_buf->srcport), __REVSH(udp_buf->destport));
+      TRice("dbg:uncompression: UDP ports (ptr+4): %x, %x\n", __REVSH(udp_buf->srcport), __REVSH(udp_buf->destport));
       hc06_ptr += 4;
       break;
 
@@ -1296,25 +1297,25 @@ static void uncompress_hdr_iphc(sPacket *packet, uint8_t *buf, uint16_t buf_size
       /* 1 byte for NHC, 1 byte for ports */
       udp_buf->srcport = __REVSH(SICSLOWPAN_UDP_4_BIT_PORT_MIN + (*(hc06_ptr + 1) >> 4));
       udp_buf->destport = __REVSH(SICSLOWPAN_UDP_4_BIT_PORT_MIN + ((*(hc06_ptr + 1)) & 0x0F));
-      TRice(iD(5958), "dbg:uncompression: UDP ports (ptr+2): %x, %x\n", __REVSH(udp_buf->srcport), __REVSH(udp_buf->destport));
+      TRice("dbg:uncompression: UDP ports (ptr+2): %x, %x\n", __REVSH(udp_buf->srcport), __REVSH(udp_buf->destport));
       hc06_ptr += 2;
       break;
     default:
-    	TRice(iD(5147), "dbg:uncompression: error unsupported UDP compression\n");
+    	TRice("dbg:uncompression: error unsupported UDP compression\n");
       return;
     }
     if(!checksum_compressed) { /* has_checksum, default  */
       memcpy(&udp_buf->udpchksum, hc06_ptr, 2);
       hc06_ptr += 2;
-      TRice(iD(6521), "dbg:uncompression: checksum included\n");
+      TRice("dbg:uncompression: checksum included\n");
     } else {
-    	TRice(iD(7676), "dbg:uncompression: checksum *NOT* included\n");
+    	TRice("dbg:uncompression: checksum *NOT* included\n");
     }
 
     /* length field in UDP header (8 byte header + payload) */
     udp_len = 8 + packetbuf_datalen(packet) - (hc06_ptr - packetbuf_ptr);
     udp_buf->udplen = __REVSH(ip_len == 0 ? udp_len : ip_len - UIP_IPH_LEN - ext_hdr_len);
-    TRice(iD(7029), "dbg:uncompression: UDP length: %u (ext: %u) ip_len: %d udp_len: %d\n",
+    TRice("dbg:uncompression: UDP length: %u (ext: %u) ip_len: %d udp_len: %d\n",
     		__REVSH(udp_buf->udplen), ext_hdr_len, ip_len, udp_len);
 
     uncomp_hdr_len += UIP_UDPH_LEN;
@@ -1325,7 +1326,7 @@ static void uncompress_hdr_iphc(sPacket *packet, uint8_t *buf, uint16_t buf_size
   /* IP length field. */
   if(ip_len == 0) {
     int len = packetbuf_datalen(packet) - packetbuf_hdr_len + uncomp_hdr_len - UIP_IPH_LEN;
-    TRice(iD(5670), "dbg:uncompression: IP payload length: %d. %u - %u + %u - %u\n", len,
+    TRice("dbg:uncompression: IP payload length: %d. %u - %u + %u - %u\n", len,
            packetbuf_datalen(packet), packetbuf_hdr_len, uncomp_hdr_len, UIP_IPH_LEN);
 
     /* This is not a fragmented packet */
@@ -1445,13 +1446,12 @@ static void packet_sent(void *ptr, int status, int transmissions, sPacket *packe
 //  link_stats_packet_sent(dest, status, transmissions);
 
   /* Call routing protocol link callback */
-#warning "RPL attaches here"
+#warning "NETSTACK_ROUTING disconnected for now - search code to reconnect it."
 //  NETSTACK_ROUTING.link_callback(dest, status, transmissions);
 
   /* DS6 callback, used for UIP_DS6_LL_NUD */
-#warning "UIP attaches here"
-//  uip_ds6_link_callback(status, transmissions);
- vPortFree(packet);
+  uip_ds6_link_callback(status, transmissions);
+  vPortFree(packet);
 }
 /*--------------------------------------------------------------------*/
 /**
@@ -1493,7 +1493,7 @@ static int fragment_copy_payload_and_send(sPacket *packet, uint8_t *uipBuff, uin
   sPacket *txPacket = pvPortMalloc(sizeof(sPacket));
 
   if(NULL == txPacket) {
-	  TRice(iD(2549), "wrn:output: could not allocate queuebuf, dropping fragment\n");
+	  TRice("wrn:output: could not allocate queuebuf, dropping fragment\n");
     return 0;
   }
 
@@ -1510,7 +1510,7 @@ static int fragment_copy_payload_and_send(sPacket *packet, uint8_t *uipBuff, uin
   if((last_tx_status == MAC_TX_COLLISION) ||
      (last_tx_status == MAC_TX_ERR) ||
      (last_tx_status == MAC_TX_ERR_FATAL)) {
-	  TRice(iD(5822), "err:output: error in fragment tx, dropping subsequent fragments.\n");
+	  TRice("err:output: error in fragment tx, dropping subsequent fragments.\n");
     return 0;
   }
   return 1;
@@ -1560,7 +1560,7 @@ static uint8_t output(sUipBuff *txBuff, const linkaddr_t *localdest) {
     linkaddr_copy(&dest, localdest);
   }
 
-  TRice(iD(6103), "msg:output: sending IPv6 packet with len %d\n", txBuff->len);
+  TRice("msg:output: sending IPv6 packet with len %d\n", txBuff->len);
 
   /* copy over the retransmission count from uipbuf attributes */
   packetbuf_set_attr(txPacket, PACKETBUF_ATTR_MAX_MAC_TRANSMISSIONS, uipbuf_get_attr(txBuff, UIPBUF_ATTR_MAX_MAC_TRANSMISSIONS));
@@ -1579,7 +1579,7 @@ static uint8_t output(sUipBuff *txBuff, const linkaddr_t *localdest) {
 
   if(mac_max_payload <= 0) {
   /* Framing failed, drop packet */
-	  TRice(iD(2551), "wrn:output: failed to calculate payload size - dropping packet\n");
+	  TRice("wrn:output: failed to calculate payload size - dropping packet\n");
 	  vPortFree(txPacket);
     return 0;
   }
@@ -1611,7 +1611,7 @@ static uint8_t output(sUipBuff *txBuff, const linkaddr_t *localdest) {
   packetbuf_set_addr(txPacket, PACKETBUF_ADDR_RECEIVER, &dest);
 
   frag_needed = (int)txBuff->len - (int)uncomp_hdr_len + (int)packetbuf_hdr_len > mac_max_payload;
-  TRice(iD(6113), "msg:output: header len %d -> %d, total len %d -> %d, MAC max payload %d, frag_needed %d\n",
+  TRice("msg:output: header len %d -> %d, total len %d -> %d, MAC max payload %d, frag_needed %d\n",
             uncomp_hdr_len, packetbuf_hdr_len,
 			txBuff->len, (txBuff->len - uncomp_hdr_len + packetbuf_hdr_len),
             mac_max_payload, frag_needed);
@@ -1651,7 +1651,7 @@ static uint8_t output(sUipBuff *txBuff, const linkaddr_t *localdest) {
       /* The current implementation requires that all headers fit in the first
        * fragment. Here is a corner case where the header did fit packetbuf
        * but do no longer fit after truncating for a length multiple of 8. */
-    	TRice(iD(6525), "wrn:output: compressed header does not fit first fragment\n");
+    	TRice("wrn:output: compressed header does not fit first fragment\n");
     	vPortFree(txPacket);
       return 0;
     }
@@ -1674,7 +1674,7 @@ static uint8_t output(sUipBuff *txBuff, const linkaddr_t *localdest) {
 
     /* Copy payload from uIP and send fragment */
     /* Send fragment */
-    TRice(iD(6233), "msg:output: fragment %d/%d (tag %d, payload %d)\n", curr_frag + 1, fragment_count, frag_tag, packetbuf_payload_len);
+    TRice("msg:output: fragment %d/%d (tag %d, payload %d)\n", curr_frag + 1, fragment_count, frag_tag, packetbuf_payload_len);
     if(fragment_copy_payload_and_send(txPacket, txBuff->buff.u8, uncomp_hdr_len, &dest) == 0) {
     	vPortFree(txPacket);
       return 0;
@@ -1706,7 +1706,7 @@ static uint8_t output(sUipBuff *txBuff, const linkaddr_t *localdest) {
 
       /* Copy payload from uIP and send fragment */
       /* Send fragment */
-      TRice(iD(6333), "msg:output: fragment %d/%d (tag %d, payload %d, offset %d)\n",
+      TRice("msg:output: fragment %d/%d (tag %d, payload %d, offset %d)\n",
                curr_frag + 1, fragment_count,
                frag_tag, packetbuf_payload_len, processed_ip_out_len);
       if(fragment_copy_payload_and_send(txPacket, txBuff->buff.u8, processed_ip_out_len, &dest) == 0) {
@@ -1718,7 +1718,7 @@ static uint8_t output(sUipBuff *txBuff, const linkaddr_t *localdest) {
     }
     vPortFree(txPacket);
 #else /* SICSLOWPAN_CONF_FRAG */
-    TRice(iD(2451), "err:output: Packet too large to be sent without fragmentation support; dropping packet\n");
+    TRice("err:output: Packet too large to be sent without fragmentation support; dropping packet\n");
     vPortFree(txPacket);
     return 0;
 #endif /* SICSLOWPAN_CONF_FRAG */
@@ -1729,7 +1729,7 @@ static uint8_t output(sUipBuff *txBuff, const linkaddr_t *localdest) {
      */
 
    if(txBuff->len < uncomp_hdr_len) {
-	   TRice(iD(5695), "err:output: buffer length is smaller than uncomp_hdr_len (%d < %d)", (int)txBuff->len, (int)uncomp_hdr_len);
+	   TRice("err:output: buffer length is smaller than uncomp_hdr_len (%d < %d)", (int)txBuff->len, (int)uncomp_hdr_len);
 	   vPortFree(txPacket);
      return 0;
     }
@@ -1786,7 +1786,7 @@ static uint8_t input(sUipBuff *rxBuff) {
   packetbuf_ptr = packetbuf_dataptr(&rxPacket);
 
   if(packetbuf_datalen(&rxPacket) == 0) {
-	  TRice(iD(3056), "wrn:input: empty packet\n");
+	  TRice("wrn:input: empty packet\n");
     return 0;
   }
 
@@ -1812,13 +1812,13 @@ static uint8_t input(sUipBuff *rxBuff) {
       first_fragment = 1;
       is_fragment = 1;
 
-      TRice(iD(1547), "msg:input: received first element of a fragmented packet (tag %d, len %d)\n", frag_tag, frag_size);
+      TRice("msg:input: received first element of a fragmented packet (tag %d, len %d)\n", frag_tag, frag_size);
 
       /* Add the fragment to the fragmentation context */
       frag_context = add_fragment(&rxPacket, frag_tag, frag_size, frag_offset);
 
       if(frag_context == -1) {
-    	  TRice(iD(4112), "err:input: failed to allocate new reassembly context\n");
+    	  TRice("err:input: failed to allocate new reassembly context\n");
         return 0;
       }
 
@@ -1840,7 +1840,7 @@ static uint8_t input(sUipBuff *rxBuff) {
       frag_context = add_fragment(&rxPacket, frag_tag, frag_size, frag_offset);
 
       if(frag_context == -1) {
-    	  TRice(iD(1205), "err:input: reassembly context not found (tag %d)\n", frag_tag);
+    	  TRice("err:input: reassembly context not found (tag %d)\n", frag_tag);
         return 0;
       }
 
@@ -1867,20 +1867,20 @@ static uint8_t input(sUipBuff *rxBuff) {
   curr_page = 0;
   digest_paging_dispatch();
   if(curr_page == 1) {
-	  TRice(iD(6433), "msg:input: page 1, 6LoRH\n");
+	  TRice("msg:input: page 1, 6LoRH\n");
     digest_6lorh_hdr();
   } else if (curr_page > 1) {
-	  TRice(iD(1116), "err:input: page %u not supported\n", curr_page);
+	  TRice("err:input: page %u not supported\n", curr_page);
     return 0;
   }
 
   /* Process next dispatch and headers */
   if(SICSLOWPAN_COMPRESSION > SICSLOWPAN_COMPRESSION_IPV6 &&
      (PACKETBUF_6LO_PTR[PACKETBUF_6LO_DISPATCH] & SICSLOWPAN_DISPATCH_IPHC_MASK) == SICSLOWPAN_DISPATCH_IPHC) {
-	  TRice(iD(6533), "dbg:uncompression: IPHC dispatch\n");
+	  TRice("dbg:uncompression: IPHC dispatch\n");
     uncompress_hdr_iphc(&rxPacket, buffer, buffer_size, frag_size);
   } else if(PACKETBUF_6LO_PTR[PACKETBUF_6LO_DISPATCH] == SICSLOWPAN_DISPATCH_IPV6) {
-	  TRice(iD(6633), "dbg:uncompression: IPV6 dispatch\n");
+	  TRice("dbg:uncompression: IPV6 dispatch\n");
     packetbuf_hdr_len += SICSLOWPAN_IPV6_HDR_LEN;
 
     /* Put uncompressed IP header in sicslowpan_buf. */
@@ -1890,7 +1890,7 @@ static uint8_t input(sUipBuff *rxBuff) {
     packetbuf_hdr_len += UIP_IPH_LEN;
     uncomp_hdr_len += UIP_IPH_LEN;
   } else {
-	  TRice(iD(6302), "err:uncompression: unknown dispatch: 0x%02x, or IPHC disabled\n",
+	  TRice("err:uncompression: unknown dispatch: 0x%02x, or IPHC disabled\n",
              PACKETBUF_6LO_PTR[PACKETBUF_6LO_DISPATCH] & SICSLOWPAN_DISPATCH_IPHC_MASK);
     return 0;
   }
@@ -1906,14 +1906,14 @@ static uint8_t input(sUipBuff *rxBuff) {
    * If this is a subsequent fragment, this is the contrary.
    */
   if(packetbuf_datalen(&rxPacket) < packetbuf_hdr_len) {
-	  TRice(iD(6733), "err:input: packet dropped due to header > total packet\n");
+	  TRice("err:input: packet dropped due to header > total packet\n");
     return 0;
   }
   packetbuf_payload_len = packetbuf_datalen(&rxPacket) - packetbuf_hdr_len;
 
 #if SICSLOWPAN_CONF_FRAG
   if(is_fragment) {
-	  TRice(iD(6833), "msg:input: fragment (tag %d, payload %d, offset %d) -- %u %u\n",
+	  TRice("msg:input: fragment (tag %d, payload %d, offset %d) -- %u %u\n",
          frag_tag, packetbuf_payload_len, frag_offset << 3, packetbuf_datalen(&rxPacket), packetbuf_hdr_len);
   }
 #endif /*SICSLOWPAN_CONF_FRAG*/
@@ -1923,7 +1923,7 @@ static uint8_t input(sUipBuff *rxBuff) {
     int req_size = uncomp_hdr_len + (uint16_t)(frag_offset << 3) + packetbuf_payload_len;
     if(req_size > UIP_BUFSIZE) {
 #if SICSLOWPAN_CONF_FRAG
-    	TRice(iD(6933), "err:input: packet and fragment context %u dropped, minimum required IP_BUF size: %d+%d+%d=%d (current size: %u)\n",
+    	TRice("err:input: packet and fragment context %u dropped, minimum required IP_BUF size: %d+%d+%d=%d (current size: %u)\n",
     		  frag_context, uncomp_hdr_len, (uint16_t)(frag_offset << 3), packetbuf_payload_len, req_size, UIP_BUFSIZE);
       /* Discard all fragments for this contex, as reassembling this particular fragment would
        * cause an overflow in uipbuf */
@@ -1974,8 +1974,8 @@ static uint8_t input(sUipBuff *rxBuff) {
 #else
     rxBuff->len = packetbuf_payload_len + uncomp_hdr_len;
 #endif /* SICSLOWPAN_CONF_FRAG */
-    TRice(iD(6033), "msg:input: received IPv6 packet with len %d\nuncompression: after (%u):\n\t", rxBuff->len, ipHdr->len[1]);
-    TRice8B(iD(6134), "%02X\n", rxBuff->buff.u8, (ipHdr->len[1] + 40));
+    TRice("msg:input: received IPv6 packet with len %d\nuncompression: after (%u):\n\t", rxBuff->len, ipHdr->len[1]);
+    TRice8B("%02X\n", rxBuff->buff.u8, (ipHdr->len[1] + 40));
 
     /* if callback is set then set attributes and call */
 #if (1 != NO_SNIFFER)

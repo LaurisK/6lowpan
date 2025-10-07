@@ -52,6 +52,7 @@
 #include "uip-ds6-route.h"
 #include "uip-ds6-nbr.h"
 #include "App/Time/time.h"
+#include "../addressing.h"
 //#include "net/ipv6/multicast/uip-mcast6.h"
 //#include "net/ipv6/uip-packetqueue.h"
 #include "cmsis_os.h"
@@ -149,20 +150,20 @@ static void uip_ds6_send_ra_periodic(sUipBuff *dsPeriodicBuff) {
   if(racount > 0) {
     /* send previously scheduled RA */
     uip_nd6_ra_output(dsPeriodicBuff, NULL);
-    TRice(iD(7091), "msg:Sending periodic RA\n");
+    TRice("msg:Sending periodic RA\n");
   }
 
   rand_time = UIP_ND6_MIN_RA_INTERVAL + System_Random(UIP_ND6_MAX_RA_INTERVAL - UIP_ND6_MIN_RA_INTERVAL);
-  TRice(iD(4040), "dbg:Random time 1 = %u\n", rand_time);
+  TRice("dbg:Random time 1 = %u\n", rand_time);
 
   if(racount < UIP_ND6_MAX_INITIAL_RAS) {
     if(rand_time > UIP_ND6_MAX_INITIAL_RA_INTERVAL) {
       rand_time = UIP_ND6_MAX_INITIAL_RA_INTERVAL;
-      TRice(iD(4005), "dbg:Random time 2 = %u\n", rand_time);
+      TRice("dbg:Random time 2 = %u\n", rand_time);
     }
     racount++;
   }
-  TRice(iD(1439), "dbg:Random time 3 = %u\n", rand_time);
+  TRice("dbg:Random time 3 = %u\n", rand_time);
   Time_TimerSet(&uip_ds6_timer_ra, rand_time);
 }
 #endif /* UIP_CONF_ROUTER && UIP_ND6_SEND_RA */
@@ -249,8 +250,8 @@ static void uip_nd6_rs_output(sUipBuff *uipBuff)
   UIP_ICMP_BUF->icmpchksum = ~uip_icmp6chksum(uipBuff);
 
   UIP_STAT(++uip_stat.nd6.sent);
-  TRiceS(iD(5761), "msg:Sending RS to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
-  TRiceS(iD(5480), "msg: from %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
+  TRiceS("msg:Sending RS to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
+  TRiceS("msg: from %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
   return;
 }
 /*---------------------------------------------------------------------------*/
@@ -259,13 +260,13 @@ static void uip_ds6_send_rs(sUipBuff *uipBuff)
   static uint8_t rscount = 0;  /**< number of rs already sent */
   uip_ipaddr_t dfltRoute = uip_ds6_defrt_choose();
   if((NULL == dfltRoute) && (rscount < UIP_ND6_MAX_RTR_SOLICITATIONS)) {
-	TRice(iD(3460), "msg:Sending RS %u\n", rscount);
+	TRice("msg:Sending RS %u\n", rscount);
     uip_nd6_rs_output();
     rscount++;
     xTimerChangePeriod(rsSendTmo, pdMS_TO_TICKS(1000 * UIP_ND6_RTR_SOLICITATION_INTERVAL));
     xTimerStart(rsSendTmo, 0);
   } else {
-	TRiceS(iD(6546), "msg:Router found ? (boolean): %s\n", (NULL != dfltRoute)?"true":"false");
+	TRiceS("msg:Router found ? (boolean): %s\n", (NULL != dfltRoute)?"true":"false");
   }
   return;
 }
@@ -295,7 +296,7 @@ void uip_ds6_init(void)
   uip_ds6_neighbors_init();
   uip_ds6_route_init();
 
-  TRice(iD(1950), "msg:Init: %u neighbors\n\t %u default routers\n\t %u prefixes\n\t %u routes\n\t %u unicast addresses\n\t %u multicast addresses\n\t %u anycast addresses\n",
+  TRice("msg:Init: %u neighbors\n\t %u default routers\n\t %u prefixes\n\t %u routes\n\t %u unicast addresses\n\t %u multicast addresses\n\t %u anycast addresses\n",
 		NBR_TABLE_MAX_NEIGHBORS, UIP_DS6_DEFRT_NB, UIP_DS6_PREFIX_NB, UIP_DS6_ROUTE_NB, UIP_DS6_ADDR_NB, UIP_DS6_MADDR_NB, UIP_DS6_AADDR_NB);
 
   memset(uip_ds6_prefix_list, 0, sizeof(uip_ds6_prefix_list));
@@ -383,11 +384,11 @@ uip_ds6_prefix_t * uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t ipaddrlen, u
     locprefix->l_a_reserved = flags;
     locprefix->vlifetime = vtime;
     locprefix->plifetime = ptime;
-    TRiceS(iD(4081), "msg:Adding prefix %s ", uip6_printAddr(&locprefix->ipaddr, NULL));
-    TRice(iD(4528), "msg:length %u, flags %x, Valid lifetime %lx, Preffered lifetime %lx\n", ipaddrlen, flags, vtime, ptime);
+    TRiceS("msg:Adding prefix %s ", uip6_printAddr(&locprefix->ipaddr, NULL));
+    TRice("msg:length %u, flags %x, Valid lifetime %lx, Preffered lifetime %lx\n", ipaddrlen, flags, vtime, ptime);
     return locprefix;
   } else {
-	  TRice(iD(4000), "msg:No more space in Prefix list\n");
+	  TRice("msg:No more space in Prefix list\n");
   }
   return NULL;
 }
@@ -410,8 +411,8 @@ uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t ipaddrlen, uint32_t interval)
     } else {
       locprefix->isinfinite = 1;
     }
-    TRiceS(iD(3384), "msg:Adding prefix %s ", uip6_printAddr(&locprefix->ipaddr, NULL));
-    TRice(iD(6671), "msg:length %u, vlifetime %lu\n", ipaddrlen, interval);
+    TRiceS("msg:Adding prefix %s ", uip6_printAddr(&locprefix->ipaddr, NULL));
+    TRice("msg:length %u, vlifetime %lu\n", ipaddrlen, interval);
     return locprefix;
   }
   return NULL;
@@ -710,7 +711,7 @@ uip_ds6_dad(uip_ds6_addr_t *addr)
    * If we arrive here it means DAD succeeded, otherwise the dad process
    * would have been interrupted in ds6_dad_ns/na_input
    */
-  TRiceS(iD(6713), "msg:DAD succeeded, ipaddr: %s\n", uip6_printAddr(&addr->ipaddr, NULL));
+  TRiceS("msg:DAD succeeded, ipaddr: %s\n", uip6_printAddr(&addr->ipaddr, NULL));
 
   addr->state = ADDR_PREFERRED;
   return;
@@ -725,7 +726,7 @@ int
 uip_ds6_dad_failed(uip_ds6_addr_t *addr)
 {
   if(uip_is_addr_linklocal(&addr->ipaddr)) {
-	  TRice(iD(1905), "err:Contiki shutdown, DAD for link local address failed\n");
+	  TRice("err:Contiki shutdown, DAD for link local address failed\n");
     return 0;
   }
   uip_ds6_addr_rm(addr);
@@ -746,7 +747,7 @@ uip_ds6_send_ra_sollicited(void)
    * the RA (setting the timer to 0 below). We keep the code logic for
    * the days contiki will support appropriate timers */
   rand_time = 0;
-  TRice(iD(6977), "msg:Solicited RA, random time %u\n", rand_time);
+  TRice("msg:Solicited RA, random time %u\n", rand_time);
 
   if(Time_TimerRemaining(&uip_ds6_timer_ra) > rand_time) {
     if(Time_TimerElapsed(&uip_ds6_timer_ra) < UIP_ND6_MIN_DELAY_BETWEEN_RAS) {
@@ -770,7 +771,7 @@ uint8_t Ds6_GetHopLimit(void) {
 void Ds6_SetHopLimit(const uint8_t ttl) {
 	if (0 != ttl) {
 	    uip_ds6_if.cur_hop_limit = ttl;
-	    TRice(iD(6112), "msg:[uIP DS6] Hop limit set to - %u\n", uip_ds6_if.cur_hop_limit);
+	    TRice("msg:[uIP DS6] Hop limit set to - %u\n", uip_ds6_if.cur_hop_limit);
 	}
 }
 
@@ -782,14 +783,14 @@ void Ds6_SetReachableTimes(const uint32_t baseReachTime) {
     if(baseReachTime != uip_ds6_if.base_reachable_time) {
       uip_ds6_if.base_reachable_time = baseReachTime;
       uip_ds6_if.reachable_time = uip_ds6_compute_reachable_time(baseReachTime);
-	    TRice(iD(5591), "msg:[uIP DS6] Reachable time updated - base(%u), my(%d)\n", uip_ds6_if.base_reachable_time, uip_ds6_if.reachable_time);
+	    TRice("msg:[uIP DS6] Reachable time updated - base(%u), my(%d)\n", uip_ds6_if.base_reachable_time, uip_ds6_if.reachable_time);
     }
 }
 
 void Ds6_SetRetransmitTim(const uint32_t retransTmo) {
   if(0 != retransTmo) {
     uip_ds6_if.retrans_timer = retransTmo;
-    TRice(iD(6951), "msg:[uIP DS6] Retransmit timeout set to - %u\n", uip_ds6_if.retrans_timer);
+    TRice("msg:[uIP DS6] Retransmit timeout set to - %u\n", uip_ds6_if.retrans_timer);
   }
 }
 

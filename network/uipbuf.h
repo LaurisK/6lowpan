@@ -34,6 +34,8 @@
 #define UIPBUF_H_
 
 #include <stdbool.h>
+#include <stdint.h>
+#include "uipopt.h"
 
 /**
  * \brief The bits defined for uipbuf attributes flag.

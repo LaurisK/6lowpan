@@ -436,8 +436,6 @@ void uip_setipid(uint16_t id);
     uip_process(UIP_UDP_TIMER); } while(0)
 #endif /* UIP_UDP */
 
-/** Macro to access uip_aligned_buf as an array of bytes */
-//#define uip_buf (uip_aligned_buf.u8)
 
 
 /** @} */
@@ -1947,7 +1945,7 @@ uint16_t uip_icmp6chksum(sUipBuff *uipBuff);
  *
  * \return true upon success, false otherwise.
  */
-uint8_t uip_remove_ext_hdr(sUipBuff *uipBuff);
+bool uip_remove_ext_hdr(sUipBuff *uipBuff);
 
 /**
  * \brief          Updates the length field in the uIP buffer

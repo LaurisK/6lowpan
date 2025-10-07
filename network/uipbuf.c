@@ -29,9 +29,9 @@
  *
  *
  */
-//#include "contiki.h"
-#include "uipbuf.h"
 #include <string.h>
+#include "uipbuf.h"
+#include "uip.h"
 
 /*---------------------------------------------------------------------------*/
 

@@ -127,14 +127,14 @@ uip_ds6_nbr_add(const uip_ipaddr_t *ipaddr, const uip_lladdr_t *lladdr,
 
   assert(uip_ds6_nbr_lookup(ipaddr) == NULL);
   if(uip_ds6_nbr_lookup(ipaddr)) {
-	TRiceS(iD(4032), "err:%s: uip_ds6_nbr for ", __func__);
-	TRiceS(iD(4866), "err:%s has already existed\n", uip6_printAddr(ipaddr, NULL));
+	TRiceS("err:%s: uip_ds6_nbr for ", __func__);
+	TRiceS("err:%s has already existed\n", uip6_printAddr(ipaddr, NULL));
     return NULL;
   }
 
   /* firstly, allocate memory for a new nbr cache entry */
   if((nbr = (uip_ds6_nbr_t *)memb_alloc(&uip_ds6_nbr_memb)) == NULL) {
-	  TRice(iD(6615), "err:%s: cannot allocate a new uip_ds6_nbr\n", __func__);
+	  TRice("err:%s: cannot allocate a new uip_ds6_nbr\n", __func__);
     return NULL;
   }
 
@@ -143,7 +143,7 @@ uip_ds6_nbr_add(const uip_ipaddr_t *ipaddr, const uip_lladdr_t *lladdr,
   if(nbr_entry == NULL) {
     if((nbr_entry =
         nbr_table_add_lladdr(uip_ds6_nbr_entries, (linkaddr_t*)lladdr, reason, data)) == NULL) {
-    	TRice(iD(7104), "err:%s: cannot allocate a new uip_ds6_nbr_entry\n", __func__);
+    	TRice("err:%s: cannot allocate a new uip_ds6_nbr_entry\n", __func__);
       /* return from this function later */
     } else {
       LIST_STRUCT_INIT(nbr_entry, uip_ds6_nbrs);
@@ -158,8 +158,8 @@ uip_ds6_nbr_add(const uip_ipaddr_t *ipaddr, const uip_lladdr_t *lladdr,
        * it's already had the maximum number of IPv6 addresses; cannot
        * add another.
        */
-      TRiceS(iD(5590), "err:%s: no room in nbr_entry for ", __func__);
-      TRiceS(iD(5764), "err:%s\n", linkaddr_printAddr(lladdr));
+      TRiceS("err:%s: no room in nbr_entry for ", __func__);
+      TRiceS("err:%s\n", linkaddr_printAddr(lladdr));
     }
     /* free the newly allocated memory in this function call */
     memb_free(&uip_ds6_nbr_memb, nbr);
@@ -192,16 +192,16 @@ uip_ds6_nbr_add(const uip_ipaddr_t *ipaddr, const uip_lladdr_t *lladdr,
     Time_TimerSet(&nbr->sendns, 0);
     nbr->nscount = 0;
 #endif /* UIP_ND6_SEND_NS */
-    TRiceS(iD(3927), "msg:Adding neighbor with ip addr %s link addr ", uip6_printAddr(ipaddr, NULL));
-    TRiceS(iD(1818), "msg:%s", (char*)linkaddr_printAddr((linkaddr_t*)lladdr));
-    TRice(iD(1877), "msg: state %u\n", state);
-    NETSTACK_ROUTING.neighbor_state_changed(nbr);
+    TRiceS("msg:Adding neighbor with ip addr %s link addr ", uip6_printAddr(ipaddr, NULL));
+    TRiceS("msg:%s", (char*)linkaddr_printAddr((linkaddr_t*)lladdr));
+    TRice("msg: state %u\n", state);
+//    NETSTACK_ROUTING.neighbor_state_changed(nbr);
     return nbr;
   } else {
-    TRiceS(iD(4677), "msg:Add drop ip addr %s link addr ", uip6_printAddr(&nbr->ipaddr, NULL));
-    TRice(iD(4378), "msg:(%p) ", lladdr);
-    TRiceS(iD(2272), "msg:%s", (char*)linkaddr_printAddr((linkaddr_t*)lladdr));
-    TRice(iD(7292), "msg: state %u\n", state);
+    TRiceS("msg:Add drop ip addr %s link addr ", uip6_printAddr(&nbr->ipaddr, NULL));
+    TRice("msg:(%p) ", lladdr);
+    TRiceS("msg:%s", (char*)linkaddr_printAddr((linkaddr_t*)lladdr));
+    TRice("msg: state %u\n", state);
     return NULL;
   }
 }
@@ -212,7 +212,7 @@ static void
 add_uip_ds6_nbr_to_nbr_entry(uip_ds6_nbr_t *nbr,
                                uip_ds6_nbr_entry_t *nbr_entry)
 {
-	TRice(iD(2777), "dbg:%s: add nbr(%p) to nbr_entry (%p)\n", __func__, nbr, nbr_entry);
+	TRice("dbg:%s: add nbr(%p) to nbr_entry (%p)\n", __func__, nbr, nbr_entry);
   nbr->nbr_entry = nbr_entry;
   list_add(nbr_entry->uip_ds6_nbrs, nbr);
 }
@@ -223,7 +223,7 @@ remove_uip_ds6_nbr_from_nbr_entry(uip_ds6_nbr_t *nbr)
   if(nbr == NULL) {
     return;
   }
-  TRice(iD(4082), "dbg:%s: remove nbr(%p) from nbr_entry (%p)\n", __func__, nbr, nbr->nbr_entry);
+  TRice("dbg:%s: remove nbr(%p) from nbr_entry (%p)\n", __func__, nbr, nbr->nbr_entry);
   list_remove(nbr->nbr_entry->uip_ds6_nbrs, nbr);
 }
 /*---------------------------------------------------------------------------*/
@@ -233,7 +233,7 @@ remove_nbr_entry(uip_ds6_nbr_entry_t *nbr_entry)
   if(nbr_entry == NULL) {
     return;
   }
-  TRice(iD(6780), "dbg:%s: remove nbr_entry (%p) from nbr_table\n", __func__, nbr_entry);
+  TRice("dbg:%s: remove nbr_entry (%p) from nbr_table\n", __func__, nbr_entry);
   (void)nbr_table_remove(uip_ds6_nbr_entries, nbr_entry);
 }
 /*---------------------------------------------------------------------------*/
@@ -246,17 +246,17 @@ free_uip_ds6_nbr(uip_ds6_nbr_t *nbr)
 #if UIP_CONF_IPV6_QUEUE_PKT
   uip_packetqueue_free(&nbr->packethandle);
 #endif /* UIP_CONF_IPV6_QUEUE_PKT */
-  NETSTACK_ROUTING.neighbor_state_changed(nbr);
+//  NETSTACK_ROUTING.neighbor_state_changed(nbr);
   assert(nbr->nbr_entry != NULL);
   if(nbr->nbr_entry == NULL) {
-	  TRice(iD(3620), "err:%s: unexpected error nbr->nbr_entry is NULL\n", __func__);
+	  TRice("err:%s: unexpected error nbr->nbr_entry is NULL\n", __func__);
   } else {
     remove_uip_ds6_nbr_from_nbr_entry(nbr);
     if(list_length(nbr->nbr_entry->uip_ds6_nbrs) == 0) {
       remove_nbr_entry(nbr->nbr_entry);
     }
   }
-  TRice(iD(3306), "dbg:%s: free memory for nbr(%p)\n", __func__, nbr);
+  TRice("dbg:%s: free memory for nbr(%p)\n", __func__, nbr);
   memb_free(&uip_ds6_nbr_memb, nbr);
 }
 /*---------------------------------------------------------------------------*/
@@ -292,7 +292,7 @@ uip_ds6_nbr_rm(uip_ds6_nbr_t *nbr)
 #if UIP_CONF_IPV6_QUEUE_PKT
     uip_packetqueue_free(&nbr->packethandle);
 #endif /* UIP_CONF_IPV6_QUEUE_PKT */
-    NETSTACK_ROUTING.neighbor_state_changed(nbr);
+//    NETSTACK_ROUTING.neighbor_state_changed(nbr);
     return nbr_table_remove(ds6_neighbors, nbr);
   }
   return 0;
@@ -311,7 +311,7 @@ uip_ds6_nbr_update_ll(uip_ds6_nbr_t **nbr_pp, const uip_lladdr_t *new_ll_addr)
 #endif /* UIP_DS6_NBR_MULTI_IPV6_ADDRS */
 
   if(nbr_pp == NULL || new_ll_addr == NULL) {
-	  TRiceS(iD(4078), "err:%s: invalid argument\n", (char*)__func__);
+	  TRiceS("err:%s: invalid argument\n", (char*)__func__);
     return -1;
   }
 
@@ -324,8 +324,8 @@ uip_ds6_nbr_update_ll(uip_ds6_nbr_t **nbr_pp, const uip_lladdr_t *new_ll_addr)
         nbr_table_add_lladdr(uip_ds6_nbr_entries,
                              (const linkaddr_t*)new_ll_addr,
                              NBR_TABLE_REASON_IPV6_ND, NULL)) == NULL) {
-    	TRiceS(iD(2644), "err:%s: cannot allocate a nbr_entry for", (char*)__func__);
-    	TRiceS(iD(5764), "err:%s\n", (char*)linkaddr_printAddr(new_ll_addr));
+    	TRiceS("err:%s: cannot allocate a nbr_entry for", (char*)__func__);
+    	TRiceS("err:%s\n", (char*)linkaddr_printAddr(new_ll_addr));
       return -1;
     } else {
       LIST_STRUCT_INIT(nbr_entry, uip_ds6_nbrs);
@@ -344,21 +344,21 @@ uip_ds6_nbr_update_ll(uip_ds6_nbr_t **nbr_pp, const uip_lladdr_t *new_ll_addr)
 
   /* make sure new_ll_addr is not used in some other nbr */
   if(uip_ds6_nbr_ll_lookup(new_ll_addr) != NULL) {
-	TRiceS(iD(5535), "err:%s: new_ll_addr, ", (char*)__func__);
-  	TRiceS(iD(7841), "err:%s, is already used in another nbr\n", (char*)linkaddr_printAddr((linkaddr_t*)new_ll_addr));
+	TRiceS("err:%s: new_ll_addr, ", (char*)__func__);
+  	TRiceS("err:%s, is already used in another nbr\n", (char*)linkaddr_printAddr((linkaddr_t*)new_ll_addr));
     return -1;
   }
 
   memcpy(&nbr_backup, *nbr_pp, sizeof(uip_ds6_nbr_t));
   if(uip_ds6_nbr_rm(*nbr_pp) == 0) {
-	  TRiceS(iD(3317), "err:%s: input nbr cannot be removed\n", (char*)__func__);
+	  TRiceS("err:%s: input nbr cannot be removed\n", (char*)__func__);
     return -1;
   }
 
   if((*nbr_pp = uip_ds6_nbr_add(&nbr_backup.ipaddr, new_ll_addr,
                                 nbr_backup.isrouter, nbr_backup.state,
                                 NBR_TABLE_REASON_IPV6_ND, NULL)) == NULL) {
-	  TRiceS(iD(5709), "err:%s: cannot allocate a new nbr for new_ll_addr\n", (char*)__func__);
+	  TRiceS("err:%s: cannot allocate a new nbr for new_ll_addr\n", (char*)__func__);
     return -1;
   }
   memcpy(*nbr_pp, &nbr_backup, sizeof(uip_ds6_nbr_t));
@@ -509,8 +509,8 @@ update_nbr_reachable_state_by_ack(uip_ds6_nbr_t *nbr, const linkaddr_t *lladdr)
   if(nbr != NULL && nbr->state != NBR_INCOMPLETE) {
     nbr->state = NBR_REACHABLE;
     Time_TimerSet(&nbr->reachable, UIP_ND6_REACHABLE_TIME / 1000);
-    TRice(iD(2536), "msg:received a link layer ACK : ");
-  	TRiceS(iD(4690), "msg:%s is reachable.\n", (char*)linkaddr_printAddr(lladdr));
+    TRice("msg:received a link layer ACK : ");
+  	TRiceS("msg:%s is reachable.\n", (char*)linkaddr_printAddr(lladdr));
   }
 }
 #endif /* UIP_DS6_LL_NUD */
@@ -577,16 +577,16 @@ void uip_ds6_neighbor_periodic(sUipBuff *dsPeriodicBuff) {
            mimics the 6LoWPAN-ND behavior.
          */
         if(uip_ds6_defrt_lookup(&nbr->ipaddr) != NULL) {
-          TRiceS(iD(1032), "msg:REACHABLE: defrt moving to DELAY (%s)\n", uip6_printAddr(&nbr->ipaddr, NULL));
+          TRiceS("msg:REACHABLE: defrt moving to DELAY (%s)\n", uip6_printAddr(&nbr->ipaddr, NULL));
           nbr->state = NBR_DELAY;
           Time_TimerSet(&nbr->reachable, UIP_ND6_DELAY_FIRST_PROBE_TIME);
           nbr->nscount = 0;
         } else {
-          TRiceS(iD(6227), "msg:REACHABLE: moving to STALE (%s)\n", uip6_printAddr(&nbr->ipaddr, NULL));
+          TRiceS("msg:REACHABLE: moving to STALE (%s)\n", uip6_printAddr(&nbr->ipaddr, NULL));
           nbr->state = NBR_STALE;
         }
 #else /* UIP_CONF_ROUTER */
-        TRiceS(iD(7596), "msg:REACHABLE: moving to STALE (%s)\n", uip6_printAddr(&nbr->ipaddr, NULL));
+        TRiceS("msg:REACHABLE: moving to STALE (%s)\n", uip6_printAddr(&nbr->ipaddr, NULL));
         nbr->state = NBR_STALE;
 #endif /* UIP_CONF_ROUTER */
       }
@@ -596,7 +596,7 @@ void uip_ds6_neighbor_periodic(sUipBuff *dsPeriodicBuff) {
         uip_ds6_nbr_rm(nbr);
       } else if(Time_TimerExpired(&nbr->sendns) && (dsPeriodicBuff->len == 0)) {
         nbr->nscount++;
-        TRice(iD(2949), "msg:NBR_INCOMPLETE: NS %u\n", nbr->nscount);
+        TRice("msg:NBR_INCOMPLETE: NS %u\n", nbr->nscount);
         uip_nd6_ns_output(NULL, NULL, &nbr->ipaddr);
         Time_TimerSet(&nbr->sendns, Ds6_GetRetransmitTmoInMs() / 1000);
       }
@@ -605,14 +605,14 @@ void uip_ds6_neighbor_periodic(sUipBuff *dsPeriodicBuff) {
       if(Time_TimerExpired(&nbr->reachable)) {
         nbr->state = NBR_PROBE;
         nbr->nscount = 0;
-        TRice(iD(1824), "msg:DELAY: moving to PROBE\n");
+        TRice("msg:DELAY: moving to PROBE\n");
         Time_TimerSet(&nbr->sendns, 0);
       }
       break;
     case NBR_PROBE:
       if(nbr->nscount >= UIP_ND6_MAX_UNICAST_SOLICIT) {
         uip_ds6_defrt_t *locdefrt;
-        TRice(iD(6640), "msg:PROBE END\n");
+        TRice("msg:PROBE END\n");
         if((locdefrt = uip_ds6_defrt_lookup(&nbr->ipaddr)) != NULL) {
           if (!locdefrt->isinfinite) {
             uip_ds6_defrt_rm(locdefrt);
@@ -621,7 +621,7 @@ void uip_ds6_neighbor_periodic(sUipBuff *dsPeriodicBuff) {
         uip_ds6_nbr_rm(nbr);
       } else if(Time_TimerExpired(&nbr->sendns) && (dsPeriodicBuff->len == 0)) {
         nbr->nscount++;
-        TRice(iD(4144), "msg:PROBE: NS %u\n", nbr->nscount);
+        TRice("msg:PROBE: NS %u\n", nbr->nscount);
         uip_nd6_ns_output(NULL, &nbr->ipaddr, &nbr->ipaddr);
         Time_TimerSet(&nbr->sendns, Ds6_GetRetransmitTmoInMs() / 1000);
       }

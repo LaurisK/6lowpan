@@ -6,6 +6,7 @@
  */
 
 #include "addressing.h"
+#include <string.h>
 
 /*---------------------------------------------------------------------------*/
 /** \brief set the last 64 bits of an IP address based on the MAC address */
