@@ -47,7 +47,9 @@
 
 /********** Includes **********/
 
+#include "../../network/uip.h"
 #include "rpl-icmp6.h"
+#include "rpl-types.h"
 
 /********** Public functions **********/
 

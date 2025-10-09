@@ -273,6 +273,25 @@ typedef struct uip_ds6_element {
   uip_ipaddr_t ipaddr;
 } uip_ds6_element_t;
 
+/** \brief  Interface structure (contains all the interface variables) */
+typedef struct uip_ds6_netif {
+  uint32_t link_mtu;
+  uint8_t cur_hop_limit;
+  uint32_t base_reachable_time; /* in msec */
+  uint32_t reachable_time;      /* in msec */
+  uint32_t retrans_timer;       /* in msec */
+  uint8_t maxdadns;
+#if UIP_DS6_ADDR_NB
+  uip_ds6_addr_t addr_list[UIP_DS6_ADDR_NB];
+#endif /* UIP_DS6_ADDR_NB */
+#if UIP_DS6_AADDR_NB
+  uip_ds6_aaddr_t aaddr_list[UIP_DS6_AADDR_NB];
+#endif /* UIP_DS6_AADDR_NB */
+#if UIP_DS6_MADDR_NB
+  uip_ds6_maddr_t maddr_list[UIP_DS6_MADDR_NB];
+#endif /* UIP_DS6_MADDR_NB */
+} uip_ds6_netif_t;
+
 
 /*---------------------------------------------------------------------------*/
 #if UIP_CONF_ROUTER

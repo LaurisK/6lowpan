@@ -62,25 +62,6 @@
 #include "App/common.h"
 #endif
 
-/** \brief  Interface structure (contains all the interface variables) */
-typedef struct uip_ds6_netif {
-  uint32_t link_mtu;
-  uint8_t cur_hop_limit;
-  uint32_t base_reachable_time; /* in msec */
-  uint32_t reachable_time;      /* in msec */
-  uint32_t retrans_timer;       /* in msec */
-  uint8_t maxdadns;
-#if UIP_DS6_ADDR_NB
-  uip_ds6_addr_t addr_list[UIP_DS6_ADDR_NB];
-#endif /* UIP_DS6_ADDR_NB */
-#if UIP_DS6_AADDR_NB
-  uip_ds6_aaddr_t aaddr_list[UIP_DS6_AADDR_NB];
-#endif /* UIP_DS6_AADDR_NB */
-#if UIP_DS6_MADDR_NB
-  uip_ds6_maddr_t maddr_list[UIP_DS6_MADDR_NB];
-#endif /* UIP_DS6_MADDR_NB */
-} uip_ds6_netif_t;
-
 #ifdef UIP_CONF_ND6_RETRANS_TIMER
 #define UIP_ND6_RETRANS_TIMER          UIP_CONF_ND6_RETRANS_TIMER
 #else
@@ -793,6 +774,8 @@ void Ds6_SetRetransmitTim(const uint32_t retransTmo) {
     TRice(iD(6951), "msg:[uIP DS6] Retransmit timeout set to - %u\n", uip_ds6_if.retrans_timer);
   }
 }
+
+uip_ipaddr_t* Ds6_ListI
 
 /*---------------------------------------------------------------------------*/
 

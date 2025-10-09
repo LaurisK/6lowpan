@@ -830,7 +830,7 @@ static uint8_t ext_hdr_options_process(sUipBuff *uipBuff, uint8_t *ext_buf) {
        * present) is processed.
        */
     	TRice(iD(3155), "dbg:Processing RPL option\n");
-      if(!rpl_lite_driver.ext_header_hbh_update(ext_buf, opt_offset)) {
+      if(!rpl_lite_driver.ext_header_hbh_update(uipBuff, ext_buf, opt_offset)) {
     	  TRice(iD(5895), "err:RPL Option Error: Dropping Packet\n");
         return 1;
       }
@@ -1311,7 +1311,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
       TRice(iD(5681), "dbg:Processing Routing header\n");
       if(((struct uip_routing_hdr *)ext_ptr)->seg_left > 0) {
         /* Process source routing header */
-        if(rpl_lite_driver.ext_header_srh_update()) {
+        if(rpl_lite_driver.ext_header_srh_update(uipBuff)) {
 
           /* The MTU and TTL were not checked and updated yet, because with
            * a routing header, the IPv6 destination address was set to us

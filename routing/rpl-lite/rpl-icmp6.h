@@ -44,6 +44,7 @@
 
 #include "../../network/uip.h"
 #include "../../network/nbr-table.h"
+#include "../../network/uip-ds6-nbr.h"
 #include "rpl-types.h"
 
 /********** Data structures **********/

@@ -43,9 +43,14 @@
 
 //#include "net/routing/rpl-lite/rpl.h"
 //#include "net/routing/routing.h"
+#include "../../addressing.h"
+#include "../../network/uip-nd6.h"
 #include "rpl.h"
 #include "rpl-dag-root.h"
 #include "rpl-icmp6.h"
+
+#warning "deglobalize uip_ds6_if"
+extern uip_ds6_netif_t uip_ds6_if;
 
 uip_ipaddr_t rpl_multicast_addr;
 static uint8_t rpl_leaf_only = RPL_DEFAULT_LEAF_ONLY;
@@ -81,9 +86,7 @@ rpl_get_global_address(void)
 
   for(i = 0; i < UIP_DS6_ADDR_NB; i++) {
     state = uip_ds6_if.addr_list[i].state;
-    if(uip_ds6_if.addr_list[i].isused &&
-       state == ADDR_PREFERRED &&
-       !uip_is_addr_linklocal(&uip_ds6_if.addr_list[i].ipaddr) &&
+    if(uip_ds6_if.addr_list[i].isused && state == ADDR_PREFERRED && !uip_is_addr_linklocal(&uip_ds6_if.addr_list[i].ipaddr) &&
        (prefix == NULL || uip_ipaddr_prefixcmp(prefix, &uip_ds6_if.addr_list[i].ipaddr, prefix_length))) {
       ipaddr = &uip_ds6_if.addr_list[i].ipaddr;
     }
@@ -130,7 +133,7 @@ set_ip_from_prefix(uip_ipaddr_t *ipaddr, rpl_prefix_t *prefix)
 {
   memset(ipaddr, 0, sizeof(uip_ipaddr_t));
   memcpy(ipaddr, &prefix->prefix, (prefix->length + 7) / 8);
-  uip_ds6_set_addr_iid(ipaddr, &uip_lladdr);
+  Addr_SetInterfId(ipaddr, &uip_lladdr);
 }
 /*---------------------------------------------------------------------------*/
 void

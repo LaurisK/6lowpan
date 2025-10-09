@@ -40,16 +40,13 @@
  * Simon Duquennoy <simon.duquennoy@inria.fr>
  */
 
-//#include "contiki.h"
-#include "rpl.h"
-//#include "net/ipv6/uip-sr.h"
 #include "../../network/link-stats.h"
-//#include "lib/random.h"
-//#include "sys/ctimer.h"
-#include "rpl-timers.h"
+#include "../../evt_radio.h"
+#include "rpl.h"
 #include "rpl-dag.h"
 #include "rpl-dag-root.h"
 #include "rpl-icmp6.h"
+#include "rpl-timers.h"
 
 /* A configurable function called after update of the RPL DIO interval */
 #ifdef RPL_CALLBACK_NEW_DIO_INTERVAL
@@ -304,7 +301,7 @@ rpl_timers_notify_dao_ack(void)
   schedule_dao_refresh();
 }
 /*---------------------------------------------------------------------------*/
-static void DaoResendTmoHandler(void *ptr) {
+static void DaoResendTmoHandler(TimerHandle_t periodicTim) {
   /* Increment transmission counter before sending */
   curr_instance.dag.dao_transmissions++;
   /* Send a DAO with own prefix as target and default lifetime */

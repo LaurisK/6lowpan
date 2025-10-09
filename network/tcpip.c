@@ -347,7 +347,7 @@ static const uip_ipaddr_t* get_nexthop(sUipBuff *uipBuff, uip_ipaddr_t *addr) {
   TRiceS(iD(4692), "msg:%s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
   TRiceS(iD(6621), "msg: to %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
 
-  if(rpl_lite_driver.ext_header_srh_get_next_hop(addr)) {
+  if(rpl_lite_driver.ext_header_srh_get_next_hop(uipBuff, addr)) {
     TRiceS(iD(6149), "msg:output: selected next hop from SRH: %s\n", uip6_printAddr(addr, NULL));
     return addr;
   }

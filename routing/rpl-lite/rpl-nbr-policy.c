@@ -44,8 +44,9 @@
 
 //#include "net/routing/rpl-lite/rpl.h"
 //#include "net/nbr-table.h"
-#include "rpl-icmp6.h"
 #include "rpl.h"
+#include "rpl-icmp6.h"
+#include "rpl-neighbor.h"
 
 /*
  * Policy for neighbor addition
@@ -57,6 +58,7 @@
  * neighbors and are not only MAC neighbors.
  */
 
+#ifdef NBR_TABLE_FIND_REMOVABLE
 static int num_parents;   /* all nodes that are possible parents */
 static int num_free;
 static const linkaddr_t *worst_rank_nbr_lladdr; /* lladdr of the the neighbor with the worst rank */
@@ -133,8 +135,7 @@ find_removable_dio(uip_ipaddr_t *from, rpl_dio_t *dio)
   return NULL;
 }
 /*---------------------------------------------------------------------------*/
-const linkaddr_t *
-rpl_nbr_policy_find_removable(nbr_table_reason_t reason, void *data)
+const linkaddr_t * rpl_nbr_policy_find_removable(nbr_table_reason_t reason, void *data)
 {
   /* When we get the DIO/DAO/DIS we know that UIP contains the
      incoming packet */
@@ -149,5 +150,7 @@ rpl_nbr_policy_find_removable(nbr_table_reason_t reason, void *data)
       return NULL;
   }
 }
+#endif /* NBR_TABLE_FIND_REMOVABLE */
+
 /*---------------------------------------------------------------------------*/
 /** @}*/

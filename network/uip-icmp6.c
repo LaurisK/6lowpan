@@ -55,8 +55,6 @@
 
 static struct uip_icmp6_echo_reply_notification *replyCbListHead = NULL, *replyCbListTail = NULL;
 static uip_icmp6_input_handler_t *inputHndlListHead = NULL;
-#warning "for icmp, ra, ns and other sUipBuff will need to have some dynamic memory handler or other way to obtaing and release memeory only when needed - not to waste it like now it is done."
-static sUipBuff icmpBuff = {0};
 /*---------------------------------------------------------------------------*/
 static uip_icmp6_input_handler_t *input_handler_lookup(uint8_t type, uint8_t icode) {
   uip_icmp6_input_handler_t *handler = NULL;
@@ -206,38 +204,38 @@ void uip_icmp6_error_output(sUipBuff *faultyBuff, uint8_t type, uint8_t code, ui
 }
 
 /*---------------------------------------------------------------------------*/
-void uip_icmp6_send(const uip_ipaddr_t *dest, int type, int code, int payload_len) {
-  uipbuf_clear(&icmpBuff);
-  ((struct uip_ip_hdr *)(icmpBuff.buff.u8))->vtc = 0x60;
-  ((struct uip_ip_hdr *)(icmpBuff.buff.u8))->tcflow = 0;
-  ((struct uip_ip_hdr *)(icmpBuff.buff.u8))->flow = 0;
-  ((struct uip_ip_hdr *)(icmpBuff.buff.u8))->proto = UIP_PROTO_ICMP6;
-  ((struct uip_ip_hdr *)(icmpBuff.buff.u8))->ttl = Ds6_GetHopLimit();
-  uip6_uipHdrSetLen(((struct uip_ip_hdr *)(icmpBuff.buff.u8)), UIP_ICMPH_LEN + payload_len);
+void uip_icmp6_send(sUipBuff *icmpBuff, const uip_ipaddr_t *dest, int type, int code, int payload_len) {
+  uipbuf_clear(icmpBuff);
+  ((struct uip_ip_hdr *)(icmpBuff->buff.u8))->vtc = 0x60;
+  ((struct uip_ip_hdr *)(icmpBuff->buff.u8))->tcflow = 0;
+  ((struct uip_ip_hdr *)(icmpBuff->buff.u8))->flow = 0;
+  ((struct uip_ip_hdr *)(icmpBuff->buff.u8))->proto = UIP_PROTO_ICMP6;
+  ((struct uip_ip_hdr *)(icmpBuff->buff.u8))->ttl = Ds6_GetHopLimit();
+  uip6_uipHdrSetLen(((struct uip_ip_hdr *)(icmpBuff->buff.u8)), UIP_ICMPH_LEN + payload_len);
 
   if(dest == NULL) {
 	  TRice(iD(6972), "err:invalid argument; dest is NULL\n");
     return;
   }
 
-  memcpy(&((struct uip_ip_hdr *)(icmpBuff.buff.u8))->destipaddr, dest, sizeof(*dest));
-  uip_ds6_select_src(&IP_HDR_CAST_TO_BUFF(icmpBuff.buff.u8)->srcipaddr, &IP_HDR_CAST_TO_BUFF(icmpBuff.buff.u8)->destipaddr);
+  memcpy(&((struct uip_ip_hdr *)(icmpBuff->buff.u8))->destipaddr, dest, sizeof(*dest));
+  uip_ds6_select_src(&IP_HDR_CAST_TO_BUFF(icmpBuff->buff.u8)->srcipaddr, &IP_HDR_CAST_TO_BUFF(icmpBuff->buff.u8)->destipaddr);
 
-  ICMP_HDR_CAST_TO_BUFF(icmpBuff.buff.u8 + UIP_IPH_LEN + icmpBuff.extLen)->type = type;
-  ICMP_HDR_CAST_TO_BUFF(icmpBuff.buff.u8 + UIP_IPH_LEN + icmpBuff.extLen)->icode = code;
+  ICMP_HDR_CAST_TO_BUFF(icmpBuff->buff.u8 + UIP_IPH_LEN + icmpBuff->extLen)->type = type;
+  ICMP_HDR_CAST_TO_BUFF(icmpBuff->buff.u8 + UIP_IPH_LEN + icmpBuff->extLen)->icode = code;
 
-  ICMP_HDR_CAST_TO_BUFF(icmpBuff.buff.u8 + UIP_IPH_LEN + icmpBuff.extLen)->icmpchksum = 0;
-  ICMP_HDR_CAST_TO_BUFF(icmpBuff.buff.u8 + UIP_IPH_LEN + icmpBuff.extLen)->icmpchksum = ~uip_icmp6chksum(&icmpBuff);
+  ICMP_HDR_CAST_TO_BUFF(icmpBuff->buff.u8 + UIP_IPH_LEN + icmpBuff->extLen)->icmpchksum = 0;
+  ICMP_HDR_CAST_TO_BUFF(icmpBuff->buff.u8 + UIP_IPH_LEN + icmpBuff->extLen)->icmpchksum = ~uip_icmp6chksum(icmpBuff);
 
-  icmpBuff.len = UIP_IPH_LEN + UIP_ICMPH_LEN + payload_len;
+  icmpBuff->len = UIP_IPH_LEN + UIP_ICMPH_LEN + payload_len;
 
   UIP_STAT(++uip_stat.icmp.sent);
   UIP_STAT(++uip_stat.ip.sent);
 
-  TRiceS(iD(6461), "msg:Sending ICMPv6 packet to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(icmpBuff.buff.u8)->destipaddr, NULL));
+  TRiceS(iD(6461), "msg:Sending ICMPv6 packet to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(icmpBuff->buff.u8)->destipaddr, NULL));
   TRice(iD(4169), "msg:, type %u, code %u, len %u\n", type, code, payload_len);
 
-  tcpip_ipv6_output(&icmpBuff);
+  tcpip_ipv6_output(icmpBuff);
 }
 /*---------------------------------------------------------------------------*/
 static void echo_reply_input(sUipBuff *uipBuff) {

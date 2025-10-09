@@ -50,7 +50,7 @@
 //#include "contiki.h"
 //#include "net/ipv6/uip.h"
 #include "../network/uip-ds6-nbr.h"
-//#include "net/ipv6/uip-ds6-route.h"
+#include "../network/uip-ds6-route.h"
 //#include "net/ipv6/uip-sr.h"
 //#include "net/linkaddr.h"
 
@@ -129,13 +129,13 @@ struct routing_driver {
    *
    * \return true in case of success, false otherwise
   */
-  bool (* ext_header_remove)(void);
+  bool (* ext_header_remove)(sUipBuff *uipBuff);
   /**
    * Adds/updates routing protocol extension headers to current uIP packet.
    *
    * \return 1 in case of success, 0 otherwise
   */
-  int (* ext_header_update)(void);
+  int (* ext_header_update)(sUipBuff *uipBuff);
   /**
   * Process and update the routing protocol hob-by-hop
   * extention headers of the current uIP packet.
@@ -146,20 +146,20 @@ struct routing_driver {
   * \return 1 in case the packet is valid and to be processed further,
   * 0 in case the packet must be dropped.
   */
-  int (* ext_header_hbh_update)(uint8_t *ext_buf, int opt_offset);
+  int (* ext_header_hbh_update)(sUipBuff *uipBuff, uint8_t *ext_buf, int opt_offset);
   /**
   * Process and update SRH in-place,
   * i.e. internal address swapping as per RFC6554
   * \return 1 if SRH found, 0 otherwise
   */
-  int (* ext_header_srh_update)(void);
+  int (* ext_header_srh_update)(sUipBuff *uipBuff);
   /**
    * Look for next hop from SRH of current uIP packet.
    *
    * \param ipaddr A pointer to the address where to store the next hop.
    * \return 1 if a next hop was found, 0 otherwise
   */
-  int (* ext_header_srh_get_next_hop)(uip_ipaddr_t *ipaddr);
+  int (* ext_header_srh_get_next_hop)(sUipBuff *uipBuff, uip_ipaddr_t *ipaddr);
   /**
    * Called by lower layers after every packet transmission
    *

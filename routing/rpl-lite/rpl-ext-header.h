@@ -50,14 +50,14 @@
 * \param ipaddr A pointer to the address where to store the next hop.
 * \return 1 if a next hop was found, 0 otherwise
 */
-int rpl_ext_header_srh_get_next_hop(uip_ipaddr_t *ipaddr);
+int rpl_ext_header_srh_get_next_hop(sUipBuff *uipBuff, uip_ipaddr_t *ipaddr);
 
 /**
 * Process and update SRH in-place,
 * i.e. internal address swapping as per RFC6554
 * \return 1 if SRH found, 0 otherwise
 */
-int rpl_ext_header_srh_update(void);
+int rpl_ext_header_srh_update(sUipBuff *uipBuff);
 
 /**
 * Process and update the RPL hop-by-hop extension headers of
@@ -69,21 +69,21 @@ int rpl_ext_header_srh_update(void);
 * \return 1 in case the packet is valid and to be processed further,
 * 0 in case the packet must be dropped.
 */
-int rpl_ext_header_hbh_update(uint8_t *ext_buf, int opt_offset);
+int rpl_ext_header_hbh_update(sUipBuff *uipBuff, uint8_t *ext_buf, int opt_offset);
 
 /**
  * Adds/updates all RPL extension headers to current uIP packet.
  *
  * \return 1 in case of success, 0 otherwise
 */
-int rpl_ext_header_update(void);
+int rpl_ext_header_update(sUipBuff *uipBuff);
 
 /**
  * Removes all RPL extension headers.
  *
  * \return true in case of success, false otherwise
 */
-bool rpl_ext_header_remove(void);
+bool rpl_ext_header_remove(sUipBuff *uipBuff);
 
  /** @} */
 

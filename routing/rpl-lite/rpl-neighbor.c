@@ -42,14 +42,17 @@
  * Contributors: George Oikonomou <oikonomou@users.sourceforge.net> (multicast)
  */
 
-//#include "contiki.h"
+#include <stdio.h>
 //#include "net/routing/rpl-lite/rpl.h"
 //#include "net/link-stats.h"
 //#include "net/nbr-table.h"
 //#include "net/ipv6/uiplib.h"
-#include "rpl-dag-root.h"
 #include "rpl.h"
+#include "rpl-dag.h"
+#include "rpl-dag-root.h"
 #include "rpl-neighbor.h"
+#include "rpl-timers.h"
+#include "../../network/uip-ds6-route.h"
 
 /* A configurable function called after every RPL parent switch */
 #ifdef RPL_CALLBACK_PARENT_SWITCH
@@ -97,7 +100,7 @@ static int log_6addr_compact_snprint(char *buf, size_t size, const uip_ipaddr_t 
     } else {
       prefix = "6G";
     }
-    return snprintf(buf, size, "%s-%04x", prefix, UIP_HTONS(ipaddr->u16[sizeof(uip_ipaddr_t)/2-1]));
+    return snprintf(buf, size, "%s-%04x", prefix, __REVSH(ipaddr->u16[sizeof(uip_ipaddr_t)/2-1]));
   }
 }
 
@@ -116,11 +119,7 @@ static int rpl_neighbor_snprint(char *buf, int buflen, rpl_nbr_t *nbr)
   rpl_nbr_t *best = best_parent(0);
   const struct link_stats *stats = rpl_neighbor_get_link_stats(nbr);
 
-  if(LOG_WITH_COMPACT_ADDR) {
-    index += log_6addr_compact_snprint(buf+index, buflen-index, rpl_neighbor_get_ipaddr(nbr));
-  } else {
-    index += uiplib_ipaddr_snprint(buf+index, buflen-index, rpl_neighbor_get_ipaddr(nbr));
-  }
+  index += log_6addr_compact_snprint(buf+index, buflen-index, rpl_neighbor_get_ipaddr(nbr));
   if(index >= buflen) {
     return index;
   }
@@ -140,23 +139,17 @@ static int rpl_neighbor_snprint(char *buf, int buflen, rpl_nbr_t *nbr)
     return index;
   }
   if(stats != NULL && stats->last_tx_time > 0) {
-    index += snprintf(buf+index, buflen-index,
-                              " (last tx %u min ago",
-                              (uint32_t)((Time_GetUptime() - stats->last_tx_time) / SECONDS_IN_MINUTE));
+    index += snprintf(buf+index, buflen-index, " (last tx %lu min ago", ((Time_GetUptime() - stats->last_tx_time) / SECONDS_IN_MINUTE));
   } else {
-    index += snprintf(buf+index, buflen-index,
-                              " (no tx");
+    index += snprintf(buf+index, buflen-index, " (no tx");
   }
   if(index >= buflen) {
     return index;
   }
   if(nbr->better_parent_since > 0) {
-    index += snprintf(buf+index, buflen-index,
-                              ", better since %u min)",
-                              (uint32_t)((Time_GetUptime() - nbr->better_parent_since) / SECONDS_IN_MINUTE));
+    index += snprintf(buf+index, buflen-index, ", better since %lu min)", ((Time_GetUptime() - nbr->better_parent_since) / SECONDS_IN_MINUTE));
   } else {
-    index += snprintf(buf+index, buflen-index,
-                              ")");
+    index += snprintf(buf+index, buflen-index, ")");
   }
   return index;
 }
@@ -170,10 +163,10 @@ rpl_neighbor_print_list(const char *str)
     rpl_nbr_t *nbr = nbr_table_head(rpl_neighbors);
 
     TRiceS(iD(1262), "msg:nbr: own state, addr %s, ", uip6_printAddr(rpl_get_global_address(), NULL));
-    TRiceS(iD(7757), "msg:DAG state: %s, ", rpl_dag_state_to_str(curr_instance.dag.state));
+    TRiceS(iD(7757), "msg:DAG state: %s, ", (char*)rpl_dag_state_to_str(curr_instance.dag.state));
     TRice(iD(3118), "msg:MOP %u OCP %u rank %u max-rank %u, dio-int %u, nbr count %u",
             curr_instance.mop, curr_instance.of->ocp, curr_rank, max_acceptable_rank(), curr_dio_interval, rpl_neighbor_count());
-    TRiceS(iD(3054), "msg: (%s)\n", str);
+    TRiceS(iD(3054), "msg: (%s)\n", (char*)str);
     while(nbr != NULL) {
       char buf[120];
       rpl_neighbor_snprint(buf, sizeof(buf), nbr);
@@ -329,8 +322,7 @@ rpl_neighbor_set_preferred_parent(rpl_nbr_t *nbr)
     nbr_table_lock(rpl_neighbors, nbr);
 
     /* Update DS6 default route. Use an infinite lifetime */
-    uip_ds6_defrt_rm(uip_ds6_defrt_lookup(
-      rpl_neighbor_get_ipaddr(curr_instance.dag.preferred_parent)));
+    uip_ds6_defrt_rm(uip_ds6_defrt_lookup( rpl_neighbor_get_ipaddr(curr_instance.dag.preferred_parent)));
     uip_ds6_defrt_add(rpl_neighbor_get_ipaddr(nbr), 0);
 
     curr_instance.dag.preferred_parent = nbr;

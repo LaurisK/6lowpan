@@ -46,37 +46,39 @@
 //#include "net/routing/routing.h"
 //#include "net/routing/rpl-lite/rpl.h"
 //#include "net/ipv6/uip-sr.h"
-//#include "net/packetbuf.h"
+#include "../../network/uipbuf.h"
 #include "../../network/uip-ds6.h"
 #include "rpl.h"
+#include "rpl-dag.h"
 #include "rpl-dag-root.h"
+#include "rpl-ext-header.h"
+#include "rpl-neighborr.h"
 
 /*---------------------------------------------------------------------------*/
 int
-rpl_ext_header_srh_get_next_hop(uip_ipaddr_t *ipaddr)
+rpl_ext_header_srh_get_next_hop(sUipBuff *uipBuff, uip_ipaddr_t *ipaddr)
 {
   struct uip_routing_hdr *rh_header;
   uip_sr_node_t *dest_node;
   uip_sr_node_t *root_node;
 
   /* Look for routing ext header */
-  rh_header = (struct uip_routing_hdr *)uipbuf_search_header(uip_buf, uip_len, UIP_PROTO_ROUTING);
+  rh_header = (struct uip_routing_hdr *)uipbuf_search_header(uipBuff->buff.u8, uipBuff->len, UIP_PROTO_ROUTING);
 
-  if(!rpl_is_addr_in_our_dag(&UIP_IP_BUF->destipaddr)) {
+  if(!rpl_is_addr_in_our_dag(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr)) {
     return 0;
   }
 
   root_node = uip_sr_get_node(NULL, &curr_instance.dag.dag_id);
-  dest_node = uip_sr_get_node(NULL, &UIP_IP_BUF->destipaddr);
+  dest_node = uip_sr_get_node(NULL, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr);
 
   if((rh_header != NULL && rh_header->routing_type == RPL_RH_TYPE_SRH) ||
-     (dest_node != NULL && root_node != NULL &&
-      dest_node->parent == root_node)) {
+     (dest_node != NULL && root_node != NULL && dest_node->parent == root_node)) {
     /* Routing header found or the packet destined for a direct child of the root.
      * The next hop should be already copied as the IPv6 destination
      * address, via rpl_ext_header_srh_update. We turn this address into a link-local to enable
      * forwarding to next hop */
-    uip_ipaddr_copy(ipaddr, &UIP_IP_BUF->destipaddr);
+    uip_ipaddr_copy(ipaddr, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr);
     uip_create_linklocal_prefix(ipaddr);
     return 1;
   }
@@ -86,7 +88,7 @@ rpl_ext_header_srh_get_next_hop(uip_ipaddr_t *ipaddr)
 }
 /*---------------------------------------------------------------------------*/
 int
-rpl_ext_header_srh_update(void)
+rpl_ext_header_srh_update(sUipBuff *uipBuff)
 {
   struct uip_routing_hdr *rh_header;
   struct uip_rpl_srh_hdr *srh_header;
@@ -98,7 +100,7 @@ rpl_ext_header_srh_update(void)
   uip_ipaddr_t current_dest_addr;
 
   /* Look for routing ext header */
-  rh_header = (struct uip_routing_hdr *)uipbuf_search_header(uip_buf, uip_len, UIP_PROTO_ROUTING);
+  rh_header = (struct uip_routing_hdr *)uipbuf_search_header(uipBuff->buff.u8, uipBuff->len, UIP_PROTO_ROUTING);
 
   if(rh_header == NULL || rh_header->routing_type != RPL_RH_TYPE_SRH) {
 	  TRice(iD(4462), "msg:SRH not found\n");
@@ -128,7 +130,7 @@ rpl_ext_header_srh_update(void)
   } else {
     uint8_t i = path_len - segments_left; /* The index of the next address to be visited */
     uint8_t cmpr = segments_left == 1 ? cmpre : cmpri;
-    ptrdiff_t rh_offset = (uint8_t *)rh_header - uip_buf;
+    ptrdiff_t rh_offset = (uint8_t *)rh_header - uipBuff->buff.u8;
     size_t addr_offset = RPL_RH_LEN + RPL_SRH_LEN + (i * (16 - cmpri));
 
     if(rh_offset + addr_offset + 16 - cmpr > UIP_BUFSIZE) {
@@ -141,16 +143,16 @@ rpl_ext_header_srh_update(void)
     /* As per RFC6554: swap the IPv6 destination address with address[i] */
 
     /* First, copy the current IPv6 destination address */
-    uip_ipaddr_copy(&current_dest_addr, &UIP_IP_BUF->destipaddr);
+    uip_ipaddr_copy(&current_dest_addr, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr);
     /* Second, update the IPv6 destination address with addresses[i] */
-    memcpy(((uint8_t *)&UIP_IP_BUF->destipaddr) + cmpr, addr_ptr, 16 - cmpr);
+    memcpy(((uint8_t *)&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr) + cmpr, addr_ptr, 16 - cmpr);
     /* Third, write current_dest_addr to addresses[i] */
     memcpy(addr_ptr, ((uint8_t *)&current_dest_addr) + cmpr, 16 - cmpr);
 
     /* Update segments left field */
     rh_header->seg_left--;
 
-    TRiceS(iD(3884), "msg:SRH next hop %s\n", uip6_printAddr(&UIP_IP_BUF->destipaddr, NULL));
+    TRiceS(iD(3884), "msg:SRH next hop %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
   }
 
   return 1;
@@ -174,9 +176,7 @@ count_matching_bytes(const void *p1, const void *p2, size_t n)
  * is used at the root, to initiate downward routing. Returns 1 on success,
  * 0 on failure.
 */
-static int
-insert_srh_header(void)
-{
+static int insert_srh_header(sUipBuff *uipBuff) {
   /* Implementation of RFC6554 */
   uint8_t path_len;
   uint8_t ext_len;
@@ -189,22 +189,22 @@ insert_srh_header(void)
   uip_ipaddr_t node_addr;
 
   /* Always insest SRH as first extension header */
-  struct uip_routing_hdr *rh_hdr = (struct uip_routing_hdr *)UIP_IP_PAYLOAD(0);
-  struct uip_rpl_srh_hdr *srh_hdr = (struct uip_rpl_srh_hdr *)(UIP_IP_PAYLOAD(0) + RPL_RH_LEN);
+  struct uip_routing_hdr *rh_hdr = (struct uip_routing_hdr *)(uipBuff->buff.u8 + UIP_IPH_LEN);
+  struct uip_rpl_srh_hdr *srh_hdr = (struct uip_rpl_srh_hdr *)(uipBuff->buff.u8 + UIP_IPH_LEN + RPL_RH_LEN);
 
-  TRice(iD(6356), "msg:SRH creating source routing header with destination %s\n", uip6_printAddr(&UIP_IP_BUF->destipaddr, NULL));
+  TRice(iD(6356), "msg:SRH creating source routing header with destination %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
 
   /* Construct source route. We do not do this recursively to keep the runtime stack usage constant. */
 
   /* Get link of the destination and root */
 
-  if(!rpl_is_addr_in_our_dag(&UIP_IP_BUF->destipaddr)) {
+  if(!rpl_is_addr_in_our_dag(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr)) {
     /* The destination is not in our DAG, skip SRH insertion */
 	  TRice(iD(2661), "msg:SRH destination not in our DAG, skip SRH insertion\n");
     return 1;
   }
 
-  dest_node = uip_sr_get_node(NULL, &UIP_IP_BUF->destipaddr);
+  dest_node = uip_sr_get_node(NULL, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr);
   if(dest_node == NULL) {
     /* The destination is not found, skip SRH insertion */
 	  TRice(iD(2574), "msg:SRH node not found, skip SRH insertion\n");
@@ -217,7 +217,7 @@ insert_srh_header(void)
     return 0;
   }
 
-  if(!uip_sr_is_addr_reachable(NULL, &UIP_IP_BUF->destipaddr)) {
+  if(!uip_sr_is_addr_reachable(NULL, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr)) {
 	  TRice(iD(3467), "err:SRH no path found to destination\n");
     return 0;
   }
@@ -238,7 +238,7 @@ insert_srh_header(void)
 	  rpl_lite_driver.get_sr_node_ipaddr(&node_addr, node);
 
     /* How many bytes in common between all nodes in the path? */
-    cmpri = MIN(cmpri, count_matching_bytes(&node_addr, &UIP_IP_BUF->destipaddr, 16));
+    cmpri = MIN(cmpri, count_matching_bytes(&node_addr, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, 16));
     cmpre = cmpri;
 
     TRiceS(iD(7192), "msg:SRH Hop %s\n", uip6_printAddr(&node_addr, NULL));
@@ -258,19 +258,18 @@ insert_srh_header(void)
       path_len, cmpri, cmpre, ext_len, padding);
 
   /* Check if there is enough space to store the extension header */
-  if(uip_len + ext_len > UIP_LINK_MTU) {
+  if(uipBuff->len + ext_len > UIP_LINK_MTU) {
 	  TRice(iD(4429), "err:packet too long: impossible to add source routing header (%u bytes)\n", ext_len);
     return 0;
   }
 
   /* Move existing ext headers and payload ext_len further */
-  memmove(uip_buf + UIP_IPH_LEN + uip_ext_len + ext_len,
-      uip_buf + UIP_IPH_LEN + uip_ext_len, uip_len - UIP_IPH_LEN);
-  memset(uip_buf + UIP_IPH_LEN + uip_ext_len, 0, ext_len);
+  memmove(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen + ext_len, uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen, uipBuff->len - UIP_IPH_LEN);
+  memset(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen, 0, ext_len);
 
   /* Insert source routing header (as first ext header) */
-  rh_hdr->next = UIP_IP_BUF->proto;
-  UIP_IP_BUF->proto = UIP_PROTO_ROUTING;
+  rh_hdr->next = IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->proto;
+  IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->proto = UIP_PROTO_ROUTING;
 
   /* Initialize IPv6 Routing Header */
   rh_hdr->len = (ext_len - 8) / 8;
@@ -297,18 +296,16 @@ insert_srh_header(void)
 
   /* The next hop (i.e. node whose parent is the root) is placed as the current IPv6 destination */
   rpl_lite_driver.get_sr_node_ipaddr(&node_addr, node);
-  uip_ipaddr_copy(&UIP_IP_BUF->destipaddr, &node_addr);
+  uip_ipaddr_copy(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, &node_addr);
 
   /* Update the IPv6 length field */
-  uipbuf_add_ext_hdr(ext_len);
-  uipbuf_set_len_field(UIP_IP_BUF, uip_len - UIP_IPH_LEN);
+  uipbuf_add_ext_hdr(uipBuff, ext_len);
+  uip6_uipHdrSetLen(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8), uipBuff->len - UIP_IPH_LEN);
 
   return 1;
 }
 /*---------------------------------------------------------------------------*/
-int
-rpl_ext_header_hbh_update(uint8_t *ext_buf, int opt_offset)
-{
+int rpl_ext_header_hbh_update(sUipBuff *uipBuff, uint8_t *ext_buf, int opt_offset) {
   int down;
   int rank_error_signaled;
   int loop_detected;
@@ -337,14 +334,14 @@ rpl_ext_header_hbh_update(uint8_t *ext_buf, int opt_offset)
   }
 
   down = (rpl_opt->flags & RPL_HDR_OPT_DOWN) ? 1 : 0;
-  sender_rank = UIP_HTONS(rpl_opt->senderrank);
+  sender_rank = __REVSH(rpl_opt->senderrank);
   sender = nbr_table_get_from_lladdr(rpl_neighbors, packetbuf_addr(PACKETBUF_ADDR_SENDER));
   rank_error_signaled = (rpl_opt->flags & RPL_HDR_OPT_RANK_ERR) ? 1 : 0;
   sender_closer = sender_rank < curr_instance.dag.rank;
   loop_detected = (down && !sender_closer) || (!down && sender_closer);
 
-  TRiceS(iD(3508), "msg:ext hdr: packet from %s", uip6_printAddr(&UIP_IP_BUF->srcipaddr, NULL));
-  TRiceS(iD(5171), "msg: to %s", uip6_printAddr(&UIP_IP_BUF->destipaddr, NULL));
+  TRiceS(iD(3508), "msg:ext hdr: packet from %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
+  TRiceS(iD(5171), "msg: to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
   if (down == 1) {
 	  TRice(iD(3954), "msg: going down, sender closer %d (%d < %d), rank error %u, loop detected %u\n",
 			  sender_closer, sender_rank, curr_instance.dag.rank, rank_error_signaled, loop_detected);
@@ -364,15 +361,12 @@ rpl_ext_header_hbh_update(uint8_t *ext_buf, int opt_offset)
 /* In-place update of the RPL HBH extension header, when already present
  * in the uIP packet. Used by insert_hbh_header and rpl_ext_header_update.
  * Returns 1 on success, 0 on failure. */
-static int
-update_hbh_header(void)
-{
-  struct uip_hbho_hdr *hbh_hdr = (struct uip_hbho_hdr *)UIP_IP_PAYLOAD(0);
-  struct uip_ext_hdr_opt_rpl *rpl_opt = (struct uip_ext_hdr_opt_rpl *)(UIP_IP_PAYLOAD(2));
+static int update_hbh_header(sUipBuff *uipBuff) {
+  struct uip_hbho_hdr *hbh_hdr = (struct uip_hbho_hdr *)(uipBuff->buff.u8 + UIP_IPH_LEN);
+  struct uip_ext_hdr_opt_rpl *rpl_opt = (struct uip_ext_hdr_opt_rpl *)((uipBuff->buff.u8 + UIP_IPH_LEN + 2));
 
-  if(UIP_IP_BUF->proto == UIP_PROTO_HBHO && rpl_opt->opt_type == UIP_EXT_HDR_OPT_RPL) {
-    if(hbh_hdr->len != ((RPL_HOP_BY_HOP_LEN - 8) / 8)
-        || rpl_opt->opt_len != RPL_HDR_OPT_LEN) {
+  if(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->proto == UIP_PROTO_HBHO && rpl_opt->opt_type == UIP_EXT_HDR_OPT_RPL) {
+    if(hbh_hdr->len != ((RPL_HOP_BY_HOP_LEN - 8) / 8) || rpl_opt->opt_len != RPL_HDR_OPT_LEN) {
 
     	TRice(iD(3444), "err:hop-by-hop extension header has wrong size (%u)\n", rpl_opt->opt_len);
       return 0; /* Drop */
@@ -384,7 +378,7 @@ update_hbh_header(void)
     }
 
     /* Update sender rank and instance, will update flags next */
-    rpl_opt->senderrank = UIP_HTONS(curr_instance.dag.rank);
+    rpl_opt->senderrank = __REVSH(curr_instance.dag.rank);
     rpl_opt->instance = curr_instance.instance_id;
   }
 
@@ -395,72 +389,67 @@ update_hbh_header(void)
  * for packets initated by non-root nodes.
  * Inserts and initalizes (via update_hbh_header) a RPL HBH ext header.
  * Returns 1 on success, 0 on failure. */
-static int
-insert_hbh_header(void)
-{
-  struct uip_hbho_hdr *hbh_hdr = (struct uip_hbho_hdr *)UIP_IP_PAYLOAD(0);
-  struct uip_ext_hdr_opt_rpl *rpl_opt = (struct uip_ext_hdr_opt_rpl *)(UIP_IP_PAYLOAD(2));
+static int insert_hbh_header(sUipBuff *uipBuff) {
+  struct uip_hbho_hdr *hbh_hdr = (struct uip_hbho_hdr *)(uipBuff->buff.u8 + UIP_IPH_LEN);
+  struct uip_ext_hdr_opt_rpl *rpl_opt = (struct uip_ext_hdr_opt_rpl *)((uipBuff->buff.u8 + UIP_IPH_LEN + 2));
 
   /* Insert hop-by-hop header */
   TRice(iD(6506), "msg:creating hop-by-hop option\n");
-  if(uip_len + RPL_HOP_BY_HOP_LEN > UIP_LINK_MTU) {
+  if(uipBuff->len + RPL_HOP_BY_HOP_LEN > UIP_LINK_MTU) {
 	  TRice(iD(1005), "err:packet too long: impossible to add hop-by-hop option\n");
     return 0;
   }
 
   /* Move existing ext headers and payload RPL_HOP_BY_HOP_LEN further */
-  memmove(UIP_IP_PAYLOAD(RPL_HOP_BY_HOP_LEN), UIP_IP_PAYLOAD(0), uip_len - UIP_IPH_LEN);
-  memset(UIP_IP_PAYLOAD(0), 0, RPL_HOP_BY_HOP_LEN);
+  memmove((uipBuff->buff.u8 + UIP_IPH_LEN + RPL_HOP_BY_HOP_LEN), (uipBuff->buff.u8 + UIP_IPH_LEN), uipBuff->len - UIP_IPH_LEN);
+  memset((uipBuff->buff.u8 + UIP_IPH_LEN), 0, RPL_HOP_BY_HOP_LEN);
 
   /* Insert HBH header (as first ext header) */
-  hbh_hdr->next = UIP_IP_BUF->proto;
-  UIP_IP_BUF->proto = UIP_PROTO_HBHO;
+  hbh_hdr->next = IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->proto;
+  IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->proto = UIP_PROTO_HBHO;
 
   /* Initialize HBH option */
   hbh_hdr->len = (RPL_HOP_BY_HOP_LEN - 8) / 8;
   rpl_opt->opt_type = UIP_EXT_HDR_OPT_RPL;
   rpl_opt->opt_len = RPL_HDR_OPT_LEN;
   rpl_opt->flags = 0;
-  rpl_opt->senderrank = UIP_HTONS(curr_instance.dag.rank);
+  rpl_opt->senderrank = __REVSH(curr_instance.dag.rank);
   rpl_opt->instance = curr_instance.instance_id;
 
-  uipbuf_add_ext_hdr(RPL_HOP_BY_HOP_LEN);
-  uipbuf_set_len_field(UIP_IP_BUF, uip_len - UIP_IPH_LEN);
+  uipbuf_add_ext_hdr(uipBuff, RPL_HOP_BY_HOP_LEN);
+  uip6_uipHdrSetLen(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8), uipBuff->len - UIP_IPH_LEN);
 
   /* Update header before returning */
-  return update_hbh_header();
+  return update_hbh_header(uipBuff);
 }
 /*---------------------------------------------------------------------------*/
-int
-rpl_ext_header_update(void)
-{
+int rpl_ext_header_update(sUipBuff *uipBuff) {
   if(!curr_instance.used
-      || uip_is_addr_linklocal(&UIP_IP_BUF->destipaddr)
-      || uip_is_addr_mcast(&UIP_IP_BUF->destipaddr)) {
+      || uip_is_addr_linklocal(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr)
+      || uip_is_addr_mcast(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr)) {
     return 1;
   }
 
   if(rpl_dag_root_is_root()) {
     /* At the root, remove headers if any, and insert SRH or HBH
     * (SRH is inserted only if the destination is down the DODAG) */
-    rpl_ext_header_remove();
+    rpl_ext_header_remove(uipBuff);
     /* Insert SRH (if needed) */
-    return insert_srh_header();
+    return insert_srh_header(uipBuff);
   } else {
-    if(uip_ds6_is_my_addr(&UIP_IP_BUF->srcipaddr)
-        && UIP_IP_BUF->ttl == uip_ds6_if.cur_hop_limit) {
+    if(uip_ds6_is_my_addr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr) && IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->ttl == Ds6_GetHopLimit()) {
       /* Insert HBH option at source. Checking the address is not sufficient because
        * in non-storing mode, a packet may go up and then down the same path again */
-      return insert_hbh_header();
+      return insert_hbh_header(uipBuff);
     } else {
       /* Update HBH option at forwarders */
-      return update_hbh_header();
+      return update_hbh_header(uipBuff);
     }
   }
 }
 /*---------------------------------------------------------------------------*/
 bool
-rpl_ext_header_remove(void)
+rpl_ext_header_remove(sUipBuff *uipBuff)
 {
   uint8_t *prev_proto_ptr;
   uint8_t protocol;
@@ -469,12 +458,12 @@ rpl_ext_header_remove(void)
   struct uip_ext_hdr *ext_ptr;
   struct uip_ext_hdr_opt *opt_ptr;
 
-  next_header = uipbuf_get_next_header(uip_buf, uip_len, &protocol, true);
+  next_header = uipbuf_get_next_header(uipBuff->buff.u8, uipBuff->len, &protocol, true);
   if(next_header == NULL) {
     return true;
   }
   ext_ptr = (struct uip_ext_hdr *)next_header;
-  prev_proto_ptr = &UIP_IP_BUF->proto;
+  prev_proto_ptr = &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->proto;
 
   while(uip_is_proto_ext_hdr(protocol)) {
     opt_ptr = (struct uip_ext_hdr_opt *)(next_header + 2);
@@ -483,26 +472,23 @@ rpl_ext_header_remove(void)
       /* Remove ext header */
       *prev_proto_ptr = ext_ptr->next;
       ext_len = ext_ptr->len * 8 + 8;
-      if(uipbuf_add_ext_hdr(-ext_len) == false) {
+      if(uipbuf_add_ext_hdr(uipBuff, -ext_len) == false) {
         return false;
       }
 
       /* Update length field and move rest of packet to the "left" */
-      uipbuf_set_len_field(UIP_IP_BUF, uip_len - UIP_IPH_LEN);
-      if(uip_len <= next_header - uip_buf) {
+      uip6_uipHdrSetLen(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8), uipBuff->len - UIP_IPH_LEN);
+      if(uipBuff->len <= next_header - uipBuff->buff.u8) {
         /* No more data to move. */
         return false;
       }
-      memmove(next_header, next_header + ext_len,
-              uip_len - (next_header - uip_buf));
+      memmove(next_header, next_header + ext_len, uipBuff->len - (next_header - uipBuff->buff.u8));
 
       /* Update loop variables */
       protocol = *prev_proto_ptr;
     } else {
       /* move to the ext hdr */
-      next_header = uipbuf_get_next_header(next_header,
-                                           uip_len - (next_header - uip_buf),
-                                           &protocol, false);
+      next_header = uipbuf_get_next_header(next_header, uipBuff->len - (next_header - uipBuff->buff.u8), &protocol, false);
       if(next_header == NULL) {
         /* Processing finished. */
         break;

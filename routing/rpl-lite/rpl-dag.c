@@ -42,10 +42,7 @@
  * Contributors: George Oikonomou <oikonomou@users.sourceforge.net> (multicast)
  */
 
-//#include "net/routing/rpl-lite/rpl.h"
-//#include "net/ipv6/uip-sr.h"
-//#include "net/nbr-table.h"
-//#include "net/link-stats.h"
+#include "../../network/uip-nd6.h"
 #include "rpl-timers.h"
 #include "rpl-dag-root.h"
 #include "rpl-dag.h"

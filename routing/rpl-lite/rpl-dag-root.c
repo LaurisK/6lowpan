@@ -44,9 +44,14 @@
 //#include "net/ipv6/uip-ds6-route.h"
 //#include "net/ipv6/uip-sr.h"
 #include "rpl.h"
+#include "rpl-dag.h"
 #include "rpl-dag-root.h"
 #include "../../network/uip-ds6.h"
+#include "../../network/uip-nd6.h"
+#include "../../addressing.h"
 
+#warning "deglobalize uip_ds6_if with doing so - retrun uip_ds6_netif_t to *.c"
+extern uip_ds6_netif_t uip_ds6_if;
 /*---------------------------------------------------------------------------*/
 void
 rpl_dag_root_print_links(const char *str)
@@ -88,7 +93,7 @@ set_global_address(uip_ipaddr_t *prefix, uip_ipaddr_t *iid)
     memcpy(&root_ipaddr, prefix, 8);
   }
   if(iid == NULL) {
-    uip_ds6_set_addr_iid(&root_ipaddr, &uip_lladdr);
+	Addr_SetInterfId(&root_ipaddr, &uip_lladdr);
   } else {
     memcpy(((uint8_t*)&root_ipaddr) + 8, ((uint8_t*)iid) + 8, 8);
   }
@@ -98,8 +103,7 @@ set_global_address(uip_ipaddr_t *prefix, uip_ipaddr_t *iid)
   TRice(iD(1428), "msg:IPv6 addresses:\n");
   for(i = 0; i < UIP_DS6_ADDR_NB; i++) {
     state = uip_ds6_if.addr_list[i].state;
-    if(uip_ds6_if.addr_list[i].isused &&
-       (state == ADDR_TENTATIVE || state == ADDR_PREFERRED)) {
+    if(uip_ds6_if.addr_list[i].isused && (state == ADDR_TENTATIVE || state == ADDR_PREFERRED)) {
       TRiceS(iD(4251), "msg:-- %s\n", uip6_printAddr(&uip_ds6_if.addr_list[i].ipaddr, NULL));
     }
   }
@@ -128,8 +132,7 @@ rpl_dag_root_start(void)
 
   for(i = 0; i < UIP_DS6_ADDR_NB; i++) {
     state = uip_ds6_if.addr_list[i].state;
-    if(uip_ds6_if.addr_list[i].isused &&
-       state == ADDR_PREFERRED &&
+    if(uip_ds6_if.addr_list[i].isused && state == ADDR_PREFERRED &&
        !uip_is_addr_linklocal(&uip_ds6_if.addr_list[i].ipaddr)) {
       ipaddr = &uip_ds6_if.addr_list[i].ipaddr;
     }
@@ -138,8 +141,7 @@ rpl_dag_root_start(void)
   root_if = uip_ds6_addr_lookup(ipaddr);
   if(ipaddr != NULL || root_if != NULL) {
 
-    rpl_dag_init_root(RPL_DEFAULT_INSTANCE, ipaddr,
-      (uip_ipaddr_t *)rpl_get_global_address(), 64, UIP_ND6_RA_FLAG_AUTONOMOUS);
+    rpl_dag_init_root(RPL_DEFAULT_INSTANCE, ipaddr, (uip_ipaddr_t *)rpl_get_global_address(), 64, UIP_ND6_RA_FLAG_AUTONOMOUS);
     rpl_dag_update_state();
 
     TRice(iD(5598), "msg:created a new RPL DAG\n");

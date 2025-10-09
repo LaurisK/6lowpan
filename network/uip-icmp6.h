@@ -133,7 +133,7 @@ void uip_icmp6_error_output(sUipBuff *faultyBuff, uint8_t type, uint8_t code, ui
  * \param code of the message
  * \param payload_len length of the payload
  */
-void uip_icmp6_send(const uip_ipaddr_t *dest, int type, int code, int payload_len);
+void uip_icmp6_send(sUipBuff *icmpBuff, const uip_ipaddr_t *dest, int type, int code, int payload_len);
 
 
 

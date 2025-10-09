@@ -48,8 +48,9 @@
 //#include "net/routing/rpl-lite/rpl.h"
 //#include "net/nbr-table.h"
 //#include "net/link-stats.h"
-#include "rpl.h"
 #include "../../network/link-stats.h"
+#include "rpl.h"
+#include "rpl-neighbor.h"
 
 /* RFC6551 and RFC6719 do not mandate the use of a specific formula to
  * compute the ETX value. This MRHOF implementation relies on the value
