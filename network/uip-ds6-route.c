@@ -108,7 +108,7 @@ static void assert_nbr_routes_list_sane(void)
   for(r = uip_ds6_route_head(), count = 0; r != NULL && count < UIP_DS6_ROUTE_NB * 2; r = uip_ds6_route_next(r), count++);
 
   if(count > UIP_DS6_ROUTE_NB) {
-	  TRice("uip-ds6-route.c: assert_nbr_routes_list_sane route list is in infinite loop\n");
+	  TRice(iD(6184), "uip-ds6-route.c: assert_nbr_routes_list_sane route list is in infinite loop\n");
   }
 
 #if (UIP_MAX_ROUTES != 0)
@@ -257,7 +257,7 @@ uip_ds6_route_lookup(const uip_ipaddr_t *addr)
   uip_ds6_route_t *found_route;
   uint8_t longestmatch;
 
-  TRiceS("msg:Looking up route for %s\n", uip6_printAddr(addr, NULL));
+  TRiceS(iD(3434), "msg:Looking up route for %s\n", uip6_printAddr(addr, NULL));
 
   if(addr == NULL) {
     return NULL;
@@ -280,10 +280,10 @@ uip_ds6_route_lookup(const uip_ipaddr_t *addr)
   }
 
   if(found_route != NULL) {
-    TRiceS("msg:Found route: %s", uip6_printAddr(addr, NULL));
-    TRiceS("msg: via %s\n", uip6_printAddr(found_route, NULL));
+    TRiceS(iD(7255), "msg:Found route: %s", uip6_printAddr(addr, NULL));
+    TRiceS(iD(2416), "msg: via %s\n", uip6_printAddr(found_route, NULL));
   } else {
-	TRice("wrn:No route found\n");
+	TRice(iD(6340), "wrn:No route found\n");
   }
 
   if(found_route != NULL && found_route != list_head(routelist)) {
@@ -321,7 +321,7 @@ uip_ds6_route_add(const uip_ipaddr_t *ipaddr, uint8_t length,
   /* Get link-layer address of next hop, make sure it is in neighbor table */
   const uip_lladdr_t *nexthop_lladdr = uip_ds6_nbr_lladdr_from_ipaddr(nexthop);
   if(nexthop_lladdr == NULL) {
-    TRiceS("msg:Add: neighbor link-local address unknown for %s\n", uip6_printAddr(nexthop, NULL));
+    TRiceS(iD(4430), "msg:Add: neighbor link-local address unknown for %s\n", uip6_printAddr(nexthop, NULL));
     return NULL;
   }
 
@@ -336,7 +336,7 @@ uip_ds6_route_add(const uip_ipaddr_t *ipaddr, uint8_t length,
       /* no need to update route - already correct! */
       return r;
     }
-    TRiceS("msg:Add: old route for %s found, deleting it\n", uip6_printAddr(ipaddr, NULL));
+    TRiceS(iD(7392), "msg:Add: old route for %s found, deleting it\n", uip6_printAddr(ipaddr, NULL));
 
     uip_ds6_route_rm(r);
   }
@@ -357,7 +357,7 @@ uip_ds6_route_add(const uip_ipaddr_t *ipaddr, uint8_t length,
       if(oldest == NULL) {
         return NULL;
       }
-      TRiceS("msg:Add: dropping route to %s\n", uip6_printAddr(&oldest->ipaddr, NULL));
+      TRiceS(iD(4223), "msg:Add: dropping route to %s\n", uip6_printAddr(&oldest->ipaddr, NULL));
       uip_ds6_route_rm(oldest);
     }
 
@@ -385,7 +385,7 @@ uip_ds6_route_add(const uip_ipaddr_t *ipaddr, uint8_t length,
       if(routes == NULL) {
         /* This should not happen, as we explicitly deallocated one
            route table entry above. */
-    	  TRice("err:Add: could not allocate neighbor table entry\n");
+    	  TRice(iD(7520), "err:Add: could not allocate neighbor table entry\n");
         return NULL;
       }
       LIST_STRUCT_INIT(routes, route_list);
@@ -400,7 +400,7 @@ uip_ds6_route_add(const uip_ipaddr_t *ipaddr, uint8_t length,
     if(r == NULL) {
       /* This should not happen, as we explicitly deallocated one
          route table entry above. */
-    	TRice("err:Add: could not allocate route\n");
+    	TRice(iD(7851), "err:Add: could not allocate route\n");
       return NULL;
     }
 
@@ -412,7 +412,7 @@ uip_ds6_route_add(const uip_ipaddr_t *ipaddr, uint8_t length,
     if(nbrr == NULL) {
       /* This should not happen, as we explicitly deallocated one
          route table entry above. */
-    	TRice("err:Add: could not allocate neighbor route list entry\n");
+    	TRice(iD(4989), "err:Add: could not allocate neighbor route list entry\n");
       memb_free(&routememb, r);
       return NULL;
     }
@@ -423,7 +423,7 @@ uip_ds6_route_add(const uip_ipaddr_t *ipaddr, uint8_t length,
     r->neighbor_routes = routes;
     num_routes++;
 
-    TRice("msg:Add: num %d\n", num_routes);
+    TRice(iD(1727), "msg:Add: num %d\n", num_routes);
 
     /* lock this entry so that nexthop is not removed */
     nbr_table_lock(nbr_routes, routes);
@@ -436,8 +436,8 @@ uip_ds6_route_add(const uip_ipaddr_t *ipaddr, uint8_t length,
   memset(&r->state, 0, sizeof(UIP_DS6_ROUTE_STATE_TYPE));
 #endif
 
-  TRiceS("msg:Add: adding route: %s", uip6_printAddr(ipaddr, NULL));
-  TRiceS("msg: via %s\n", uip6_printAddr(nexthop, NULL));
+  TRiceS(iD(7087), "msg:Add: adding route: %s", uip6_printAddr(ipaddr, NULL));
+  TRiceS(iD(4412), "msg: via %s\n", uip6_printAddr(nexthop, NULL));
 
 #if UIP_DS6_NOTIFICATIONS
   call_route_callback(UIP_DS6_NOTIFICATION_ROUTE_ADD, ipaddr, nexthop);
@@ -465,7 +465,7 @@ uip_ds6_route_rm(uip_ds6_route_t *route)
   }
 
   if(route != NULL && route->neighbor_routes != NULL) {
-    TRiceS("msg:Rm: removing route: %s\n", uip6_printAddr(&route->ipaddr, NULL));
+    TRiceS(iD(7608), "msg:Rm: removing route: %s\n", uip6_printAddr(&route->ipaddr, NULL));
 
     /* Remove the route from the route list */
     list_remove(routelist, route);
@@ -476,13 +476,13 @@ uip_ds6_route_rm(uip_ds6_route_t *route)
         neighbor_route = list_item_next(neighbor_route));
 
     if(neighbor_route == NULL) {
-      TRiceS("msg:Rm: neighbor_route was NULL for %s\n", uip6_printAddr(&route->ipaddr, NULL));
+      TRiceS(iD(5077), "msg:Rm: neighbor_route was NULL for %s\n", uip6_printAddr(&route->ipaddr, NULL));
     }
     list_remove(route->neighbor_routes->route_list, neighbor_route);
     if(list_head(route->neighbor_routes->route_list) == NULL) {
       /* If this was the only route using this neighbor, remove the
          neighbor from the table - this implicitly unlocks nexthop */
-      TRice("msg:Rm: removing neighbor too\n");
+      TRice(iD(5667), "msg:Rm: removing neighbor too\n");
       nbr_table_remove(nbr_routes, route->neighbor_routes->route_list);
 #ifdef NETSTACK_CONF_ROUTING_NEIGHBOR_REMOVED_CALLBACK
       NETSTACK_CONF_ROUTING_NEIGHBOR_REMOVED_CALLBACK(
@@ -494,7 +494,7 @@ uip_ds6_route_rm(uip_ds6_route_t *route)
 
     num_routes--;
 
-    TRice("msg:Rm: num %d\n", num_routes);
+    TRice(iD(6502), "msg:Rm: num %d\n", num_routes);
 
 #if UIP_DS6_NOTIFICATIONS
     call_route_callback(UIP_DS6_NOTIFICATION_ROUTE_RM,
@@ -572,17 +572,17 @@ uip_ds6_defrt_add(const uip_ipaddr_t *ipaddr, unsigned long interval)
   if(d == NULL) {
     d = pvPortMalloc(sizeof(uip_ds6_defrt_t));
     if(d == NULL) {
-      TRiceS("msg:Add default: could not add default route to %s, out of memory\n", uip6_printAddr(ipaddr, NULL));
+      TRiceS(iD(6538), "msg:Add default: could not add default route to %s, out of memory\n", uip6_printAddr(ipaddr, NULL));
       return NULL;
     } else {
-      TRiceS("msg:Add default: adding default route to %s\n", uip6_printAddr(ipaddr, NULL));
+      TRiceS(iD(4922), "msg:Add default: adding default route to %s\n", uip6_printAddr(ipaddr, NULL));
     }
 
     d->next = dfltRouterListHead;
     dfltRouterListHead = d;
   }
   else {
-	  TRice("msg:Refreshing default\n");
+	  TRice(iD(4751), "msg:Refreshing default\n");
   }
 
   uip_ipaddr_copy(&d->ipaddr, ipaddr);
@@ -617,7 +617,7 @@ uip_ds6_defrt_rm(uip_ds6_defrt_t *defrt)
   for(d = dfltRouterListHead; d != NULL; d = d->next) {
     if(d == defrt) {
       uip_ds6_defrt_t *walker = dfltRouterListHead, *follower = NULL;
-      TRice("msg:Removing default\n");
+      TRice(iD(7117), "msg:Removing default\n");
       /* Remove default router from list */
       while (NULL != walker) {
     	  if (defrt == walker) {
@@ -669,14 +669,14 @@ const uip_ipaddr_t * uip_ds6_defrt_choose(void)
 
   addr = NULL;
   for(d = dfltRouterListHead; d != NULL; d = d->next) {
-    TRiceS("msg:Default route, IP address %s\n", uip6_printAddr(&d->ipaddr, NULL));
+    TRiceS(iD(6349), "msg:Default route, IP address %s\n", uip6_printAddr(&d->ipaddr, NULL));
     bestnbr = uip_ds6_nbr_lookup(&d->ipaddr);
     if(bestnbr != NULL && bestnbr->state != NBR_INCOMPLETE) {
-      TRiceS("msg:Default route found, IP address %s\n", uip6_printAddr(&d->ipaddr, NULL));
+      TRiceS(iD(2977), "msg:Default route found, IP address %s\n", uip6_printAddr(&d->ipaddr, NULL));
       return &d->ipaddr;
     } else {
       addr = &d->ipaddr;
-      TRiceS("msg:Default route Incomplete found, IP address %s\n", uip6_printAddr(&d->ipaddr, NULL));
+      TRiceS(iD(1786), "msg:Default route Incomplete found, IP address %s\n", uip6_printAddr(&d->ipaddr, NULL));
     }
   }
   return addr;
@@ -689,7 +689,7 @@ uip_ds6_defrt_periodic(void)
   d = dfltRouterListHead;
   while(d != NULL) {
     if(!d->isinfinite && Time_TimerExpired(&d->lifetime)) {
-      TRice("msg:Default route periodic: defrt lifetime expired\n");
+      TRice(iD(3584), "msg:Default route periodic: defrt lifetime expired\n");
       uip_ds6_defrt_rm(d);
       d = dfltRouterListHead;
     } else {

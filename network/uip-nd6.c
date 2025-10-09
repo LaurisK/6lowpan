@@ -171,16 +171,16 @@ static sUipBuff nsBuff = {0};
 #if UIP_ND6_SEND_NA
 static void ns_input(sUipBuff *uipBuff) {
   uint8_t flags;
-  TRiceS("msg:Received NS from %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
-  TRiceS("msg: to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
-  TRiceS("msg: with target address %s\n", uip6_printAddr((uip_ipaddr_t *) (&UIP_ND6_NS_BUF(uipBuff)->tgtipaddr), NULL));
+  TRiceS(iD(5544), "msg:Received NS from %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
+  TRiceS(iD(1395), "msg: to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
+  TRiceS(iD(5057), "msg: with target address %s\n", uip6_printAddr((uip_ipaddr_t *) (&UIP_ND6_NS_BUF(uipBuff)->tgtipaddr), NULL));
   UIP_STAT(++uip_stat.nd6.recv);
 
 #if UIP_CONF_IPV6_CHECKS
   if((IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->ttl != UIP_ND6_HOP_LIMIT) ||
      (uip_is_addr_mcast(&UIP_ND6_NS_BUF(uipBuff)->tgtipaddr)) ||
      (ICMP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->icode != 0)) {
-	  TRice("err:NS received is bad\n");
+	  TRice(iD(4977), "err:NS received is bad\n");
     goto discard;
   }
 #endif /* UIP_CONF_IPV6_CHECKS */
@@ -191,7 +191,7 @@ static void ns_input(sUipBuff *uipBuff) {
   while((UIP_IPH_LEN + uipBuff->extLen + UIP_ICMPH_LEN + nd6_opt_offset) < uipBuff->len) {
 #if UIP_CONF_IPV6_CHECKS
     if(ND6_OPT_HDR_BUF(uipBuff, nd6_opt_offset)->len == 0) {
-    	TRice("err:NS received is bad\n");
+    	TRice(iD(4410), "err:NS received is bad\n");
       goto discard;
     }
 #endif /* UIP_CONF_IPV6_CHECKS */
@@ -201,7 +201,7 @@ static void ns_input(sUipBuff *uipBuff) {
 #if UIP_CONF_IPV6_CHECKS
       /* There must be NO option in a DAD NS */
       if(uip_is_addr_unspecified(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr)) {
-    	  TRice("err:NS received is bad\n");
+    	  TRice(iD(6814), "err:NS received is bad\n");
         goto discard;
       } else {
 #endif /*UIP_CONF_IPV6_CHECKS */
@@ -232,7 +232,7 @@ static void ns_input(sUipBuff *uipBuff) {
 #endif /*UIP_CONF_IPV6_CHECKS */
       break;
     default:
-    	TRice("wrn:ND option not supported in NS");
+    	TRice(iD(5021), "wrn:ND option not supported in NS");
       break;
     }
     nd6_opt_offset += (ND6_OPT_HDR_BUF(uipBuff, nd6_opt_offset)->len << 3);
@@ -245,7 +245,7 @@ static void ns_input(sUipBuff *uipBuff) {
 #if UIP_ND6_DEF_MAXDADNS > 0
 #if UIP_CONF_IPV6_CHECKS
       if(!uip_is_addr_solicited_node(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr)) {
-    	  TRice("err:NS received is bad\n");
+    	  TRice(iD(6620), "err:NS received is bad\n");
         goto discard;
       }
 #endif /* UIP_CONF_IPV6_CHECKS */
@@ -271,7 +271,7 @@ static void ns_input(sUipBuff *uipBuff) {
          * NA in response of DAD NS we sent, hence DAD will fail anyway. If we
          * were not doing DAD, it means there is a duplicate in the network!
          */
-    	TRice("err:NS received is bad\n");
+    	TRice(iD(3277), "err:NS received is bad\n");
       goto discard;
     }
 #endif /*UIP_CONF_IPV6_CHECKS */
@@ -292,7 +292,7 @@ static void ns_input(sUipBuff *uipBuff) {
       goto create_na;
     } else {
 #if UIP_CONF_IPV6_CHECKS
-    	TRice("err:NS received is bad\n");
+    	TRice(iD(1648), "err:NS received is bad\n");
       goto discard;
 #endif /* UIP_CONF_IPV6_CHECKS */
     }
@@ -328,9 +328,9 @@ create_na:
   uipbuf_set_len(uipBuff, UIP_IPH_LEN + UIP_ICMPH_LEN + UIP_ND6_NA_LEN + UIP_ND6_OPT_LLAO_LEN);
 
   UIP_STAT(++uip_stat.nd6.sent);
-  TRiceS("msg:Sending NS to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
-  TRiceS("msg: from %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
-  TRiceS("msg: with target address %s\n", uip6_printAddr(&UIP_ND6_NA_BUF(uipBuff)->tgtipaddr, NULL));
+  TRiceS(iD(7977), "msg:Sending NS to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
+  TRiceS(iD(7902), "msg: from %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
+  TRiceS(iD(6231), "msg: with target address %s\n", uip6_printAddr(&UIP_ND6_NA_BUF(uipBuff)->tgtipaddr, NULL));
   return;
 
 discard:
@@ -370,7 +370,7 @@ void uip_nd6_ns_output(uip_ipaddr_t * src, uip_ipaddr_t * dest, uip_ipaddr_t * t
       uip_ds6_select_src(&IP_HDR_CAST_TO_BUFF(nsBuff.buff.u8)->srcipaddr, &IP_HDR_CAST_TO_BUFF(nsBuff.buff.u8)->destipaddr);
     }
     if (uip_is_addr_unspecified(&IP_HDR_CAST_TO_BUFF(nsBuff.buff.u8)->srcipaddr)) {
-    	TRice("err:Dropping NS due to no suitable source address\n");
+    	TRice(iD(7681), "err:Dropping NS due to no suitable source address\n");
       uipbuf_clear(&nsBuff);
       return;
     }
@@ -389,9 +389,9 @@ void uip_nd6_ns_output(uip_ipaddr_t * src, uip_ipaddr_t * dest, uip_ipaddr_t * t
   ICMP_HDR_CAST_TO_BUFF(nsBuff.buff.u8 + UIP_IPH_LEN + nsBuff.extLen)->icmpchksum = ~uip_icmp6chksum(&nsBuff);
 
   UIP_STAT(++uip_stat.nd6.sent);
-  TRiceS("msg:Sending NS to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(nsBuff.buff.u8)->destipaddr, NULL));
-  TRiceS("msg: from %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(nsBuff.buff.u8)->srcipaddr, NULL));
-  TRiceS("msg: with target address %s\n", uip6_printAddr(tgt, NULL));
+  TRiceS(iD(3556), "msg:Sending NS to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(nsBuff.buff.u8)->destipaddr, NULL));
+  TRiceS(iD(4192), "msg: from %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(nsBuff.buff.u8)->srcipaddr, NULL));
+  TRiceS(iD(6331), "msg: with target address %s\n", uip6_printAddr(tgt, NULL));
   return;
 }
 #endif /* UIP_ND6_SEND_NS */
@@ -422,9 +422,9 @@ static void na_input(sUipBuff *uipBuff) {
   uint8_t is_override;
   uip_lladdr_t lladdr_aligned;
 
-  TRiceS("msg:Received NA from %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
-  TRiceS("msg: to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
-  TRiceS("msg: with target address %s\n", uip6_printAddr(&UIP_ND6_NA_BUF(uipBuff)->tgtipaddr, NULL));
+  TRiceS(iD(7119), "msg:Received NA from %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
+  TRiceS(iD(5928), "msg: to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
+  TRiceS(iD(3504), "msg: with target address %s\n", uip6_printAddr(&UIP_ND6_NA_BUF(uipBuff)->tgtipaddr, NULL));
   UIP_STAT(++uip_stat.nd6.recv);
 
   /*
@@ -443,7 +443,7 @@ static void na_input(sUipBuff *uipBuff) {
      (ICMP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->icode != 0) ||
      (uip_is_addr_mcast(&UIP_ND6_NA_BUF(uipBuff)->tgtipaddr)) ||
      (is_solicited && uip_is_addr_mcast(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr))) {
-	  TRice("err:NA received is bad\n");
+	  TRice(iD(2845), "err:NA received is bad\n");
     goto discard;
   }
 #endif /*UIP_CONF_IPV6_CHECKS */
@@ -454,7 +454,7 @@ static void na_input(sUipBuff *uipBuff) {
   while((UIP_IPH_LEN + uipBuff->extLen + UIP_ICMPH_LEN + nd6_opt_offset) < uipBuff->len) {
 #if UIP_CONF_IPV6_CHECKS
     if(ND6_OPT_HDR_BUF(uipBuff, nd6_opt_offset)->len == 0) {
-    	TRice("err:NA received is bad\n");
+    	TRice(iD(2922), "err:NA received is bad\n");
       goto discard;
     }
 #endif /*UIP_CONF_IPV6_CHECKS */
@@ -463,7 +463,7 @@ static void na_input(sUipBuff *uipBuff) {
       nd6_opt_llao = (uint8_t *)ND6_OPT_HDR_BUF(uipBuff, nd6_opt_offset);
       break;
     default:
-    	TRice("wrn:ND option not supported in NA\n");
+    	TRice(iD(3528), "wrn:ND option not supported in NA\n");
       break;
     }
     nd6_opt_offset += (ND6_OPT_HDR_BUF(uipBuff, nd6_opt_offset)->len << 3);
@@ -476,7 +476,7 @@ static void na_input(sUipBuff *uipBuff) {
       uip_ds6_dad_failed(addr);
     }
 #endif /*UIP_ND6_DEF_MAXDADNS > 0 */
-    TRice("err:NA received is bad\n");
+    TRice(iD(7049), "err:NA received is bad\n");
     goto discard;
   } else {
     const uip_lladdr_t *lladdr;
@@ -571,8 +571,8 @@ discard:
 /*---------------------------------------------------------------------------*/
 static void rs_input(sUipBuff *uipBuff) {
 
-  TRiceS("msg:Received RS from %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
-  TRiceS("msg: to %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
+  TRiceS(iD(3499), "msg:Received RS from %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
+  TRiceS(iD(2470), "msg: to %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
   UIP_STAT(++uip_stat.nd6.recv);
 
 
@@ -583,7 +583,7 @@ static void rs_input(sUipBuff *uipBuff) {
    * if the NA is solicited, dest must not be multicast
    */
   if((IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->ttl != UIP_ND6_HOP_LIMIT) || (ICMP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->icode != 0)) {
-	  TRice("err:RS received is bad\n");
+	  TRice(iD(7555), "err:RS received is bad\n");
     goto discard;
   }
 #endif /*UIP_CONF_IPV6_CHECKS */
@@ -596,7 +596,7 @@ static void rs_input(sUipBuff *uipBuff) {
   while((UIP_IPH_LEN + uipBuff->extLen + UIP_ICMPH_LEN + nd6_opt_offset) < uipBuff->len) {
 #if UIP_CONF_IPV6_CHECKS
     if(ND6_OPT_HDR_BUF(uipBuff, nd6_opt_offset)->len == 0) {
-    	TRice("err:RS received is bad\n");
+    	TRice(iD(7912), "err:RS received is bad\n");
       goto discard;
     }
 #endif /*UIP_CONF_IPV6_CHECKS */
@@ -605,7 +605,7 @@ static void rs_input(sUipBuff *uipBuff) {
       nd6_opt_llao = (uint8_t *)ND6_OPT_HDR_BUF(uipBuff, nd6_opt_offset);
       break;
     default:
-    	TRice("wrn:ND option not supported in RS\n");
+    	TRice(iD(2143), "wrn:ND option not supported in RS\n");
       break;
     }
     nd6_opt_offset += (ND6_OPT_HDR_BUF(uipBuff, nd6_opt_offset)->len << 3);
@@ -614,7 +614,7 @@ static void rs_input(sUipBuff *uipBuff) {
   if(nd6_opt_llao != NULL) {
 #if UIP_CONF_IPV6_CHECKS
     if(uip_is_addr_unspecified(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr)) {
-    	TRice("err:RS received is bad\n");
+    	TRice(iD(4090), "err:RS received is bad\n");
       goto discard;
     } else {
 #endif /*UIP_CONF_IPV6_CHECKS */
@@ -737,7 +737,7 @@ void uip_nd6_ra_output(sUipBuff *dsPeriodicBuff, uip_ipaddr_t * dest) {
       i++;
     }
     ND6_OPT_RDNSS_BUF(nd6_opt_offset)->len = UIP_ND6_OPT_RDNSS_LEN + (i << 1);
-    TRice("msg:%d nameservers reported\n", i);
+    TRice(iD(7722), "msg:%d nameservers reported\n", i);
     dsPeriodicBuff->len += ND6_OPT_RDNSS_BUF(nd6_opt_offset)->len << 3;
     nd6_opt_offset += ND6_OPT_RDNSS_BUF(nd6_opt_offset)->len << 3;
   }
@@ -750,8 +750,8 @@ void uip_nd6_ra_output(sUipBuff *dsPeriodicBuff, uip_ipaddr_t * dest) {
   ICMP_HDR_CAST_TO_BUFF(dsPeriodicBuff->buff.u8 + UIP_IPH_LEN + dsPeriodicBuff->extLen)->icmpchksum = ~uip_icmp6chksum(dsPeriodicBuff);
 
   UIP_STAT(++uip_stat.nd6.sent);
-  TRiceS("msg:Sending RA to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(dsPeriodicBuff->buff.u8)->destipaddr, NULL));
-  TRiceS("msg: from %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(dsPeriodicBuff->buff.u8)->srcipaddr, NULL));
+  TRiceS(iD(6586), "msg:Sending RA to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(dsPeriodicBuff->buff.u8)->destipaddr, NULL));
+  TRiceS(iD(1909), "msg: from %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(dsPeriodicBuff->buff.u8)->srcipaddr, NULL));
   return;
 }
 #endif /* UIP_ND6_SEND_RA */
@@ -770,15 +770,15 @@ void uip_nd6_ra_output(sUipBuff *dsPeriodicBuff, uip_ipaddr_t * dest) {
  */
 void ra_input(sUipBuff *uipBuff) {
   uip_lladdr_t lladdr_aligned;
-  TRiceS("msg:Received RA from %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
-  TRiceS("msg: to %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
+  TRiceS(iD(1175), "msg:Received RA from %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
+  TRiceS(iD(6237), "msg: to %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
   UIP_STAT(++uip_stat.nd6.recv);
 
 #if UIP_CONF_IPV6_CHECKS
   if((IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->ttl != UIP_ND6_HOP_LIMIT)
 		  || (!uip_is_addr_linklocal(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr))
 		  || (ICMP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->icode != 0)) {
-	  TRice("err:RA received is bad");
+	  TRice(iD(3877), "err:RA received is bad");
     goto discard;
   }
 #endif /*UIP_CONF_IPV6_CHECKS */
@@ -791,12 +791,12 @@ void ra_input(sUipBuff *uipBuff) {
   nd6_opt_offset = UIP_ND6_RA_LEN;
   while((UIP_IPH_LEN + uipBuff->extLen + UIP_ICMPH_LEN + nd6_opt_offset) < uipBuff->len) {
     if(ND6_OPT_HDR_BUF(uipBuff, nd6_opt_offset)->len == 0) {
-    	TRice("err:RA received is bad");
+    	TRice(iD(2215), "err:RA received is bad");
       goto discard;
     }
     switch (ND6_OPT_HDR_BUF(uipBuff, nd6_opt_offset)->type) {
     case UIP_ND6_OPT_SLLAO:
-    	TRice("dbg:Processing SLLAO option in RA\n");
+    	TRice(iD(1181), "dbg:Processing SLLAO option in RA\n");
       nd6_opt_llao = (uint8_t *) ND6_OPT_HDR_BUF(uipBuff, nd6_opt_offset);
       nbr = uip_ds6_nbr_lookup(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr);
       if(!extract_lladdr_from_llao_aligned(&lladdr_aligned)) {
@@ -827,11 +827,11 @@ void ra_input(sUipBuff *uipBuff) {
       }
       break;
     case UIP_ND6_OPT_MTU:
-    	TRice("dbg:Processing MTU option in RA\n");
+    	TRice(iD(7413), "dbg:Processing MTU option in RA\n");
       uip_ds6_if.link_mtu = __REV(((uip_nd6_opt_mtu *) ND6_OPT_HDR_BUF(uipBuff, nd6_opt_offset))->mtu);
       break;
     case UIP_ND6_OPT_PREFIX_INFO:
-    	TRice("dbg:Processing PREFIX option in RA\n");
+    	TRice(iD(7174), "dbg:Processing PREFIX option in RA\n");
       nd6_opt_prefix_info = (uip_nd6_opt_prefix_info *) ND6_OPT_HDR_BUF(uipBuff, nd6_opt_offset);
       if((__REV(nd6_opt_prefix_info->validlt) >= __REV(nd6_opt_prefix_info->preferredlt))
          && (!uip_is_addr_linklocal(&nd6_opt_prefix_info->prefix))) {
@@ -859,8 +859,8 @@ void ra_input(sUipBuff *uipBuff) {
               prefix->isinfinite = 1;
               break;
             default:
-              TRiceS("dbg:Updating timer of prefix %s", uip6_printAddr(&addr->ipaddr, NULL));
-              TRice("dbg: new value %d\n", __REV(nd6_opt_prefix_info->validlt));
+              TRiceS(iD(5396), "dbg:Updating timer of prefix %s", uip6_printAddr(&addr->ipaddr, NULL));
+              TRice(iD(1533), "dbg: new value %d\n", __REV(nd6_opt_prefix_info->validlt));
               Time_TimerSet(&prefix->vlifetime, __REV(nd6_opt_prefix_info->validlt));
               prefix->isinfinite = 0;
               break;
@@ -879,13 +879,13 @@ void ra_input(sUipBuff *uipBuff) {
           if((addr != NULL) && (addr->type == ADDR_AUTOCONF)) {
             if(nd6_opt_prefix_info->validlt != UIP_ND6_INFINITE_LIFETIME) {
               /* The processing below is defined in RFC4862 section 5.5.3 e */
-              TRiceS("dbg:Updating timer of address %s", uip6_printAddr(&addr->ipaddr, NULL));
+              TRiceS(iD(2134), "dbg:Updating timer of address %s", uip6_printAddr(&addr->ipaddr, NULL));
               if((__REV(nd6_opt_prefix_info->validlt) > 2 * 60 * 60) || (__REV(nd6_opt_prefix_info->validlt) > Time_TimerRemaining(&addr->vlifetime))) {
-            	TRice("dbg: new value %lu\n", (unsigned long)__REV(nd6_opt_prefix_info->validlt));
+            	TRice(iD(7581), "dbg: new value %lu\n", (unsigned long)__REV(nd6_opt_prefix_info->validlt));
             	Time_TimerSet(&addr->vlifetime, __REV(nd6_opt_prefix_info->validlt));
               } else {
             	  Time_TimerSet(&addr->vlifetime, 2 * 60 * 60);
-                TRice("dbg: new value %lu\n", (unsigned long)(2 * 60 * 60));
+                TRice(iD(2936), "dbg: new value %lu\n", (unsigned long)(2 * 60 * 60));
               }
               addr->isinfinite = 0;
             } else {
@@ -906,17 +906,17 @@ void ra_input(sUipBuff *uipBuff) {
     case UIP_ND6_OPT_RDNSS:
       uint8_t naddr = (ND6_OPT_RDNSS_BUF(uipBuff, nd6_opt_offset)->len - 1) / 2;
       uip_ipaddr_t *ip = (uip_ipaddr_t *)(&ND6_OPT_RDNSS_BUF(uipBuff, nd6_opt_offset)->ip);
-      TRice("dbg:Processing RDNSS option\n\t got %d nameservers\n", naddr);
+      TRice(iD(5872), "dbg:Processing RDNSS option\n\t got %d nameservers\n", naddr);
       while(naddr-- > 0) {
-    	TRiceS("dbg:nameserver: %s", uip6_printAddr(ip, NULL));
-        TRice("dbg: lifetime: %d\n", __REV(ND6_OPT_RDNSS_BUF(uipBuff, nd6_opt_offset)->lifetime));
+    	TRiceS(iD(6219), "dbg:nameserver: %s", uip6_printAddr(ip, NULL));
+        TRice(iD(7345), "dbg: lifetime: %d\n", __REV(ND6_OPT_RDNSS_BUF(uipBuff, nd6_opt_offset)->lifetime));
         uip_nameserver_update(ip, __REV(ND6_OPT_RDNSS_BUF(uipBuff, nd6_opt_offset)->lifetime));
         ip++;
       }
       break;
 #endif /* UIP_ND6_RA_RDNSS */
     default:
-    	TRice("err:ND option not supported in RA\n");
+    	TRice(iD(6834), "err:ND option not supported in RA\n");
       break;
     }
     nd6_opt_offset += (ND6_OPT_HDR_BUF(uipBuff, nd6_opt_offset)->len << 3);
