@@ -43,6 +43,7 @@
  */
 
 #include "../../network/uip-nd6.h"
+#include "../../network/uip-sr.h"
 #include "rpl-timers.h"
 #include "rpl-dag-root.h"
 #include "rpl-dag.h"

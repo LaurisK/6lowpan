@@ -45,6 +45,7 @@
 //#include "net/nbr-table.h"
 #include "../../network/link-stats.h"
 #include "rpl.h"
+#include "rpl-neighbor.h"
 
 /* Constants from RFC6552. We use the default values. */
 #define RANK_STRETCH       0 /* Must be in the range [0;5] */

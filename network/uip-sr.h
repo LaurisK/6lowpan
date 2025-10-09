@@ -45,8 +45,7 @@
 
 /********** Includes  **********/
 
-#include "contiki.h"
-#include "net/ipv6/uip.h"
+#include "uip.h"
 
 /********** Configuration  **********/
 

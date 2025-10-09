@@ -53,6 +53,7 @@
 #include "rpl.h"
 #include "rpl-icmp6.h"
 #include "rpl-dag.h"
+#include "rpl-neighbor.h"
 
 /*---------------------------------------------------------------------------*/
 #define RPL_DIO_GROUNDED                 0x80

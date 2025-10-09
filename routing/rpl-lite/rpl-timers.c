@@ -41,6 +41,7 @@
  */
 
 #include "../../network/link-stats.h"
+#include "../../network/uip-sr.h"
 #include "../../evt_radio.h"
 #include "rpl.h"
 #include "rpl-dag.h"
@@ -281,7 +282,7 @@ rpl_timers_schedule_dao(void)
 /*------------------------------- DAO-ACK ---------------------------------- */
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
-static void handle_dao_ack_timer(void *ptr) {
+static void handle_dao_ack_timer(void) {
   rpl_icmp6_dao_ack_output(&curr_instance.dag.dao_ack_target, curr_instance.dag.dao_ack_sequence, RPL_DAO_ACK_UNCONDITIONAL_ACCEPT);
 }
 /*---------------------------------------------------------------------------*/

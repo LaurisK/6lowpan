@@ -39,17 +39,13 @@
  * \author Simon Duquennoy <simon.duquennoy@inria.fr>
  */
 
-#include "contiki.h"
-#include "net/ipv6/uip-sr.h"
-#include "net/ipv6/uiplib.h"
-#include "net/routing/routing.h"
-#include "lib/list.h"
-#include "lib/memb.h"
-
-/* Log configuration */
-#include "sys/log.h"
-#define LOG_MODULE "IPv6 SR"
-#define LOG_LEVEL LOG_LEVEL_IPV6
+#include <stdio.h>
+//#include "net/ipv6/uip-sr.h"
+//#include "net/ipv6/uiplib.h"
+//#include "net/routing/routing.h"
+//#include "lib/list.h"
+//#include "lib/memb.h"
+#include "../routing/routing.h"
 
 /* Total number of nodes */
 static int num_nodes;
@@ -72,7 +68,7 @@ node_matches_address(void *graph, const uip_sr_node_t *node, const uip_ipaddr_t 
     return 0;
   } else {
     uip_ipaddr_t node_ipaddr;
-    NETSTACK_ROUTING.get_sr_node_ipaddr(&node_ipaddr, node);
+    rpl_lite_driver.get_sr_node_ipaddr(&node_ipaddr, node);
     return uip_ipaddr_cmp(&node_ipaddr, addr);
   }
 }
@@ -98,7 +94,7 @@ uip_sr_is_addr_reachable(void *graph, const uip_ipaddr_t *addr)
   uip_sr_node_t *node;
   uip_sr_node_t *root_node;
 
-  NETSTACK_ROUTING.get_root_ipaddr(&root_ipaddr);
+  rpl_lite_driver.get_root_ipaddr(&root_ipaddr);
   node = uip_sr_get_node(graph, addr);
   root_node = uip_sr_get_node(graph, &root_ipaddr);
 
@@ -131,7 +127,7 @@ uip_sr_update_node(void *graph, const uip_ipaddr_t *child, const uip_ipaddr_t *p
     if(parent_node == NULL) {
       parent_node = uip_sr_update_node(graph, parent, NULL, UIP_SR_INFINITE_LIFETIME);
       if(parent_node == NULL) {
-        LOG_ERR("NS: no space left for root node!\n");
+    	  TRice(iD(4296), "err:NS: no space left for root node!\n");
         return NULL;
       }
     }
@@ -142,9 +138,7 @@ uip_sr_update_node(void *graph, const uip_ipaddr_t *child, const uip_ipaddr_t *p
     child_node = memb_alloc(&nodememb);
     /* No space left, abort */
     if(child_node == NULL) {
-      LOG_ERR("NS: no space left for child ");
-      LOG_ERR_6ADDR(child);
-      LOG_ERR_("\n");
+      TRiceS(iD(3879), "err:NS: no space left for child %s\n", uip6_printAddr(child, NULL));
       return NULL;
     }
     child_node->parent = NULL;
@@ -173,11 +167,9 @@ uip_sr_update_node(void *graph, const uip_ipaddr_t *child, const uip_ipaddr_t *p
     child_node->parent = parent_node;
   }
 
-  LOG_INFO("NS: updating link, child ");
-  LOG_INFO_6ADDR(child);
-  LOG_INFO_(", parent ");
-  LOG_INFO_6ADDR(parent);
-  LOG_INFO_(", lifetime %u, num_nodes %u\n", (unsigned)lifetime, num_nodes);
+  TRiceS(iD(6130), "msg:NS: updating link, child %s, ", uip6_printAddr(child, NULL));
+  TRiceS(iD(1008), "msg:parent %s, ", uip6_printAddr(parent, NULL));
+  TRice(iD(6179), "msg:lifetime %u, num_nodes %u\n", (uint16_t)lifetime, num_nodes);
 
   return child_node;
 }
@@ -220,10 +212,8 @@ uip_sr_periodic(unsigned seconds)
       }
       if(LOG_INFO_ENABLED) {
         uip_ipaddr_t node_addr;
-        NETSTACK_ROUTING.get_sr_node_ipaddr(&node_addr, l);
-        LOG_INFO("NS: removing expired node ");
-        LOG_INFO_6ADDR(&node_addr);
-        LOG_INFO_("\n");
+        rpl_lite_driver.get_sr_node_ipaddr(&node_addr, l);
+        TRiceS(iD(1622), "msg:NS: removing expired node %s, ", uip6_printAddr(&node_addr, NULL));
       }
       /* No child found, deallocate node */
       list_remove(nodelist, l);
@@ -255,8 +245,8 @@ uip_sr_link_snprint(char *buf, int buflen, uip_sr_node_t *link)
   uip_ipaddr_t child_ipaddr;
   uip_ipaddr_t parent_ipaddr;
 
-  NETSTACK_ROUTING.get_sr_node_ipaddr(&child_ipaddr, link);
-  NETSTACK_ROUTING.get_sr_node_ipaddr(&parent_ipaddr, link->parent);
+  rpl_lite_driver.get_sr_node_ipaddr(&child_ipaddr, link);
+  rpl_lite_driver.get_sr_node_ipaddr(&parent_ipaddr, link->parent);
 
   if(LOG_WITH_COMPACT_ADDR) {
     index += log_6addr_compact_snprint(buf+index, buflen-index, &child_ipaddr);

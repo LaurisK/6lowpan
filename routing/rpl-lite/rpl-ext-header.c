@@ -48,11 +48,12 @@
 //#include "net/ipv6/uip-sr.h"
 #include "../../network/uipbuf.h"
 #include "../../network/uip-ds6.h"
+#include "../../network/uip-sr.h"
 #include "rpl.h"
 #include "rpl-dag.h"
 #include "rpl-dag-root.h"
 #include "rpl-ext-header.h"
-#include "rpl-neighborr.h"
+#include "rpl-neighbor.h"
 
 /*---------------------------------------------------------------------------*/
 int

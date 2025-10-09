@@ -51,7 +51,7 @@
 //#include "net/ipv6/uip.h"
 #include "../network/uip-ds6-nbr.h"
 #include "../network/uip-ds6-route.h"
-//#include "net/ipv6/uip-sr.h"
+#include "../network/uip-sr.h"
 //#include "net/linkaddr.h"
 
 /**

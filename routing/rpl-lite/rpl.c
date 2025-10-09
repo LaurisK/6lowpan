@@ -45,6 +45,7 @@
 //#include "net/routing/routing.h"
 #include "../../addressing.h"
 #include "../../network/uip-nd6.h"
+#include "../../network/uip_sr.h"
 #include "rpl.h"
 #include "rpl-dag-root.h"
 #include "rpl-icmp6.h"

@@ -48,7 +48,6 @@
 //#include "net/routing/rpl-lite/rpl.h"
 //#include "net/nbr-table.h"
 //#include "net/link-stats.h"
-#include "../../network/link-stats.h"
 #include "rpl.h"
 #include "rpl-neighbor.h"
 

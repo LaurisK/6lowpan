@@ -43,12 +43,13 @@
 //#include "net/routing/rpl-lite/rpl.h"
 //#include "net/ipv6/uip-ds6-route.h"
 //#include "net/ipv6/uip-sr.h"
+#include "../../addressing.h"
+#include "../../network/uip-ds6.h"
+#include "../../network/uip-nd6.h"
+#include "../../network/uip-sr.h"
 #include "rpl.h"
 #include "rpl-dag.h"
 #include "rpl-dag-root.h"
-#include "../../network/uip-ds6.h"
-#include "../../network/uip-nd6.h"
-#include "../../addressing.h"
 
 #warning "deglobalize uip_ds6_if with doing so - retrun uip_ds6_netif_t to *.c"
 extern uip_ds6_netif_t uip_ds6_if;
