@@ -198,6 +198,7 @@ rpl_nbr_t *rpl_neighbor_select_best(void);
 typedef rpl_nbr_t rpl_parent_t;
 #define rpl_parent_get_from_ipaddr(addr) rpl_neighbor_get_from_ipaddr(addr)
 #define rpl_parent_get_ipaddr(nbr) rpl_neighbor_get_ipaddr(nbr)
+int log_6addr_compact_snprint(char *buf, size_t size, const uip_ipaddr_t *ipaddr);
  /** @} */
 
 #endif /* RPL_NEIGHBOR_H */

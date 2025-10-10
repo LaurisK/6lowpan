@@ -45,10 +45,15 @@
 //#include "net/routing/routing.h"
 #include "../../addressing.h"
 #include "../../network/uip-nd6.h"
-#include "../../network/uip_sr.h"
+#include "../../network/uip-ds6.h"
+#include "../../network/uip-sr.h"
 #include "rpl.h"
+#include "rpl-dag.h"
 #include "rpl-dag-root.h"
+#include "rpl-ext-header.h"
 #include "rpl-icmp6.h"
+#include "rpl-neighbor.h"
+#include "rpl-timers.h"
 
 #warning "deglobalize uip_ds6_if"
 extern uip_ds6_netif_t uip_ds6_if;
@@ -110,8 +115,8 @@ rpl_link_callback(const linkaddr_t *addr, int status, int numtx)
 #endif
       /* Link stats were updated, and we need to update our internal state.
       Updating from here is unsafe; postpone */
-      TRiceS(iD(4303), "msg:packet sent to %s, ", (char*)linkaddr_printAddr(addr));
-      TRice(iD(3029), "status %u, tx %u, new link metric %u\n", status, numtx, rpl_neighbor_get_link_metric(nbr));
+      TRiceS("msg:packet sent to %s, ", (char*)linkaddr_printAddr(addr));
+      TRice("status %u, tx %u, new link metric %u\n", status, numtx, rpl_neighbor_get_link_metric(nbr));
       rpl_timers_schedule_state_update();
     }
   }
@@ -145,7 +150,7 @@ rpl_reset_prefix(rpl_prefix_t *last_prefix)
   set_ip_from_prefix(&ipaddr, last_prefix);
   rep = uip_ds6_addr_lookup(&ipaddr);
   if(rep != NULL) {
-	TRice(iD(5448), "msg:removing global IP address %s\n", uip6_printAddr(&ipaddr, NULL));
+	TRice("msg:removing global IP address %s\n", uip6_printAddr(&ipaddr, NULL));
     uip_ds6_addr_rm(rep);
   }
   curr_instance.dag.prefix_info.length = 0;
@@ -157,7 +162,7 @@ rpl_set_prefix_from_addr(uip_ipaddr_t *addr, unsigned len, uint8_t flags)
   uip_ipaddr_t ipaddr;
 
   if(addr == NULL || len == 0 || len > 128 || !(flags & UIP_ND6_RA_FLAG_AUTONOMOUS)) {
-	  TRice(iD(2801), "wrn:prefix not included, not-supported or invalid\n");
+	  TRice("wrn:prefix not included, not-supported or invalid\n");
     return 0;
   }
 
@@ -171,7 +176,7 @@ rpl_set_prefix_from_addr(uip_ipaddr_t *addr, unsigned len, uint8_t flags)
   /* Add global address if not already there */
   set_ip_from_prefix(&ipaddr, &curr_instance.dag.prefix_info);
   if(uip_ds6_addr_lookup(&ipaddr) == NULL) {
-	TRiceS(iD(1563), "msg:adding global IP address %s\n", uip6_printAddr(&ipaddr, NULL));
+	TRiceS("msg:adding global IP address %s\n", uip6_printAddr(&ipaddr, NULL));
     uip_ds6_addr_add(&ipaddr, 0, ADDR_AUTOCONF);
   }
   return 1;
@@ -188,7 +193,7 @@ rpl_set_prefix(rpl_prefix_t *prefix)
 }
 /*---------------------------------------------------------------------------*/
 static void init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void))) {
-	TRice(iD(1208), "msg:initializing\n");
+	TRice("msg:initializing\n");
 
   /* Initialize multicast address and register it */
   uip_create_linklocal_rplnodes_mcast(&rpl_multicast_addr);

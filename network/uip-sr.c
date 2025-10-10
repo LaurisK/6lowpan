@@ -46,14 +46,14 @@
 //#include "lib/list.h"
 //#include "lib/memb.h"
 #include "../routing/routing.h"
+#include "../routing/rpl-lite/rpl-neighbor.h"
 
 /* Total number of nodes */
 static int num_nodes;
 
 /* Every known node in the network */
 LIST(nodelist);
-MEMB(nodememb, uip_sr_node_t, UIP_SR_LINK_NUM);
-
+uip_sr_node_t *nodes = NULL;
 /*---------------------------------------------------------------------------*/
 int
 uip_sr_num_nodes(void)
@@ -77,7 +77,7 @@ uip_sr_node_t *
 uip_sr_get_node(void *graph, const uip_ipaddr_t *addr)
 {
   uip_sr_node_t *l;
-  for(l = list_head(nodelist); l != NULL; l = list_item_next(l)) {
+  for(l = nodes; l != NULL; l = l->next) {
     /* Compare prefix and node identifier */
     if(node_matches_address(graph, l, addr)) {
       return l;
@@ -127,7 +127,7 @@ uip_sr_update_node(void *graph, const uip_ipaddr_t *child, const uip_ipaddr_t *p
     if(parent_node == NULL) {
       parent_node = uip_sr_update_node(graph, parent, NULL, UIP_SR_INFINITE_LIFETIME);
       if(parent_node == NULL) {
-    	  TRice(iD(4296), "err:NS: no space left for root node!\n");
+    	  TRice("err:NS: no space left for root node!\n");
         return NULL;
       }
     }
@@ -135,14 +135,15 @@ uip_sr_update_node(void *graph, const uip_ipaddr_t *child, const uip_ipaddr_t *p
 
   /* No node for this child, add one */
   if(child_node == NULL) {
-    child_node = memb_alloc(&nodememb);
+    child_node = pvPortMalloc(sizeof(uip_sr_node_t));
     /* No space left, abort */
     if(child_node == NULL) {
-      TRiceS(iD(3879), "err:NS: no space left for child %s\n", uip6_printAddr(child, NULL));
+      TRiceS("err:NS: no space left for child %s\n", uip6_printAddr(child, NULL));
       return NULL;
     }
     child_node->parent = NULL;
-    list_add(nodelist, child_node);
+    child_node->next = nodes;
+    nodes = child_node;
     num_nodes++;
   }
 
@@ -167,57 +168,64 @@ uip_sr_update_node(void *graph, const uip_ipaddr_t *child, const uip_ipaddr_t *p
     child_node->parent = parent_node;
   }
 
-  TRiceS(iD(6130), "msg:NS: updating link, child %s, ", uip6_printAddr(child, NULL));
-  TRiceS(iD(1008), "msg:parent %s, ", uip6_printAddr(parent, NULL));
-  TRice(iD(6179), "msg:lifetime %u, num_nodes %u\n", (uint16_t)lifetime, num_nodes);
+  TRiceS("msg:NS: updating link, child %s, ", uip6_printAddr(child, NULL));
+  TRiceS("msg:parent %s, ", uip6_printAddr(parent, NULL));
+  TRice("msg:lifetime %u, num_nodes %u\n", (uint16_t)lifetime, num_nodes);
 
   return child_node;
 }
 /*---------------------------------------------------------------------------*/
-void
-uip_sr_init(void)
-{
+void uip_sr_init(void) {
   num_nodes = 0;
-  memb_init(&nodememb);
-  list_init(nodelist);
 }
 /*---------------------------------------------------------------------------*/
-uip_sr_node_t *
-uip_sr_node_head(void)
-{
-  return list_head(nodelist);
+uip_sr_node_t * uip_sr_node_head(void) {
+  return nodes;
 }
 /*---------------------------------------------------------------------------*/
-uip_sr_node_t *
-uip_sr_node_next(uip_sr_node_t *item)
-{
-  return list_item_next(item);
+uip_sr_node_t * uip_sr_node_next(uip_sr_node_t *item) {
+  return item->next;
+}
+static uip_sr_node_t * uip_sr_node_remove(uip_sr_node_t *itemToRemove) {
+	uip_sr_node_t *walker = nodes, *follower = NULL;
+	/* Remove neighbor from list */
+	while (NULL != walker) {
+		if (itemToRemove == walker) {
+			if (NULL != follower) {
+				follower->next = walker->next;
+			} else {
+				nodes = walker->next;
+			}
+			walker->next = NULL;
+			break;
+		}
+		follower = walker;
+		walker = walker->next;
+	}
+	vPortFree(itemToRemove);
 }
 /*---------------------------------------------------------------------------*/
-void
-uip_sr_periodic(unsigned seconds)
-{
+void uip_sr_periodic(unsigned seconds) {
   uip_sr_node_t *l;
   uip_sr_node_t *next;
 
   /* First pass, for all expired nodes, deallocate them iff no child points to them */
-  for(l = list_head(nodelist); l != NULL; l = next) {
-    next = list_item_next(l);
+  for(l = nodes; l != NULL; l = next) {
+    next = l->next;
     if(l->lifetime == 0) {
       uip_sr_node_t *l2;
-      for(l2 = list_head(nodelist); l2 != NULL; l2 = list_item_next(l2)) {
+      for(l2 = nodes; l2 != NULL; l2 = l2->next) {
         if(l2->parent == l) {
           break;
         }
       }
-      if(LOG_INFO_ENABLED) {
+      if(1/*LOG_INFO_ENABLED*/) {
         uip_ipaddr_t node_addr;
         rpl_lite_driver.get_sr_node_ipaddr(&node_addr, l);
-        TRiceS(iD(1622), "msg:NS: removing expired node %s, ", uip6_printAddr(&node_addr, NULL));
+        TRiceS("msg:NS: removing expired node %s, ", uip6_printAddr(&node_addr, NULL));
       }
       /* No child found, deallocate node */
-      list_remove(nodelist, l);
-      memb_free(&nodememb, l);
+      uip_sr_node_remove(l);
       num_nodes--;
     } else if(l->lifetime != UIP_SR_INFINITE_LIFETIME) {
       l->lifetime = l->lifetime > seconds ? l->lifetime - seconds : 0;
@@ -225,15 +233,12 @@ uip_sr_periodic(unsigned seconds)
   }
 }
 /*---------------------------------------------------------------------------*/
-void
-uip_sr_free_all(void)
-{
+void uip_sr_free_all(void) {
   uip_sr_node_t *l;
   uip_sr_node_t *next;
-  for(l = list_head(nodelist); l != NULL; l = next) {
-    next = list_item_next(l);
-    list_remove(nodelist, l);
-    memb_free(&nodememb, l);
+  for(l = nodes; l != NULL; l = next) {
+    next = l->next;
+    uip_sr_node_remove(l);
     num_nodes--;
   }
 }
@@ -248,11 +253,7 @@ uip_sr_link_snprint(char *buf, int buflen, uip_sr_node_t *link)
   rpl_lite_driver.get_sr_node_ipaddr(&child_ipaddr, link);
   rpl_lite_driver.get_sr_node_ipaddr(&parent_ipaddr, link->parent);
 
-  if(LOG_WITH_COMPACT_ADDR) {
-    index += log_6addr_compact_snprint(buf+index, buflen-index, &child_ipaddr);
-  } else {
-    index += uiplib_ipaddr_snprint(buf+index, buflen-index, &child_ipaddr);
-  }
+  index += log_6addr_compact_snprint(buf+index, buflen-index, &child_ipaddr);
   if(index >= buflen) {
     return index;
   }
@@ -267,11 +268,7 @@ uip_sr_link_snprint(char *buf, int buflen, uip_sr_node_t *link)
     if(index >= buflen) {
       return index;
     }
-    if(LOG_WITH_COMPACT_ADDR) {
-      index += log_6addr_compact_snprint(buf+index, buflen-index, &parent_ipaddr);
-    } else {
-      index += uiplib_ipaddr_snprint(buf+index, buflen-index, &parent_ipaddr);
-    }
+    index += log_6addr_compact_snprint(buf+index, buflen-index, &parent_ipaddr);
     if(index >= buflen) {
       return index;
     }

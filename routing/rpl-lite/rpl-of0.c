@@ -84,7 +84,7 @@
 static void
 reset(void)
 {
-	TRice(iD(3943), "msg:reset OF0\n");
+	TRice("msg:reset OF0\n");
 }
 /*---------------------------------------------------------------------------*/
 static uint16_t

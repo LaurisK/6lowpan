@@ -35,8 +35,11 @@
 //#include "net/packetbuf.h"
 //#include "net/nbr-table.h"
 #include "link-stats.h"
+#include "nbr-table.h"
+#include "../mac/mac.h"
 //#include <stdio.h>
 #include "App/Time/time.h"
+#include "cmsis_os.h"
 
 /* Maximum value for the Tx count counter */
 #define TX_COUNT_MAX                    32
@@ -66,7 +69,7 @@
 NBR_TABLE(struct link_stats, link_stats);
 
 /* Called at a period of FRESHNESS_HALF_LIFE */
-struct ctimer periodic_timer;
+static TimerHandle_t periodicTimer;
 
 /*---------------------------------------------------------------------------*/
 /* Returns the neighbor's link stats */
@@ -88,7 +91,7 @@ int
 link_stats_is_fresh(const struct link_stats *stats)
 {
   return (stats != NULL)
-      && clock_time() - stats->last_tx_time < FRESHNESS_EXPIRATION_TIME
+      && Time_GetUptime() - stats->last_tx_time < FRESHNESS_EXPIRATION_TIME
       && stats->freshness >= FRESHNESS_TARGET;
 }
 /*---------------------------------------------------------------------------*/
@@ -208,11 +211,8 @@ link_stats_packet_sent(const linkaddr_t *lladdr, int status, int numtx)
 }
 /*---------------------------------------------------------------------------*/
 /* Packet input callback. Updates statistics for receptions on a given link */
-void
-link_stats_input_callback(const linkaddr_t *lladdr)
-{
+void link_stats_input_callback(const linkaddr_t *lladdr, int16_t rssi) {
   struct link_stats *stats;
-  int16_t packet_rssi = packetbuf_attr(PACKETBUF_ATTR_RSSI);
 
   stats = nbr_table_get_from_lladdr(link_stats, lladdr);
   if(stats == NULL) {
@@ -220,7 +220,7 @@ link_stats_input_callback(const linkaddr_t *lladdr)
     stats = nbr_table_add_lladdr(link_stats, lladdr, NBR_TABLE_REASON_LINK_STATS, NULL);
     if(stats != NULL) {
       /* Initialize */
-      stats->rssi = packet_rssi;
+      stats->rssi = rssi;
 #if LINK_STATS_INIT_ETX_FROM_RSSI
       stats->etx = guess_etx_from_rssi(stats);
 #else /* LINK_STATS_INIT_ETX_FROM_RSSI */
@@ -234,8 +234,7 @@ link_stats_input_callback(const linkaddr_t *lladdr)
   }
 
   /* Update RSSI EWMA */
-  stats->rssi = ((int32_t)stats->rssi * (EWMA_SCALE - EWMA_ALPHA) +
-      (int32_t)packet_rssi * EWMA_ALPHA) / EWMA_SCALE;
+  stats->rssi = ((int32_t)stats->rssi * (EWMA_SCALE - EWMA_ALPHA) + (int32_t)rssi * EWMA_ALPHA) / EWMA_SCALE;
 
 #if LINK_STATS_PACKET_COUNTERS
   stats->cnt_current.num_packets_rx++;
@@ -269,12 +268,10 @@ print_and_update_counters(void)
 #endif /* LINK_STATS_PACKET_COUNTERS */
 /*---------------------------------------------------------------------------*/
 /* Periodic timer called at a period of FRESHNESS_HALF_LIFE */
-static void
-periodic(void *ptr)
+static void periodic(TimerHandle_t periodicTim)
 {
   /* Age (by halving) freshness counter of all neighbors */
   struct link_stats *stats;
-  ctimer_reset(&periodic_timer);
   for(stats = nbr_table_head(link_stats); stats != NULL; stats = nbr_table_next(link_stats, stats)) {
     stats->freshness >>= 1;
   }
@@ -301,5 +298,6 @@ void
 link_stats_init(void)
 {
   nbr_table_register(link_stats, NULL);
-  ctimer_set(&periodic_timer, FRESHNESS_HALF_LIFE, periodic, NULL);
+  periodicTimer = xTimerCreate("6lowpan-linkStats-periodicTimer", pdMS_TO_TICKS(FRESHNESS_HALF_LIFE * 1000), pdTRUE, 0, periodic);
+  xTimerStart(periodicTimer, 0);
 }

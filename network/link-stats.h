@@ -105,6 +105,6 @@ void link_stats_init(void);
 /* Packet sent callback. Updates statistics for transmissions on a given link */
 void link_stats_packet_sent(const linkaddr_t *lladdr, int status, int numtx);
 /* Packet input callback. Updates statistics for receptions on a given link */
-void link_stats_input_callback(const linkaddr_t *lladdr);
+void link_stats_input_callback(const linkaddr_t *lladdr, int16_t rssi);
 
 #endif /* LINK_STATS_H_ */

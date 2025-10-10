@@ -104,7 +104,7 @@
 static void
 reset(void)
 {
-	 TRice(iD(5302), "msg:reset MRHOF\n");
+	 TRice("msg:reset MRHOF\n");
 }
 /*---------------------------------------------------------------------------*/
 static uint16_t
@@ -246,7 +246,7 @@ update_metric_container(void)
   uint8_t type;
 
   if(!curr_instance.used) {
-	  TRice(iD(1294), "wrn:cannot update the metric container when not joined\n");
+	  TRice("wrn:cannot update the metric container when not joined\n");
     return;
   }
 
@@ -281,7 +281,7 @@ update_metric_container(void)
       curr_instance.mc.obj.energy.energy_est = path_cost >> 8;
       break;
     default:
-    	TRice(iD(7852), "wrn:MRHOF, non-supported MC %u\n", curr_instance.mc.type);
+    	TRice("wrn:MRHOF, non-supported MC %u\n", curr_instance.mc.type);
       break;
   }
 }

@@ -55,7 +55,7 @@
  */
 static void framer_802154_setup_params(sPacket* packet, frame802154_t *params) {
   if (params == NULL) {
-	TRice(iD(7244), "wrn:framer-802154: cannot setup params because of invalid argument\n");
+	TRice("wrn:framer-802154: cannot setup params because of invalid argument\n");
     return;
   }
 
@@ -153,7 +153,7 @@ static int create_frame(sPacket* packet, int do_create) {
   int hdr_len;
 
   if(frame802154_get_pan_id() == 0xffff) {
-	  TRice(iD(1564), "wrn:framer-802154: invalid PAD id!\n");
+	  TRice("wrn:framer-802154: invalid PAD id!\n");
     return -1;
   }
 
@@ -192,7 +192,7 @@ static int create_frame(sPacket* packet, int do_create) {
     frame802154_create(&params, packetbuf_hdrptr(packet));
     return hdr_len;
   } else {
-	TRice(iD(4789), "wrn:Out: too large header: %u\n", hdr_len);
+	TRice("wrn:Out: too large header: %u\n", hdr_len);
     return FRAMER_FAILED;
   }
 }
@@ -228,7 +228,7 @@ static int parse(sPacket* packet) {
     if(frame.fcf.dest_addr_mode) {
       if(frame.dest_pid != frame802154_get_pan_id() && frame.dest_pid != FRAME802154_BROADCASTPANDID) {
         /* Packet to another PAN */
-    	TRice(iD(1553), "wrn:15.4: for another pan %u\n", frame.dest_pid);
+    	TRice("wrn:15.4: for another pan %u\n", frame.dest_pid);
         return FRAMER_FAILED;
       }
       if(!frame802154_is_broadcast_addr(frame.fcf.dest_addr_mode, frame.dest_addr)) {
@@ -261,9 +261,9 @@ static int parse(sPacket* packet) {
 
     return hdr_len;
   } else if (0 == hdr_len) {
-	  TRice(iD(7487), "wrn:frame802154_parse() failed!\n");
+	  TRice("wrn:frame802154_parse() failed!\n");
   } else {
-	  TRice(iD(1261), "wrn:packetbuf_hdrreduce() failed!\n");
+	  TRice("wrn:packetbuf_hdrreduce() failed!\n");
   }
   return FRAMER_FAILED;
 }

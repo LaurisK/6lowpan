@@ -46,6 +46,7 @@
 //#include "net/routing/routing.h"
 //#include "net/routing/rpl-lite/rpl.h"
 //#include "net/ipv6/uip-sr.h"
+#include "../../network/sicslowpan.h"
 #include "../../network/uipbuf.h"
 #include "../../network/uip-ds6.h"
 #include "../../network/uip-sr.h"
@@ -84,7 +85,7 @@ rpl_ext_header_srh_get_next_hop(sUipBuff *uipBuff, uip_ipaddr_t *ipaddr)
     return 1;
   }
 
-  TRice(iD(2927), "dbg:no SRH found\n");
+  TRice("dbg:no SRH found\n");
   return 0;
 }
 /*---------------------------------------------------------------------------*/
@@ -104,7 +105,7 @@ rpl_ext_header_srh_update(sUipBuff *uipBuff)
   rh_header = (struct uip_routing_hdr *)uipbuf_search_header(uipBuff->buff.u8, uipBuff->len, UIP_PROTO_ROUTING);
 
   if(rh_header == NULL || rh_header->routing_type != RPL_RH_TYPE_SRH) {
-	  TRice(iD(4462), "msg:SRH not found\n");
+	  TRice("msg:SRH not found\n");
     return 0;
   }
 
@@ -118,7 +119,7 @@ rpl_ext_header_srh_update(sUipBuff *uipBuff)
   path_len = ((ext_len - padding - RPL_RH_LEN - RPL_SRH_LEN - (16 - cmpre)) / (16 - cmpri)) + 1;
   (void)path_len;
 
-  TRice(iD(4246), "msg:read SRH, path len %u, segments left %u, Cmpri %u, Cmpre %u, ext len %u (padding %u)\n",
+  TRice("msg:read SRH, path len %u, segments left %u, Cmpri %u, Cmpre %u, ext len %u (padding %u)\n",
       path_len, segments_left, cmpri, cmpre, ext_len, padding);
 
   /* Update SRH in-place */
@@ -126,7 +127,7 @@ rpl_ext_header_srh_update(sUipBuff *uipBuff)
     /* We are the final destination, do nothing */
   } else if(segments_left > path_len) {
     /* Discard the packet because of a parameter problem. */
-	TRice(iD(7374), "err:SRH with too many segments left (%u > %u)\n", segments_left, path_len);
+	TRice("err:SRH with too many segments left (%u > %u)\n", segments_left, path_len);
     return 0;
   } else {
     uint8_t i = path_len - segments_left; /* The index of the next address to be visited */
@@ -135,7 +136,7 @@ rpl_ext_header_srh_update(sUipBuff *uipBuff)
     size_t addr_offset = RPL_RH_LEN + RPL_SRH_LEN + (i * (16 - cmpri));
 
     if(rh_offset + addr_offset + 16 - cmpr > UIP_BUFSIZE) {
-      TRice(iD(2544), "err:Invalid SRH address pointer\n");
+      TRice("err:Invalid SRH address pointer\n");
       return 0;
     }
 
@@ -153,7 +154,7 @@ rpl_ext_header_srh_update(sUipBuff *uipBuff)
     /* Update segments left field */
     rh_header->seg_left--;
 
-    TRiceS(iD(3884), "msg:SRH next hop %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
+    TRiceS("msg:SRH next hop %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
   }
 
   return 1;
@@ -193,7 +194,7 @@ static int insert_srh_header(sUipBuff *uipBuff) {
   struct uip_routing_hdr *rh_hdr = (struct uip_routing_hdr *)(uipBuff->buff.u8 + UIP_IPH_LEN);
   struct uip_rpl_srh_hdr *srh_hdr = (struct uip_rpl_srh_hdr *)(uipBuff->buff.u8 + UIP_IPH_LEN + RPL_RH_LEN);
 
-  TRice(iD(6356), "msg:SRH creating source routing header with destination %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
+  TRice("msg:SRH creating source routing header with destination %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
 
   /* Construct source route. We do not do this recursively to keep the runtime stack usage constant. */
 
@@ -201,25 +202,25 @@ static int insert_srh_header(sUipBuff *uipBuff) {
 
   if(!rpl_is_addr_in_our_dag(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr)) {
     /* The destination is not in our DAG, skip SRH insertion */
-	  TRice(iD(2661), "msg:SRH destination not in our DAG, skip SRH insertion\n");
+	  TRice("msg:SRH destination not in our DAG, skip SRH insertion\n");
     return 1;
   }
 
   dest_node = uip_sr_get_node(NULL, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr);
   if(dest_node == NULL) {
     /* The destination is not found, skip SRH insertion */
-	  TRice(iD(2574), "msg:SRH node not found, skip SRH insertion\n");
+	  TRice("msg:SRH node not found, skip SRH insertion\n");
     return 1;
   }
 
   root_node = uip_sr_get_node(NULL, &curr_instance.dag.dag_id);
   if(root_node == NULL) {
-	  TRice(iD(4451), "err:SRH root node not found\n");
+	  TRice("err:SRH root node not found\n");
     return 0;
   }
 
   if(!uip_sr_is_addr_reachable(NULL, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr)) {
-	  TRice(iD(3467), "err:SRH no path found to destination\n");
+	  TRice("err:SRH no path found to destination\n");
     return 0;
   }
 
@@ -242,7 +243,7 @@ static int insert_srh_header(sUipBuff *uipBuff) {
     cmpri = MIN(cmpri, count_matching_bytes(&node_addr, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, 16));
     cmpre = cmpri;
 
-    TRiceS(iD(7192), "msg:SRH Hop %s\n", uip6_printAddr(&node_addr, NULL));
+    TRiceS("msg:SRH Hop %s\n", uip6_printAddr(&node_addr, NULL));
     node = node->parent;
     path_len++;
   }
@@ -255,12 +256,12 @@ static int insert_srh_header(sUipBuff *uipBuff) {
   padding = ext_len % 8 == 0 ? 0 : (8 - (ext_len % 8));
   ext_len += padding;
 
-  TRice(iD(3673), "msg:SRH path len: %u, ComprI %u, ComprE %u, ext len %u (padding %u)\n",
+  TRice("msg:SRH path len: %u, ComprI %u, ComprE %u, ext len %u (padding %u)\n",
       path_len, cmpri, cmpre, ext_len, padding);
 
   /* Check if there is enough space to store the extension header */
   if(uipBuff->len + ext_len > UIP_LINK_MTU) {
-	  TRice(iD(4429), "err:packet too long: impossible to add source routing header (%u bytes)\n", ext_len);
+	  TRice("err:packet too long: impossible to add source routing header (%u bytes)\n", ext_len);
     return 0;
   }
 
@@ -319,35 +320,35 @@ int rpl_ext_header_hbh_update(sUipBuff *uipBuff, uint8_t *ext_buf, int opt_offse
   if(hbh_hdr->len != ((RPL_HOP_BY_HOP_LEN - 8) / 8)
       || rpl_opt->opt_type != UIP_EXT_HDR_OPT_RPL
       || rpl_opt->opt_len != RPL_HDR_OPT_LEN) {
-	  TRice(iD(5107), "err:hop-by-hop extension header has wrong size or type (%u %u %u)\n",
+	  TRice("err:hop-by-hop extension header has wrong size or type (%u %u %u)\n",
         hbh_hdr->len, rpl_opt->opt_type, rpl_opt->opt_len);
     return 0; /* Drop */
   }
 
   if(!curr_instance.used || curr_instance.instance_id != rpl_opt->instance) {
-	  TRice(iD(6614), "err:unknown instance: %u\n", rpl_opt->instance);
+	  TRice("err:unknown instance: %u\n", rpl_opt->instance);
     return 0; /* Drop */
   }
 
   if(rpl_opt->flags & RPL_HDR_OPT_FWD_ERR) {
-	  TRice(iD(6201), "err:forward error!\n");
+	  TRice("err:forward error!\n");
     return 0; /* Drop */
   }
 
   down = (rpl_opt->flags & RPL_HDR_OPT_DOWN) ? 1 : 0;
   sender_rank = __REVSH(rpl_opt->senderrank);
-  sender = nbr_table_get_from_lladdr(rpl_neighbors, packetbuf_addr(PACKETBUF_ADDR_SENDER));
+  sender = nbr_table_get_from_lladdr(rpl_neighbors, sicslowpan_GetLastRxSrcLinkAddr());
   rank_error_signaled = (rpl_opt->flags & RPL_HDR_OPT_RANK_ERR) ? 1 : 0;
   sender_closer = sender_rank < curr_instance.dag.rank;
   loop_detected = (down && !sender_closer) || (!down && sender_closer);
 
-  TRiceS(iD(3508), "msg:ext hdr: packet from %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
-  TRiceS(iD(5171), "msg: to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
+  TRiceS("msg:ext hdr: packet from %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
+  TRiceS("msg: to %s", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
   if (down == 1) {
-	  TRice(iD(3954), "msg: going down, sender closer %d (%d < %d), rank error %u, loop detected %u\n",
+	  TRice("msg: going down, sender closer %d (%d < %d), rank error %u, loop detected %u\n",
 			  sender_closer, sender_rank, curr_instance.dag.rank, rank_error_signaled, loop_detected);
   } else {
-	  TRice(iD(6961), "msg: going up, sender closer %d (%d < %d), rank error %u, loop detected %u\n",
+	  TRice("msg: going up, sender closer %d (%d < %d), rank error %u, loop detected %u\n",
 			  sender_closer, sender_rank, curr_instance.dag.rank, rank_error_signaled, loop_detected);
   }
 
@@ -369,12 +370,12 @@ static int update_hbh_header(sUipBuff *uipBuff) {
   if(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->proto == UIP_PROTO_HBHO && rpl_opt->opt_type == UIP_EXT_HDR_OPT_RPL) {
     if(hbh_hdr->len != ((RPL_HOP_BY_HOP_LEN - 8) / 8) || rpl_opt->opt_len != RPL_HDR_OPT_LEN) {
 
-    	TRice(iD(3444), "err:hop-by-hop extension header has wrong size (%u)\n", rpl_opt->opt_len);
+    	TRice("err:hop-by-hop extension header has wrong size (%u)\n", rpl_opt->opt_len);
       return 0; /* Drop */
     }
 
     if(!curr_instance.used || curr_instance.instance_id != rpl_opt->instance) {
-    	TRice(iD(5484), "err:unable to add/update hop-by-hop extension header: incorrect instance\n");
+    	TRice("err:unable to add/update hop-by-hop extension header: incorrect instance\n");
       return 0; /* Drop */
     }
 
@@ -395,9 +396,9 @@ static int insert_hbh_header(sUipBuff *uipBuff) {
   struct uip_ext_hdr_opt_rpl *rpl_opt = (struct uip_ext_hdr_opt_rpl *)((uipBuff->buff.u8 + UIP_IPH_LEN + 2));
 
   /* Insert hop-by-hop header */
-  TRice(iD(6506), "msg:creating hop-by-hop option\n");
+  TRice("msg:creating hop-by-hop option\n");
   if(uipBuff->len + RPL_HOP_BY_HOP_LEN > UIP_LINK_MTU) {
-	  TRice(iD(1005), "err:packet too long: impossible to add hop-by-hop option\n");
+	  TRice("err:packet too long: impossible to add hop-by-hop option\n");
     return 0;
   }
 

@@ -172,7 +172,7 @@ static void KickTranferQueue(void) {
 static void HandleTransferEnd(uint8_t transfRes, uint8_t packetPos) {
 	sPacket *packet = neighborList->transmit[packetPos].packet;
 	if(NULL == packet) {
-		TRice(iD(6216), "err:packet sent: missing packet.\n");
+		TRice("err:packet sent: missing packet.\n");
 	    return;
 	}
 	neighborList->transfAttempt++;
@@ -230,7 +230,7 @@ static void TransmitFromQueue(void) {
 	radio_value_t maxBackoff = 0;
 	subGHz_radio_driver.get_value(RADIO_PARAM_MAX_BACKOFF_NR, &maxBackoff);
 	if (CSMA_MAX_BACKOFF != maxBackoff) {
-		TRice(iD(2454), "msg:Setting max. backoff value to %u.\n", maxBackoff);
+		TRice("msg:Setting max. backoff value to %u.\n", maxBackoff);
 		subGHz_radio_driver.set_value(RADIO_PARAM_MAX_BACKOFF_NR, MIN(7, CSMA_MAX_BACKOFF));
 	}
 	//prepare buffer for sending
@@ -297,10 +297,10 @@ static void TransmitFromQueue(void) {
 
 			HandleTransferEnd(res, packetPos);
 	  } else {
-			TRice(iD(2572), "err:could not transmit from queue - packet is missing\n");
+			TRice("err:could not transmit from queue - packet is missing\n");
 	  }
 	} else {
-		TRice(iD(3716), "wrn:could not transmit from queue - queue is empty\n");
+		TRice("wrn:could not transmit from queue - queue is empty\n");
 	}
 }
 
@@ -310,9 +310,9 @@ static void TransmitFromQueue(void) {
 static void EnqueuePacket(sPacket *packet, mac_callback_t sent, void *ptr) {
   sNeighbor *targetNeighbor = GetNeighborForAddr(packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER));
   if (NULL == targetNeighbor) {
-	  TRice(iD(2819), "wrn:could not allocate neighbor, dropping packet\n");
+	  TRice("wrn:could not allocate neighbor, dropping packet\n");
   } else if (((1 << MAX_QUEUED_PACKETS) - 1) <= targetNeighbor->queuedTransmits) {
-	  TRice(iD(1652), "wrn:could not attach packet to neighbor (neighbor packet queue is full), dropping packet\n");
+	  TRice("wrn:could not attach packet to neighbor (neighbor packet queue is full), dropping packet\n");
   } else if (MAC_TX_OK == FormPayload(packet)) {
 	  uint8_t packetPos = MAX_QUEUED_PACKETS;
 	  while (packetPos) {
@@ -335,13 +335,13 @@ static void EnqueuePacket(sPacket *packet, mac_callback_t sent, void *ptr) {
 		  sNeighbor *walker = (sNeighbor *)neighborList;
 		  while (NULL != walker) {
 			  //print neighbor info
-			  TRiceS(iD(1754), "msg:\t neighbor %s", (char*)linkaddr_printAddr(&walker->addr));
-			  TRice(iD(4580), "msg: have %u packets in queue.\n", GetQueueLenOfNeighbor(walker));
+			  TRiceS("msg:\t neighbor %s", (char*)linkaddr_printAddr(&walker->addr));
+			  TRice("msg: have %u packets in queue.\n", GetQueueLenOfNeighbor(walker));
 			  walker = walker->next;
 		  }
 	  } else if ((1 << packetPos) != targetNeighbor->queuedTransmits) { // targetNeighbor here is always neighborList and we already checked if no other neighbors are present
 		  /* More packets are in queue, but only for this neighbor - print some info about them */
-		  TRice(iD(5553), "msg:\t total of %u packets are queued for this neighbor\n", GetQueueLenOfNeighbor(targetNeighbor));
+		  TRice("msg:\t total of %u packets are queued for this neighbor\n", GetQueueLenOfNeighbor(targetNeighbor));
 	  } else {
 		  /* Only one packet is in queue and only for this neighbor - start transmission of it*/
 		  TransmitFromQueue();
@@ -349,7 +349,7 @@ static void EnqueuePacket(sPacket *packet, mac_callback_t sent, void *ptr) {
 	  return;
   } else {
 	  /* Failed to allocate space for headers */
-	  TRice(iD(3998), "wrn:could form payload for neighbor, dropping packet\n");
+	  TRice("wrn:could form payload for neighbor, dropping packet\n");
   }
   // this is failure catching
   mac_call_sent_callback(sent, ptr, MAC_TX_ERR, 1, packet);
@@ -383,14 +383,14 @@ static void input_packet(sPacket *rxPacket)
   subGHz_radio_driver.read(rxPacket);
   if(packetbuf_datalen(rxPacket) == CSMA_ACK_LEN) {
     /* Ignore ack packets */
-	  TRice(iD(4034), "msg:ignored ack\n");
+	  TRice("msg:ignored ack\n");
 #warning "for now csma security is disabled - will need to be ported/implemented also..."
   } else if(/*csma_security_parse_frame()*/framer_802154.parse(rxPacket) < 0) {
-	  TRice(iD(7439), "err:failed to parse %u\n", packetbuf_datalen(rxPacket));
+	  TRice("err:failed to parse %u\n", packetbuf_datalen(rxPacket));
   } else if(!linkaddr_cmp(packetbuf_addr(rxPacket, PACKETBUF_ADDR_RECEIVER), &linkaddr_node_addr) && !packetbuf_holds_broadcast(rxPacket)) {
-	  TRice(iD(5774), "wrn:not for us\n");
+	  TRice("wrn:not for us\n");
   } else if(linkaddr_cmp(packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER), &linkaddr_node_addr)) {
-	  TRice(iD(1780), "wrn:frame from ourselves\n");
+	  TRice("wrn:frame from ourselves\n");
   } else {
     int duplicate = 0;
 
@@ -399,7 +399,7 @@ static void input_packet(sPacket *rxPacket)
     if(duplicate) {
       /* Drop the packet. */
     	packetbuf_clear(rxPacket);
-    	TRice(iD(6300), "wrn:drop duplicate link layer packet from %02X, seqno %u\n", packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
+    	TRice("wrn:drop duplicate link layer packet from %02X, seqno %u\n", packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
     } else {
       mac_sequence_register_seqno(packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
     }
@@ -444,13 +444,13 @@ static void init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(voi
 	(*(uint32_t*)node_mac) = HAL_GetUIDw1();
 	(*(((uint32_t*)node_mac)+1)) = HAL_GetUIDw2();
 	(*(((uint32_t*)node_mac)+1)) += HAL_GetUIDw0();
-	TRice(iD(2973), "msg:MCU uid %08X %08X %08X to %08X %08X MAC.\n", HAL_GetUIDw0(), HAL_GetUIDw1(), HAL_GetUIDw2(), (*(uint32_t*)node_mac), (*(((uint32_t*)node_mac)+1)));
+	TRice("msg:MCU uid %08X %08X %08X to %08X %08X MAC.\n", HAL_GetUIDw0(), HAL_GetUIDw1(), HAL_GetUIDw2(), (*(uint32_t*)node_mac), (*(((uint32_t*)node_mac)+1)));
 	linkaddr_set_node_addr((linkaddr_t*)node_mac);
   }
   subGHz_radio_driver.init(evtOffset, packedEvtHndl);
   /* Check that the radio can correctly report its max supported payload */
   if(subGHz_radio_driver.get_value(RADIO_CONST_MAX_PAYLOAD_LEN, &radio_max_payload_len) != radio_ok) {
-	  TRice(iD(5121), "err:! radio does not support getting RADIO_CONST_MAX_PAYLOAD_LEN. Abort init.\n");
+	  TRice("err:! radio does not support getting RADIO_CONST_MAX_PAYLOAD_LEN. Abort init.\n");
     return;
   }
 
@@ -479,7 +479,7 @@ static int max_payload(sPacket *packet)
   res = subGHz_radio_driver.get_value(RADIO_CONST_MAX_PAYLOAD_LEN, &max_radio_payload_len);
 
   if(res == radio_notSupported) {
-	  TRice(iD(5564), "err:Failed to retrieve max radio driver payload length\n");
+	  TRice("err:Failed to retrieve max radio driver payload length\n");
     return 0;
   }
 

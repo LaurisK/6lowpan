@@ -102,7 +102,7 @@ update_state(void)
   /* how many more IP neighbors can be have? */
   num_free = NBR_TABLE_MAX_NEIGHBORS - num_used;
 
-  TRice(iD(4322), "dbg:nbr-policy: free: %d, parents: %d\n", num_free, num_parents);
+  TRice("dbg:nbr-policy: free: %d, parents: %d\n", num_free, num_parents);
 }
 /*---------------------------------------------------------------------------*/
 static const linkaddr_t *
@@ -118,19 +118,19 @@ find_removable_dio(uip_ipaddr_t *from, rpl_dio_t *dio)
   update_state();
 
   if(!curr_instance.used || curr_instance.instance_id != dio->instance_id) {
-	  TRice(iD(2573), "wrn:nbr-policy: did not find instance id: %d\n", dio->instance_id);
+	  TRice("wrn:nbr-policy: did not find instance id: %d\n", dio->instance_id);
     return NULL;
   }
 
   /* Add the new neighbor only if it is better than the current worst. */
   if(dio->rank + curr_instance.min_hoprankinc < worst_rank - curr_instance.min_hoprankinc / 2) {
     /* Found *great* neighbor - add! */
-	  TRice(iD(1182), "dbg:nbr-policy: DIO rank %u, worst_rank %u -- add to cache\n",
+	  TRice("dbg:nbr-policy: DIO rank %u, worst_rank %u -- add to cache\n",
            dio->rank, worst_rank);
     return worst_rank_nbr_lladdr;
   }
 
-  TRice(iD(6102), "dbg:nbr-policy: DIO rank %u, worst_rank %u -- do not add to cache\n",
+  TRice("dbg:nbr-policy: DIO rank %u, worst_rank %u -- do not add to cache\n",
          dio->rank, worst_rank);
   return NULL;
 }

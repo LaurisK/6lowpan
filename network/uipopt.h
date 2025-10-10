@@ -134,6 +134,13 @@
 #define UIP_BUFSIZE (UIP_CONF_BUFFER_SIZE)
 #endif /* UIP_CONF_BUFFER_SIZE */
 
+/* NETSTACK_MAX_ROUTE_ENTRIES specifies the maximum number of entries
+   the routing module will handle. Applies to uIP routing tables if they are
+   used, or to RPL non-storing mode links instead */
+#ifndef NETSTACK_MAX_ROUTE_ENTRIES
+#define NETSTACK_MAX_ROUTE_ENTRIES 16
+#endif /* NETSTACK_MAX_ROUTE_ENTRIES */
+
 /**
  * Determines if statistics support should be compiled in.
  *

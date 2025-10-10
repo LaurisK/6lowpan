@@ -86,24 +86,6 @@ acceptable_rank(rpl_rank_t rank)
       && rank >= curr_instance.min_hoprankinc
       && rank <= max_acceptable_rank();
 }
-/*---------------------------------------------------------------------------*/
-static int log_6addr_compact_snprint(char *buf, size_t size, const uip_ipaddr_t *ipaddr)
-{
-  if(ipaddr == NULL) {
-    return snprintf(buf, size, "6A-NULL");
-  } else {
-    char *prefix = NULL;
-    if(uip_is_addr_mcast(ipaddr)) {
-      prefix = "6M";
-    } else if(uip_is_addr_linklocal(ipaddr)) {
-      prefix = "6L";
-    } else {
-      prefix = "6G";
-    }
-    return snprintf(buf, size, "%s-%04x", prefix, __REVSH(ipaddr->u16[sizeof(uip_ipaddr_t)/2-1]));
-  }
-}
-
 /**
 * Print a textual description of RPL neighbor into a string
 *
@@ -162,18 +144,18 @@ rpl_neighbor_print_list(const char *str)
     int curr_rank = curr_instance.dag.rank;
     rpl_nbr_t *nbr = nbr_table_head(rpl_neighbors);
 
-    TRiceS(iD(1262), "msg:nbr: own state, addr %s, ", uip6_printAddr(rpl_get_global_address(), NULL));
-    TRiceS(iD(7757), "msg:DAG state: %s, ", (char*)rpl_dag_state_to_str(curr_instance.dag.state));
-    TRice(iD(3118), "msg:MOP %u OCP %u rank %u max-rank %u, dio-int %u, nbr count %u",
+    TRiceS("msg:nbr: own state, addr %s, ", uip6_printAddr(rpl_get_global_address(), NULL));
+    TRiceS("msg:DAG state: %s, ", (char*)rpl_dag_state_to_str(curr_instance.dag.state));
+    TRice("msg:MOP %u OCP %u rank %u max-rank %u, dio-int %u, nbr count %u",
             curr_instance.mop, curr_instance.of->ocp, curr_rank, max_acceptable_rank(), curr_dio_interval, rpl_neighbor_count());
-    TRiceS(iD(3054), "msg: (%s)\n", (char*)str);
+    TRiceS("msg: (%s)\n", (char*)str);
     while(nbr != NULL) {
       char buf[120];
       rpl_neighbor_snprint(buf, sizeof(buf), nbr);
-      TRiceS(iD(6454), "msg:nbr: %s\n", buf);
+      TRiceS("msg:nbr: %s\n", buf);
       nbr = nbr_table_next(rpl_neighbors, nbr);
     }
-    TRice(iD(6135), "msg:nbr: end of list\n");
+    TRice("msg:nbr: end of list\n");
   }
 }
 /*---------------------------------------------------------------------------*/
@@ -309,8 +291,8 @@ void
 rpl_neighbor_set_preferred_parent(rpl_nbr_t *nbr)
 {
   if(curr_instance.dag.preferred_parent != nbr) {
-	TRiceS(iD(1714), "msg:parent switch: %s", uip6_printAddr(rpl_neighbor_get_ipaddr(curr_instance.dag.preferred_parent), NULL));
-	TRiceS(iD(6693), "msg: -> %s\n", uip6_printAddr(rpl_neighbor_get_ipaddr(nbr), NULL));
+	TRiceS("msg:parent switch: %s", uip6_printAddr(rpl_neighbor_get_ipaddr(curr_instance.dag.preferred_parent), NULL));
+	TRiceS("msg: -> %s\n", uip6_printAddr(rpl_neighbor_get_ipaddr(nbr), NULL));
 
 #ifdef RPL_CALLBACK_PARENT_SWITCH
     RPL_CALLBACK_PARENT_SWITCH(curr_instance.dag.preferred_parent, nbr);
@@ -336,7 +318,7 @@ rpl_neighbor_remove_all(void)
 {
   rpl_nbr_t *nbr;
 
-  TRice(iD(6824), "msg:removing all neighbors\n");
+  TRice("msg:removing all neighbors\n");
 
   /* Unset preferred parent before we de-allocate it. This will set
    * unprocessed_parent_switch which will make sure rpl_dag_update_state takes
@@ -428,7 +410,7 @@ rpl_neighbor_select_best(void)
       /* The best is not fresh. Probe it (unless there is already an urgent
          probing target). We will be called back after the probing anyway. */
       if(curr_instance.dag.urgent_probing_target == NULL) {
-    	TRiceS(iD(3843), "msg:best parent is not fresh, schedule urgent probing to %s\n", uip6_printAddr(rpl_neighbor_get_ipaddr(best), NULL));
+    	TRiceS("msg:best parent is not fresh, schedule urgent probing to %s\n", uip6_printAddr(rpl_neighbor_get_ipaddr(best), NULL));
         curr_instance.dag.urgent_probing_target = best;
         rpl_schedule_probing_now();
       }
@@ -465,9 +447,24 @@ rpl_neighbor_select_best(void)
 #endif /* RPL_WITH_PROBING */
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_neighbor_init(void)
-{
+void rpl_neighbor_init(void) {
   nbr_table_register(rpl_neighbors, (nbr_table_callback *)remove_neighbor);
 }
+/*---------------------------------------------------------------------------*/
+int log_6addr_compact_snprint(char *buf, size_t size, const uip_ipaddr_t *ipaddr) {
+  if(ipaddr == NULL) {
+    return snprintf(buf, size, "6A-NULL");
+  } else {
+    char *prefix = NULL;
+    if(uip_is_addr_mcast(ipaddr)) {
+      prefix = "6M";
+    } else if(uip_is_addr_linklocal(ipaddr)) {
+      prefix = "6L";
+    } else {
+      prefix = "6G";
+    }
+    return snprintf(buf, size, "%s-%04x", prefix, __REVSH(ipaddr->u16[sizeof(uip_ipaddr_t)/2-1]));
+  }
+}
+
 /** @} */

@@ -155,7 +155,7 @@ static void DioTmoHandler(TimerHandle_t periodicTim) {
         if((count++ % RPL_TRICKLE_REFRESH_DAO_ROUTES) == 0) {
           /* Request new DAO to refresh route. */
           RPL_LOLLIPOP_INCREMENT(curr_instance.dtsn_out);
-          TRice(iD(5221), "msg:trigger DAO updates with a DTSN increment (%u)\n", curr_instance.dtsn_out);
+          TRice("msg:trigger DAO updates with a DTSN increment (%u)\n", curr_instance.dtsn_out);
         }
       }
 #endif /* RPL_TRICKLE_REFRESH_DAO_ROUTES */
@@ -182,7 +182,7 @@ void rpl_timers_dio_reset(const char *str) {
      * don't reset the DIO timer if the current interval is Imin; see
      * Section 4.2, RFC 6206.
      */
-	  TRice(iD(7614), "msg:reset DIO timer (%s)\n", str);
+	  TRice("msg:reset DIO timer (%s)\n", str);
     if(!rpl_get_leaf_only()) {
         curr_instance.dag.dio_counter = 0;
         curr_instance.dag.dio_intcurrent = curr_instance.dio_intmin;
@@ -395,17 +395,17 @@ static void ProbingTmoHandler(TimerHandle_t periodicTim) {
   if(target_ipaddr != NULL) {
     const struct link_stats *stats = rpl_neighbor_get_link_stats(probing_target);
     (void)stats;
-    TRiceS(iD(5943), "msg:probing %s", uip6_printAddr(target_ipaddr, NULL));
+    TRiceS("msg:probing %s", uip6_printAddr(target_ipaddr, NULL));
     if (curr_instance.dag.urgent_probing_target != NULL) {
-    	TRice(iD(4527), "msg: (urgent) last tx %u min ago\n", (stats != NULL) ? ((uint16_t)((Time_GetUptime() - stats->last_tx_time) / SECONDS_IN_MINUTE)) : 0);
+    	TRice("msg: (urgent) last tx %u min ago\n", (stats != NULL) ? ((uint16_t)((Time_GetUptime() - stats->last_tx_time) / SECONDS_IN_MINUTE)) : 0);
     } else {
-    	TRice(iD(1703), "msg: last tx %u min ago\n", (stats != NULL) ? ((uint16_t)((Time_GetUptime() - stats->last_tx_time) / SECONDS_IN_MINUTE)) : 0);
+    	TRice("msg: last tx %u min ago\n", (stats != NULL) ? ((uint16_t)((Time_GetUptime() - stats->last_tx_time) / SECONDS_IN_MINUTE)) : 0);
     }
     /* Send probe, e.g. unicast DIO or DIS */
     RPL_PROBING_SEND_FUNC(target_ipaddr);
     /* urgent_probing_target will be NULLed in the packet_sent callback */
   } else {
-	  TRice(iD(3706), "msg:no neighbor needs probing\n");
+	  TRice("msg:no neighbor needs probing\n");
   }
 
   /* Schedule next probing */

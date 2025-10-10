@@ -61,17 +61,17 @@ rpl_dag_root_print_links(const char *str)
     if(uip_sr_num_nodes() > 0) {
       uip_sr_node_t *link;
       /* Our routing links */
-      TRice(iD(4227), "msg:links: %u routing links in total (%s)\n", uip_sr_num_nodes(), str);
+      TRice("msg:links: %u routing links in total (%s)\n", uip_sr_num_nodes(), str);
       link = uip_sr_node_head();
       while(link != NULL) {
         char buf[100];
         uip_sr_link_snprint(buf, sizeof(buf), link);
-        TRice(iD(2228), "msg:links: %s\n", buf);
+        TRice("msg:links: %s\n", buf);
         link = uip_sr_node_next(link);
       }
-      TRice(iD(6882), "msg:links: end of list\n");
+      TRice("msg:links: end of list\n");
     } else {
-    	TRice(iD(1258), "msg:No routing links\n");
+    	TRice("msg:No routing links\n");
     }
   }
 }
@@ -101,11 +101,11 @@ set_global_address(uip_ipaddr_t *prefix, uip_ipaddr_t *iid)
 
   uip_ds6_addr_add(&root_ipaddr, 0, ADDR_AUTOCONF);
 
-  TRice(iD(1428), "msg:IPv6 addresses:\n");
+  TRice("msg:IPv6 addresses:\n");
   for(i = 0; i < UIP_DS6_ADDR_NB; i++) {
     state = uip_ds6_if.addr_list[i].state;
     if(uip_ds6_if.addr_list[i].isused && (state == ADDR_TENTATIVE || state == ADDR_PREFERRED)) {
-      TRiceS(iD(4251), "msg:-- %s\n", uip6_printAddr(&uip_ds6_if.addr_list[i].ipaddr, NULL));
+      TRiceS("msg:-- %s\n", uip6_printAddr(&uip_ds6_if.addr_list[i].ipaddr, NULL));
     }
   }
 }
@@ -145,10 +145,10 @@ rpl_dag_root_start(void)
     rpl_dag_init_root(RPL_DEFAULT_INSTANCE, ipaddr, (uip_ipaddr_t *)rpl_get_global_address(), 64, UIP_ND6_RA_FLAG_AUTONOMOUS);
     rpl_dag_update_state();
 
-    TRice(iD(5598), "msg:created a new RPL DAG\n");
+    TRice("msg:created a new RPL DAG\n");
     return 0;
   } else {
-	  TRice(iD(7548), "err:failed to create a new RPL DAG\n");
+	  TRice("err:failed to create a new RPL DAG\n");
     return -1;
   }
 }
