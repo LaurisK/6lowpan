@@ -52,7 +52,6 @@
 static int num_nodes;
 
 /* Every known node in the network */
-LIST(nodelist);
 uip_sr_node_t *nodes = NULL;
 /*---------------------------------------------------------------------------*/
 int

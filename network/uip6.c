@@ -79,11 +79,7 @@
 #include "tcpip.h"
 #include "../routing/routing.h"
 #include "cmsis_os.h"
-#if defined(STM32H753xx)
-#include "trice.h"
-#else
 #include "App/common.h"
-#endif
 
 #if UIP_ND6_SEND_NS
 #include "uip-ds6-nbr.h"

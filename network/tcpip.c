@@ -38,11 +38,6 @@
  * \author  Julien Abeille <jabeille@cisco.com> (IPv6 related code)
  */
 
-//#include "contiki.h"
-//#include "contiki-net.h"
-//#include "net/ipv6/uip-packetqueue.h"
-//
-//#include "net/ipv6/uip-nd6.h"
 #include <string.h>
 #include "tcpip.h"
 #include "uip-ds6.h"
@@ -55,11 +50,7 @@
 #include "uipopt.h"
 #include "cmsis_os.h"
 #include "../evt_radio.h"
-#if defined(STM32H753xx)
-#include "trice.h"
-#else
 #include "App/common.h"
-#endif
 
 
 #ifdef UIP_FALLBACK_INTERFACE
@@ -91,6 +82,7 @@ static TimerHandle_t periodicTim;
 
 static uint16_t tcpipEvtIdOffset;
 void (*tcpipIrq2Task)(uint16_t, void(*cbFunc)(void));
+static sUipBuff rxBuff;
 /*---------------------------------------------------------------------------*/
 
 uint8_t tcpip_output(sUipBuff *tcpUipBuff, const uip_lladdr_t *addr) {
@@ -142,10 +134,10 @@ static void check_for_tcp_syn(void) {
 }
 
 /*---------------------------------------------------------------------------*/
-static uint16_t packet_input(sUipBuff *rxBuff) {
+static uint16_t packet_input(sUipBuff *rxPacket) {
   uint16_t rxLen = 0;
-  if(rxBuff->len > 0) {
-	TRice("msg:input: received %u bytes\n", rxBuff->len);
+  if(rxPacket->len > 0) {
+	TRice("msg:input: received %u bytes\n", rxPacket->len);
 
     check_for_tcp_syn();
 
@@ -161,9 +153,9 @@ static uint16_t packet_input(sUipBuff *rxBuff) {
     }
 #endif /* UIP_TAG_TC_WITH_VARIABLE_RETRANSMISSIONS */
 
-    uip_process(rxBuff, UIP_DATA);
-    if(rxBuff->len > 0) {
-      tcpip_ipv6_output(rxBuff);
+    uip_process(rxPacket, UIP_DATA);
+    if(rxPacket->len > 0) {
+      tcpip_ipv6_output(rxPacket);
     }
   }
   return rxLen;
@@ -289,12 +281,13 @@ tcpip_icmp6_call(uint8_t type)
 }
 #endif /* UIP_CONF_ICMP6 */
 /*---------------------------------------------------------------------------*/
-uint16_t tcpip_input(sUipBuff *rxBuff)
+uint16_t tcpip_input(uint8_t **rxData)
 {
-	if (sicslowpan_driver.input(rxBuff)) {
+	if (sicslowpan_driver.input(&rxBuff)) {
 #warning "netstack.c/h is for packet filtering, firewall or other functionality which is not needed for now"
   if(1/*netstack_process_ip_callback(NETSTACK_IP_INPUT, NULL) == NETSTACK_IP_PROCESS*/) {
-	    return packet_input(rxBuff);
+	  uint16_t rxLen = packet_input(&rxBuff);
+	    return rxLen;
   } /* else - do nothing and drop */
   //uipbuf_clear(); do not care - we clear it at start of reception. and now use different buffers for RX/TX and stuff.
 	}

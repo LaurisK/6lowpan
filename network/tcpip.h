@@ -288,7 +288,7 @@ void tcpip_icmp6_call(uint8_t type);
  *             and the length of the packet must be in the global
  *             uip_len variable.
  */
-uint16_t tcpip_input(sUipBuff *rxBuff);
+uint16_t tcpip_input(uint8_t **rxData);
 
 /**
  * \brief Output packet to layer 2

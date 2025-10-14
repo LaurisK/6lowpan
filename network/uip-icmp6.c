@@ -47,11 +47,7 @@
 #include "uip-ds6.h"
 #include "tcpip.h"
 #include "../routing/routing.h"
-#if defined(STM32H753xx)
-#include "trice.h"
-#else
 #include "App/common.h"
-#endif
 
 static struct uip_icmp6_echo_reply_notification *replyCbListHead = NULL, *replyCbListTail = NULL;
 static uip_icmp6_input_handler_t *inputHndlListHead = NULL;

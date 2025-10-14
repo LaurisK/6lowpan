@@ -45,7 +45,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stddef.h>
-//#include "lib/random.h"
 #include "tcpip.h"
 #include "uip-nd6.h"
 #include "uip-ds6.h"
@@ -53,14 +52,8 @@
 #include "uip-ds6-nbr.h"
 #include "App/Time/time.h"
 #include "../addressing.h"
-//#include "net/ipv6/multicast/uip-mcast6.h"
-//#include "net/ipv6/uip-packetqueue.h"
 #include "cmsis_os.h"
-#if defined(STM32H753xx)
-#include "trice.h"
-#else
 #include "App/common.h"
-#endif
 
 #ifdef UIP_CONF_ND6_RETRANS_TIMER
 #define UIP_ND6_RETRANS_TIMER          UIP_CONF_ND6_RETRANS_TIMER

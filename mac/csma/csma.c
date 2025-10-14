@@ -45,12 +45,7 @@
 #include "Middlewares/Third_Party/6lowpan/radio-driver.h"
 #include "../framer/framer-802154.h"
 #include "../llsec802154.h"
-#if defined(STM32H753xx)
-#include "trice.h"
-#include "main.h"
-#else
 #include "App/common.h"
-#endif
 #include "Middlewares/Third_Party/6lowpan/evt_radio.h"
 
 /* Private defines ----------------------------------------------------------*/
