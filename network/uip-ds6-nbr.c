@@ -103,10 +103,9 @@ uip_ds6_neighbors_init(void)
   //link_stats_init();
 #if UIP_DS6_NBR_MULTI_IPV6_ADDRS
   memb_init(&uip_ds6_nbr_memb);
-  nbr_table_register(uip_ds6_nbr_entries,
-                     (nbr_table_callback *)callback_nbr_entry_removal);
+  nbr_table_register("ds6 multi neighbors", uip_ds6_nbr_entries, (nbr_table_callback *)callback_nbr_entry_removal);
 #else
-  nbr_table_register(ds6_neighbors, (nbr_table_callback *)uip_ds6_nbr_rm);
+  nbr_table_register("ds6 neighbors", ds6_neighbors, (nbr_table_callback *)uip_ds6_nbr_rm);
 #endif /* UIP_DS6_NBR_MULTI_IPV6_ADDRS */
 }
 /*---------------------------------------------------------------------------*/
@@ -397,9 +396,7 @@ uip_ds6_nbr_num(void)
   }
 #else
   uip_ds6_nbr_t *nbr;
-  for(nbr = nbr_table_head(ds6_neighbors);
-      nbr != NULL;
-      nbr = nbr_table_next(ds6_neighbors, nbr)) {
+  for(nbr = nbr_table_head(ds6_neighbors); nbr != NULL; nbr = nbr_table_next(ds6_neighbors, nbr)) {
     num++;
   }
 #endif /* UIP_DS6_NBR_MULTI_IPV6_ADDRS */
@@ -421,9 +418,7 @@ uip_ds6_nbr_head(void)
 #endif /* UIP_DS6_NBR_MULTI_IPV6_ADDRS */
 }
 /*---------------------------------------------------------------------------*/
-uip_ds6_nbr_t *
-uip_ds6_nbr_next(uip_ds6_nbr_t *nbr)
-{
+uip_ds6_nbr_t * uip_ds6_nbr_next(uip_ds6_nbr_t *nbr) {
 #if UIP_DS6_NBR_MULTI_IPV6_ADDRS
   uip_ds6_nbr_entry_t *nbr_entry;
   if(nbr == NULL) {

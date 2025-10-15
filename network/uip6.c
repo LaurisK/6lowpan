@@ -313,7 +313,7 @@ upper_layer_chksum(sUipBuff *uipBuff, uint8_t proto)
 
   upper_layer_len = uip6_uipHdrGetLen(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)) - uipBuff->extLen;
 
-  TRice("dbg:Upper layer checksum len: %d from: %d\n", upper_layer_len,
+  TRice("msg:Upper layer checksum len: %d from: %d\n", upper_layer_len,
          (int)((uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen) - uipBuff->buff.u8));
 
   /* First sum pseudoheader. */

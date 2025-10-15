@@ -359,7 +359,7 @@ uip_ds6_prefix_t * uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t ipaddrlen, u
     locprefix->vlifetime = vtime;
     locprefix->plifetime = ptime;
     TRiceS("msg:Adding prefix %s ", uip6_printAddr(&locprefix->ipaddr, NULL));
-    TRice("msg:length %u, flags %x, Valid lifetime %lx, Preffered lifetime %lx\n", ipaddrlen, flags, vtime, ptime);
+    TRice("msg:length %u, flags %x, Valid lifetime %u, Preffered lifetime %u\n", ipaddrlen, flags, vtime, ptime);
     return locprefix;
   } else {
 	  TRice("msg:No more space in Prefix list\n");

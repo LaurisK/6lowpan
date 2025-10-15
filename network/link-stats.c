@@ -30,14 +30,9 @@
  * Authors: Simon Duquennoy <simonduq@sics.se>
  */
 
-//#include "contiki.h"
-//#include "sys/clock.h"
-//#include "net/packetbuf.h"
-//#include "net/nbr-table.h"
 #include "link-stats.h"
 #include "nbr-table.h"
 #include "../mac/mac.h"
-//#include <stdio.h>
 #include "App/Time/time.h"
 #include "cmsis_os.h"
 
@@ -297,7 +292,7 @@ link_stats_reset(void)
 void
 link_stats_init(void)
 {
-  nbr_table_register(link_stats, NULL);
+  nbr_table_register("link statistics", link_stats, NULL);
   periodicTimer = xTimerCreate("6lowpan-linkStats-periodicTimer", pdMS_TO_TICKS(FRESHNESS_HALF_LIFE * 1000), pdTRUE, 0, periodic);
   xTimerStart(periodicTimer, 0);
 }

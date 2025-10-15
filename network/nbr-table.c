@@ -32,23 +32,17 @@
  *          Joris Borms <joris.borms@vub.ac.be>
  */
 
-//#include "contiki.h"
-//
 #include <stddef.h>
 #include <string.h>
-//#include "lib/memb.h"
-//#include "lib/list.h"
 #include "nbr-table.h"
 
-#define NBR_DEBUG 0
+#define NBR_DEBUG 1
 #if NBR_DEBUG
-#include <stdio.h>
-#include "sys/ctimer.h"
-static void handle_periodic_timer(void *ptr);
-static struct ctimer periodic_timer;
+#include "App/Time/time.h"
+#include "cmsis_os.h"
+
 static uint8_t initialized = 0;
-static void print_table();
-#define PRINTF(...) printf(__VA_ARGS__)
+static TimerHandle_t dbgTimer;
 #else
 #define PRINTF(...)
 #endif
@@ -291,22 +285,44 @@ nbr_table_allocate(nbr_table_reason_t reason, void *data)
   }
 }
 /*---------------------------------------------------------------------------*/
+#if NBR_DEBUG
+static void printNbrTable(TimerHandle_t periodicTim)
+{
+  int i, j;
+  /* Printout all neighbors and which tables they are used in */
+  TRice("msg:NBR TABLE:\n");
+  for(i = 0; i < NBR_TABLE_MAX_NEIGHBORS; i++) {
+    if(used_map[i] > 0) {
+    	TRice("msg: %02d %02d",i , key_from_index(i)->lladdr.u8[LINKADDR_SIZE - 1]);
+      for(j = 0; j < num_tables; j++) {
+    	  TRice("msg: [%d:%d]", (used_map[i] & (1 << j)) != 0,
+               (locked_map[i] & (1 << j)) != 0);
+      }
+      TRice("msg:\n");
+    }
+  }
+}
+#endif
+/*---------------------------------------------------------------------------*/
 /* Register a new neighbor table. To be used at initialization by modules
  * using a neighbor table */
-int
-nbr_table_register(nbr_table_t *table, nbr_table_callback *callback)
-{
+int nbr_table_register(const char *tblName, nbr_table_t *table, nbr_table_callback *callback) {
 #if NBR_DEBUG
   if(!initialized) {
     initialized = 1;
     /* schedule a debug printout per minute */
-    ctimer_set(&periodic_timer, CLOCK_SECOND * 60, handle_periodic_timer, NULL);
+    printNbrTable(dbgTimer);
+    dbgTimer = xTimerCreate("6lowpan-nbr-debugTimer", pdMS_TO_TICKS(SECONDS_IN_MINUTE * 1000), pdTRUE, 0, printNbrTable);
+    xTimerStart(dbgTimer, 0);
   }
 #endif
 
   if(nbr_table_is_registered(table)) {
     /* Table already registered, just update callback */
     table->callback = callback;
+#if NBR_DEBUG
+    TRiceS("msg:Neighbor register \"%s\" table callback updated.\n", tblName);
+#endif
     return 1;
   }
 
@@ -314,17 +330,23 @@ nbr_table_register(nbr_table_t *table, nbr_table_callback *callback)
     table->index = num_tables++;
     table->callback = callback;
     all_tables[table->index] = table;
+    table->tableName = tblName;
+#if NBR_DEBUG
+    TRiceS("msg:Neighbor register \"%s\" table", tblName);
+    TRice("msg: at idx(%d)\n", table->index);
+#endif
     return 1;
   } else {
     /* Maximum number of tables exceeded */
+#if NBR_DEBUG
+    TRice("err:Neighbor register - out of tables\n");
+#endif
     return 0;
   }
 }
 /*---------------------------------------------------------------------------*/
 /* Test whether a specified table has been registered or not */
-int
-nbr_table_is_registered(nbr_table_t *table)
-{
+int nbr_table_is_registered(nbr_table_t *table) {
   if(table != NULL && table->index >= 0 && table->index < MAX_NUM_TABLES
                    && all_tables[table->index] == table) {
     return 1;
@@ -333,23 +355,19 @@ nbr_table_is_registered(nbr_table_t *table)
 }
 /*---------------------------------------------------------------------------*/
 /* Returns the first item of the current table */
-nbr_table_item_t *
-nbr_table_head(nbr_table_t *table)
-{
+nbr_table_item_t * nbr_table_head(nbr_table_t *table) {
   /* Get item from first key */
   nbr_table_item_t *item = item_from_key(table, keyListHead);
   /* Item is the first neighbor, now check is it is in the current table */
   if(nbr_get_bit(used_map, table, item)) {
     return item;
   } else {
-    return nbr_table_next(table, item);
+    return (NULL != item) ? nbr_table_next(table, item) : (NULL);
   }
 }
 /*---------------------------------------------------------------------------*/
 /* Iterates over the current table */
-nbr_table_item_t *
-nbr_table_next(nbr_table_t *table, nbr_table_item_t *item)
-{
+nbr_table_item_t * nbr_table_next(nbr_table_t *table, nbr_table_item_t *item) {
   do {
 	nbr_table_key_t *key = key_from_item(table, item);
     key = key->next;
@@ -360,14 +378,19 @@ nbr_table_next(nbr_table_t *table, nbr_table_item_t *item)
 }
 /*---------------------------------------------------------------------------*/
 /* Add a neighbor indexed with its link-layer address */
-nbr_table_item_t *
-nbr_table_add_lladdr(nbr_table_t *table, const linkaddr_t *lladdr, nbr_table_reason_t reason, void *data)
-{
+nbr_table_item_t * nbr_table_add_lladdr(nbr_table_t *table, const linkaddr_t *lladdr, nbr_table_reason_t reason, void *data) {
   int index;
   nbr_table_item_t *item;
   nbr_table_key_t *key;
 
+#if NBR_DEBUG
+  TRiceS("msg:Neighbor add %s\n", linkaddr_printAddr(lladdr));
+  printNbrTable(dbgTimer);
+#endif
   if(table == NULL) {
+#if NBR_DEBUG
+	TRice("err:table is NULL\n");
+#endif
     return NULL;
   }
 
@@ -383,6 +406,9 @@ nbr_table_add_lladdr(nbr_table_t *table, const linkaddr_t *lladdr, nbr_table_rea
 
     /* No space available for new entry */
     if(key == NULL) {
+#if NBR_DEBUG
+	TRice("err:No space available for new entry\n");
+#endif
       return NULL;
     }
 
@@ -410,81 +436,49 @@ nbr_table_add_lladdr(nbr_table_t *table, const linkaddr_t *lladdr, nbr_table_rea
   nbr_set_bit(used_map, table, item, 1);
 
 #if NBR_DEBUG
-  print_table();
+  TRice("msg:Neighbor add to %d\n", item);
+  printNbrTable(dbgTimer);
 #endif
   return item;
 }
 /*---------------------------------------------------------------------------*/
 /* Get an item from its link-layer address */
-void *
-nbr_table_get_from_lladdr(nbr_table_t *table, const linkaddr_t *lladdr)
-{
+void *nbr_table_get_from_lladdr(nbr_table_t *table, const linkaddr_t *lladdr) {
   void *item = item_from_index(table, index_from_lladdr(lladdr));
   return nbr_get_bit(used_map, table, item) ? item : NULL;
 }
 /*---------------------------------------------------------------------------*/
 /* Removes a neighbor from the current table (unset "used" bit) */
-int
-nbr_table_remove(nbr_table_t *table, void *item)
-{
+int nbr_table_remove(nbr_table_t *table, void *item) {
   int ret = nbr_set_bit(used_map, table, item, 0);
+#if NBR_DEBUG
+  int i = index_from_item(table, item);
+  TRice("msg:Neighbor remove %d\n", i);
+#endif
   nbr_set_bit(locked_map, table, item, 0);
   return ret;
 }
 /*---------------------------------------------------------------------------*/
 /* Lock a neighbor for the current table (set "locked" bit) */
-int
-nbr_table_lock(nbr_table_t *table, void *item)
-{
+int nbr_table_lock(nbr_table_t *table, void *item) {
 #if NBR_DEBUG
   int i = index_from_item(table, item);
-  PRINTF("*** Lock %d\n", i);
+  TRice("msg:Neighbor lock %d\n", i);
 #endif
   return nbr_set_bit(locked_map, table, item, 1);
 }
 /*---------------------------------------------------------------------------*/
 /* Release the lock on a neighbor for the current table (unset "locked" bit) */
-int
-nbr_table_unlock(nbr_table_t *table, void *item)
-{
+int nbr_table_unlock(nbr_table_t *table, void *item) {
 #if NBR_DEBUG
   int i = index_from_item(table, item);
-  PRINTF("*** Unlock %d\n", i);
+  TRice("msg:Neighbor unlock %d\n", i);
 #endif
   return nbr_set_bit(locked_map, table, item, 0);
 }
 /*---------------------------------------------------------------------------*/
 /* Get link-layer address of an item */
-linkaddr_t *
-nbr_table_get_lladdr(nbr_table_t *table, const void *item)
-{
+linkaddr_t * nbr_table_get_lladdr(nbr_table_t *table, const void *item) {
   nbr_table_key_t *key = key_from_item(table, item);
   return key != NULL ? &key->lladdr : NULL;
 }
-/*---------------------------------------------------------------------------*/
-#if NBR_DEBUG
-static void
-print_table()
-{
-  int i, j;
-  /* Printout all neighbors and which tables they are used in */
-  PRINTF("NBR TABLE:\n");
-  for(i = 0; i < NBR_TABLE_MAX_NEIGHBORS; i++) {
-    if(used_map[i] > 0) {
-      PRINTF(" %02d %02d",i , key_from_index(i)->lladdr.u8[LINKADDR_SIZE - 1]);
-      for(j = 0; j < num_tables; j++) {
-        PRINTF(" [%d:%d]", (used_map[i] & (1 << j)) != 0,
-               (locked_map[i] & (1 << j)) != 0);
-      }
-      PRINTF("\n");
-    }
-  }
-}
-/*---------------------------------------------------------------------------*/
-static void
-handle_periodic_timer(void *ptr)
-{
-  print_table();
-  ctimer_reset(&periodic_timer);
-}
-#endif

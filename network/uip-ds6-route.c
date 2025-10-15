@@ -38,15 +38,9 @@
  * \file
  *    Routing table manipulation
  */
-//#include "net/ipv6/uip-ds6.h"
 #include "uip-ds6-route.h"
 #include "uip-ds6-nbr.h"
 #include "cmsis_os.h"
-//#include "net/ipv6/uip.h"
-//
-//#include "lib/list.h"
-//#include "lib/memb.h"
-//#include "net/nbr-table.h"
 
 #if BUILD_WITH_ORCHESTRA
 
@@ -164,8 +158,7 @@ uip_ds6_route_init(void)
 #if (UIP_MAX_ROUTES != 0)
   memb_init(&routememb);
   list_init(routelist);
-  nbr_table_register(nbr_routes,
-                     (nbr_table_callback *)rm_routelist_callback);
+  nbr_table_register("neighbor routes", nbr_routes, (nbr_table_callback *)rm_routelist_callback);
 #endif /* (UIP_MAX_ROUTES != 0) */
 
 #if UIP_DS6_NOTIFICATIONS

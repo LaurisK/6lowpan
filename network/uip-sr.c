@@ -40,11 +40,6 @@
  */
 
 #include <stdio.h>
-//#include "net/ipv6/uip-sr.h"
-//#include "net/ipv6/uiplib.h"
-//#include "net/routing/routing.h"
-//#include "lib/list.h"
-//#include "lib/memb.h"
 #include "../routing/routing.h"
 #include "../routing/rpl-lite/rpl-neighbor.h"
 
@@ -185,7 +180,7 @@ uip_sr_node_t * uip_sr_node_head(void) {
 uip_sr_node_t * uip_sr_node_next(uip_sr_node_t *item) {
   return item->next;
 }
-static uip_sr_node_t * uip_sr_node_remove(uip_sr_node_t *itemToRemove) {
+static void uip_sr_node_remove(uip_sr_node_t *itemToRemove) {
 	uip_sr_node_t *walker = nodes, *follower = NULL;
 	/* Remove neighbor from list */
 	while (NULL != walker) {
@@ -202,6 +197,7 @@ static uip_sr_node_t * uip_sr_node_remove(uip_sr_node_t *itemToRemove) {
 		walker = walker->next;
 	}
 	vPortFree(itemToRemove);
+    num_nodes--;
 }
 /*---------------------------------------------------------------------------*/
 void uip_sr_periodic(unsigned seconds) {
@@ -225,7 +221,6 @@ void uip_sr_periodic(unsigned seconds) {
       }
       /* No child found, deallocate node */
       uip_sr_node_remove(l);
-      num_nodes--;
     } else if(l->lifetime != UIP_SR_INFINITE_LIFETIME) {
       l->lifetime = l->lifetime > seconds ? l->lifetime - seconds : 0;
     }
@@ -238,7 +233,6 @@ void uip_sr_free_all(void) {
   for(l = nodes; l != NULL; l = next) {
     next = l->next;
     uip_sr_node_remove(l);
-    num_nodes--;
   }
 }
 /*---------------------------------------------------------------------------*/

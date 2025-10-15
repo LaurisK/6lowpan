@@ -59,6 +59,7 @@ typedef struct nbr_table {
   int item_size;
   nbr_table_callback *callback;
   nbr_table_item_t *data;
+  const char *tableName;
 } nbr_table_t;
 
 /** \brief A static neighbor table. To be initialized through nbr_table_register(name) */
@@ -89,7 +90,7 @@ typedef enum {
 
 /** \name Neighbor tables: register and loop through table elements */
 /** @{ */
-int nbr_table_register(nbr_table_t *table, nbr_table_callback *callback);
+int nbr_table_register(const char *tblName, nbr_table_t *table, nbr_table_callback *callback);
 int nbr_table_is_registered(nbr_table_t *table);
 nbr_table_item_t *nbr_table_head(nbr_table_t *table);
 nbr_table_item_t *nbr_table_next(nbr_table_t *table, nbr_table_item_t *item);

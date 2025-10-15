@@ -75,9 +75,6 @@
 #include "uip-ds6.h"
 #include "uip-ds6-nbr.h"
 #include "uip-ds6-route.h"
-//#include "net/ipv6/uip-ds6.h"
-//#include "net/ipv6/uip-nameserver.h"
-//#include "lib/random.h"
 
 /*------------------------------------------------------------------*/
 /** @{ */

@@ -448,7 +448,7 @@ rpl_neighbor_select_best(void)
 }
 /*---------------------------------------------------------------------------*/
 void rpl_neighbor_init(void) {
-  nbr_table_register(rpl_neighbors, (nbr_table_callback *)remove_neighbor);
+  nbr_table_register("rpl neighbors", rpl_neighbors, (nbr_table_callback *)remove_neighbor);
 }
 /*---------------------------------------------------------------------------*/
 int log_6addr_compact_snprint(char *buf, size_t size, const uip_ipaddr_t *ipaddr) {

@@ -37,12 +37,6 @@
  *         Adam Dunkels <adam@sics.se>
  */
 
-//#include "contiki.h"
-//
-//extern uint16_t uip_slen;
-//
-//#include "net/ipv6/uip-udp-packet.h"
-//#include "net/ipv6/multicast/uip-mcast6.h"
 #include "uip-udp-packet.h"
 #include "tcpip.h"
 
