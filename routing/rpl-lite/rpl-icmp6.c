@@ -44,13 +44,9 @@
  *               George Oikonomou <oikonomou@users.sourceforge.net> (multicast)
  */
 
-//#include "net/routing/rpl-lite/rpl.h"
+#include <limits.h>
 #include "../../network/uip-icmp6.h"
 #include "../../network/sicslowpan.h"
-//#include "net/packetbuf.h"
-//#include "lib/random.h"
-
-#include <limits.h>
 #include "rpl.h"
 #include "rpl-icmp6.h"
 #include "rpl-dag.h"
@@ -431,7 +427,7 @@ rpl_icmp6_dio_output(uip_ipaddr_t *uc_addr)
   }
 
   if(!rpl_get_leaf_only()) {
-    addr = addr != NULL ? addr : &rpl_multicast_addr;
+    addr = (addr != NULL) ? addr : &rpl_multicast_addr;
   }
 
   if (uc_addr != NULL) {
@@ -439,7 +435,7 @@ rpl_icmp6_dio_output(uip_ipaddr_t *uc_addr)
   } else {
 	  TRice("msg:sending a multicast-DIO with rank %u", (uint16_t)curr_instance.dag.rank);
   }
-  TRice("msg:to %s\n", uip6_printAddr(addr, NULL));
+  TRiceS("msg:to %s\n", uip6_printAddr(addr, NULL));
 
   uip_icmp6_send(&dioBuff, addr, ICMP6_RPL, RPL_CODE_DIO, pos);
 }

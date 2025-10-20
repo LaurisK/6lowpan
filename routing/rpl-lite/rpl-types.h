@@ -48,6 +48,7 @@
 #include "../../network/uip.h"
 #include "App/common.h"
 #include "cmsis_os.h"
+#include "rpl-conf.h"
  /********** Macros **********/
 
 /* Multicast address: create and compare */

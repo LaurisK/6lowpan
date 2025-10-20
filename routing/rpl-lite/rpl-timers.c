@@ -132,6 +132,7 @@ static void new_dio_interval(void) {
 
   /* schedule the timer */
   xTimerChangePeriod(curr_instance.dag.dio_timer, pdMS_TO_TICKS(ticks), 0);
+  TRice("msg:DIO timer scheduled for(%d)\n", ticks);
   xTimerStart(curr_instance.dag.dio_timer, 0);
 
 #ifdef RPL_CALLBACK_NEW_DIO_INTERVAL
@@ -141,6 +142,7 @@ static void new_dio_interval(void) {
 /*---------------------------------------------------------------------------*/
 static void DioTmoHandler(TimerHandle_t periodicTim) {
   if(!rpl_dag_ready_to_advertise()) {
+	TRice("msg:DioTmoHandler(exit - We will be scheduled again later)\n");
     return; /* We will be scheduled again later */
   }
 
@@ -160,10 +162,29 @@ static void DioTmoHandler(TimerHandle_t periodicTim) {
       }
 #endif /* RPL_TRICKLE_REFRESH_DAO_ROUTES */
       curr_instance.dag.last_advertised_rank = curr_instance.dag.rank;
+#if 1/*UIP_IPV6_MULTICAST*/
+      TRice("msg:Issue periodical multicast-DIO\n");
       rpl_icmp6_dio_output(NULL);
+#else /* UIP_IPV6_MULTICAST */
+     {
+    	rpl_nbr_t *nbr = nbr_table_head(rpl_neighbors);
+    	while (NULL != nbr) {
+    		uip_ipaddr_t *nbrAddr = rpl_neighbor_get_ipaddr(nbr);
+    	  if (NULL != nbrAddr) {
+      	    TRiceS("msg:Issue periodical unicast-DIO to neighbor %s\n", uip6_printAddr(nbrAddr, NULL));
+    		rpl_icmp6_dio_output(nbrAddr);
+    	  } else {
+    	    TRice("msg:Issue periodical multicast-DIO - neighbor address was not obtained\n");
+    	    rpl_icmp6_dio_output(NULL);
+    	  }
+    	  nbr = nbr_table_next(rpl_neighbors, nbr);
+    	}
+     }
+#endif /* UIP_IPV6_MULTICAST */
     }
     curr_instance.dag.dio_send = 0;
     xTimerChangePeriod(curr_instance.dag.dio_timer, pdMS_TO_TICKS(curr_instance.dag.dio_next_delay), 0);
+    TRice("msg:DIO timer continue for(%d)\n", curr_instance.dag.dio_next_delay);
     xTimerStart(curr_instance.dag.dio_timer, 0);
   } else {
     /* check if we need to double interval */
@@ -182,7 +203,7 @@ void rpl_timers_dio_reset(const char *str) {
      * don't reset the DIO timer if the current interval is Imin; see
      * Section 4.2, RFC 6206.
      */
-	  TRice("msg:reset DIO timer (%s)\n", str);
+	  TRiceS("msg:reset DIO timer (%s)\n", (char*)str);
     if(!rpl_get_leaf_only()) {
         curr_instance.dag.dio_counter = 0;
         curr_instance.dag.dio_intcurrent = curr_instance.dio_intmin;
@@ -402,7 +423,7 @@ static void ProbingTmoHandler(TimerHandle_t periodicTim) {
     	TRice("msg: last tx %u min ago\n", (stats != NULL) ? ((uint16_t)((Time_GetUptime() - stats->last_tx_time) / SECONDS_IN_MINUTE)) : 0);
     }
     /* Send probe, e.g. unicast DIO or DIS */
-    RPL_PROBING_SEND_FUNC(target_ipaddr);
+    rpl_icmp6_dio_output(target_ipaddr);
     /* urgent_probing_target will be NULLed in the packet_sent callback */
   } else {
 	  TRice("msg:no neighbor needs probing\n");

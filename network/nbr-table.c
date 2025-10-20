@@ -212,7 +212,7 @@ nbr_table_allocate(nbr_table_reason_t reason, void *data)
 
   if(NBR_TABLE_MAX_NEIGHBORS > unusedKeyPos) {
 	key = &neighborAddr[unusedKeyPos];
-	unusedKeyPos--;
+	unusedKeyPos++;
     return key;
   } else {
 #ifdef NBR_TABLE_FIND_REMOVABLE
@@ -290,17 +290,23 @@ static void printNbrTable(TimerHandle_t periodicTim)
 {
   int i, j;
   /* Printout all neighbors and which tables they are used in */
-  TRice("msg:NBR TABLE:\n");
+  TRice("msg:NBR TABLE:");
   for(i = 0; i < NBR_TABLE_MAX_NEIGHBORS; i++) {
     if(used_map[i] > 0) {
-    	TRice("msg: %02d %02d",i , key_from_index(i)->lladdr.u8[LINKADDR_SIZE - 1]);
+      TRice("msg:\n % 2d", i);
+      TRiceS("msg: %s ", (char*)linkaddr_printAddr(&neighborAddr[i].lladdr));
       for(j = 0; j < num_tables; j++) {
-    	  TRice("msg: [%d:%d]", (used_map[i] & (1 << j)) != 0,
-               (locked_map[i] & (1 << j)) != 0);
+          TRiceS(" %s", (char*)all_tables[j]->tableName);
+          if (0 != (used_map[i] & (1 << j))) {
+        	  TRice("|used");
+          }
+          if (0 != (locked_map[i] & (1 << j))) {
+        	  TRice("|locked");
+          }
       }
-      TRice("msg:\n");
     }
   }
+  TRice("\n");
 }
 #endif
 /*---------------------------------------------------------------------------*/
@@ -321,7 +327,7 @@ int nbr_table_register(const char *tblName, nbr_table_t *table, nbr_table_callba
     /* Table already registered, just update callback */
     table->callback = callback;
 #if NBR_DEBUG
-    TRiceS("msg:Neighbor register \"%s\" table callback updated.\n", tblName);
+    TRiceS("msg:Neighbor register '%s' table callback updated.\n", (char*)tblName);
 #endif
     return 1;
   }
@@ -332,7 +338,7 @@ int nbr_table_register(const char *tblName, nbr_table_t *table, nbr_table_callba
     all_tables[table->index] = table;
     table->tableName = tblName;
 #if NBR_DEBUG
-    TRiceS("msg:Neighbor register \"%s\" table", tblName);
+    TRiceS("msg:Neighbor register '%s' table", (char*)tblName);
     TRice("msg: at idx(%d)\n", table->index);
 #endif
     return 1;
@@ -347,8 +353,7 @@ int nbr_table_register(const char *tblName, nbr_table_t *table, nbr_table_callba
 /*---------------------------------------------------------------------------*/
 /* Test whether a specified table has been registered or not */
 int nbr_table_is_registered(nbr_table_t *table) {
-  if(table != NULL && table->index >= 0 && table->index < MAX_NUM_TABLES
-                   && all_tables[table->index] == table) {
+  if(table != NULL && table->index >= 0 && table->index < MAX_NUM_TABLES && all_tables[table->index] == table) {
     return 1;
   }
   return 0;
@@ -384,7 +389,7 @@ nbr_table_item_t * nbr_table_add_lladdr(nbr_table_t *table, const linkaddr_t *ll
   nbr_table_key_t *key;
 
 #if NBR_DEBUG
-  TRiceS("msg:Neighbor add %s\n", linkaddr_printAddr(lladdr));
+  TRiceS("msg:Neighbor add %s\n", (char*)linkaddr_printAddr(lladdr));
   printNbrTable(dbgTimer);
 #endif
   if(table == NULL) {
@@ -436,7 +441,7 @@ nbr_table_item_t * nbr_table_add_lladdr(nbr_table_t *table, const linkaddr_t *ll
   nbr_set_bit(used_map, table, item, 1);
 
 #if NBR_DEBUG
-  TRice("msg:Neighbor add to %d\n", item);
+  TRice("msg:Neighbor add to %d\n", index);
   printNbrTable(dbgTimer);
 #endif
   return item;

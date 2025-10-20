@@ -433,10 +433,13 @@ uip_ds6_is_addr_onlink(uip_ipaddr_t *ipaddr)
 uip_ds6_addr_t *
 uip_ds6_addr_add(uip_ipaddr_t *ipaddr, uint32_t vlifetime, uint8_t type)
 {
-  if(uip_ds6_list_loop
-     ((uip_ds6_element_t *)uip_ds6_if.addr_list, UIP_DS6_ADDR_NB,
-      sizeof(uip_ds6_addr_t), ipaddr, 128,
-      (uip_ds6_element_t **)&locaddr) == FREESPACE) {
+  if(uip_ds6_list_loop((uip_ds6_element_t *)uip_ds6_if.addr_list,
+		  	  	  	   UIP_DS6_ADDR_NB,
+					   sizeof(uip_ds6_addr_t),
+					   ipaddr,
+					   128,
+					   (uip_ds6_element_t **)&locaddr) == FREESPACE) {
+	TRiceS("msg:Adding unicast address %s\n", uip6_printAddr(ipaddr, NULL));
     locaddr->isused = 1;
     uip_ipaddr_copy(&locaddr->ipaddr, ipaddr);
     locaddr->type = type;
@@ -465,6 +468,7 @@ void
 uip_ds6_addr_rm(uip_ds6_addr_t *addr)
 {
   if(addr != NULL) {
+	TRiceS("msg:Removing unicast address %s\n", uip6_printAddr(&addr->ipaddr, NULL));
     uip_create_solicited_node(&addr->ipaddr, &loc_fipaddr);
     if((locmaddr = uip_ds6_maddr_lookup(&loc_fipaddr)) != NULL) {
       uip_ds6_maddr_rm(locmaddr);
@@ -529,10 +533,12 @@ uip_ds6_get_global(int8_t state)
 uip_ds6_maddr_t *
 uip_ds6_maddr_add(const uip_ipaddr_t *ipaddr)
 {
-  if(uip_ds6_list_loop
-     ((uip_ds6_element_t *)uip_ds6_if.maddr_list, UIP_DS6_MADDR_NB,
-      sizeof(uip_ds6_maddr_t), (void*)ipaddr, 128,
-      (uip_ds6_element_t **)&locmaddr) == FREESPACE) {
+  if(uip_ds6_list_loop((uip_ds6_element_t *)uip_ds6_if.maddr_list,
+		  	  	  	   UIP_DS6_MADDR_NB,
+					   sizeof(uip_ds6_maddr_t),
+					   (void*)ipaddr, 128,
+					   (uip_ds6_element_t **)&locmaddr) == FREESPACE) {
+	TRiceS("msg:Add multicast address %s\n", uip6_printAddr(ipaddr, NULL));
     locmaddr->isused = 1;
     uip_ipaddr_copy(&locmaddr->ipaddr, ipaddr);
     return locmaddr;
@@ -545,6 +551,7 @@ void
 uip_ds6_maddr_rm(uip_ds6_maddr_t *maddr)
 {
   if(maddr != NULL) {
+	TRiceS("msg:Removing multicast address %s\n", uip6_printAddr(&maddr->ipaddr, NULL));
     maddr->isused = 0;
   }
   return;
@@ -573,6 +580,7 @@ uip_ds6_aaddr_add(uip_ipaddr_t *ipaddr)
      ((uip_ds6_element_t *)uip_ds6_if.aaddr_list, UIP_DS6_AADDR_NB,
       sizeof(uip_ds6_aaddr_t), ipaddr, 128,
       (uip_ds6_element_t **)&locaaddr) == FREESPACE) {
+	TRiceS("msg:Add anycast address %s\n", uip6_printAddr(ipaddr, NULL));
     locaaddr->isused = 1;
     uip_ipaddr_copy(&locaaddr->ipaddr, ipaddr);
     return locaaddr;
@@ -586,6 +594,7 @@ void
 uip_ds6_aaddr_rm(uip_ds6_aaddr_t *aaddr)
 {
   if(aaddr != NULL) {
+	TRiceS("msg:Removing multicast address %s\n", uip6_printAddr(&aaddr->ipaddr, NULL));
     aaddr->isused = 0;
   }
   return;
@@ -618,8 +627,7 @@ uip_ds6_select_src(uip_ipaddr_t *src, uip_ipaddr_t *dst)
     for(locaddr = uip_ds6_if.addr_list;
         locaddr < uip_ds6_if.addr_list + UIP_DS6_ADDR_NB; locaddr++) {
       /* Only preferred global (not link-local) addresses */
-      if(locaddr->isused && locaddr->state == ADDR_PREFERRED &&
-         !uip_is_addr_linklocal(&locaddr->ipaddr)) {
+      if(locaddr->isused && locaddr->state == ADDR_PREFERRED && !uip_is_addr_linklocal(&locaddr->ipaddr)) {
         n = get_match_length(dst, &locaddr->ipaddr);
         if(n >= best) {
           best = n;

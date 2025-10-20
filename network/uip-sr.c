@@ -236,9 +236,7 @@ void uip_sr_free_all(void) {
   }
 }
 /*---------------------------------------------------------------------------*/
-int
-uip_sr_link_snprint(char *buf, int buflen, uip_sr_node_t *link)
-{
+int uip_sr_link_snprint(char *buf, int buflen, uip_sr_node_t *link) {
   int index = 0;
   uip_ipaddr_t child_ipaddr;
   uip_ipaddr_t parent_ipaddr;
@@ -246,37 +244,22 @@ uip_sr_link_snprint(char *buf, int buflen, uip_sr_node_t *link)
   rpl_lite_driver.get_sr_node_ipaddr(&child_ipaddr, link);
   rpl_lite_driver.get_sr_node_ipaddr(&parent_ipaddr, link->parent);
 
-  index += log_6addr_compact_snprint(buf+index, buflen-index, &child_ipaddr);
+  index = snprintf(buf, buflen, "%s", uip6_printAddr(&child_ipaddr, NULL));
   if(index >= buflen) {
     return index;
   }
-
   if(link->parent == NULL) {
-    index += snprintf(buf+index, buflen-index, "  (DODAG root)");
-    if(index >= buflen) {
-      return index;
-    }
+	  index += snprintf(&buf[index], (buflen-index), "(DODAG root)");
   } else {
-    index += snprintf(buf+index, buflen-index, "  to ");
-    if(index >= buflen) {
-      return index;
-    }
-    index += log_6addr_compact_snprint(buf+index, buflen-index, &parent_ipaddr);
-    if(index >= buflen) {
-      return index;
-    }
+	  index += snprintf(&buf[index], (buflen-index), "(parent:%s)", uip6_printAddr(&parent_ipaddr, NULL));
+  }
+  if(index >= buflen) {
+    return index;
   }
   if(link->lifetime != UIP_SR_INFINITE_LIFETIME) {
-    index += snprintf(buf+index, buflen-index,
-              " (lifetime: %lu seconds)", (unsigned long)link->lifetime);
-    if(index >= buflen) {
-      return index;
-    }
+	  index += snprintf(&buf[index], (buflen-index), "[lifetime: %lu seconds]", (unsigned long)link->lifetime);
   } else {
-    index += snprintf(buf+index, buflen-index, " (lifetime: infinite)");
-    if(index >= buflen) {
-      return index;
-    }
+	  index += snprintf(&buf[index], (buflen-index), "[lifetime: infinite]");
   }
   return index;
 }

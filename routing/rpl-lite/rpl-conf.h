@@ -168,20 +168,6 @@
 #endif
 
 /*
- * Function used to send RPL probes.
- * To probe with DIO, use:
- * #define RPL_CONF_PROBING_SEND_FUNC(addr) rpl_icmp6_dio_output((addr))
- * To probe with DIS, use:
- * #define RPL_CONF_PROBING_SEND_FUNC(addr) rpl_icmp6_dis_output((addr))
- * Any other custom probing function is also acceptable.
- */
-#ifdef RPL_CONF_PROBING_SEND_FUNC
-#define RPL_PROBING_SEND_FUNC RPL_CONF_PROBING_SEND_FUNC
-#else
-#define RPL_PROBING_SEND_FUNC(addr) rpl_icmp6_dio_output((addr))
-#endif
-
-/*
  * This value decides if this node must stay as a leaf or not
  * as allowed by draft-ietf-roll-rpl-19#section-8.5
  */
