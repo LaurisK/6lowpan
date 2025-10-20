@@ -481,6 +481,7 @@ uip_ipaddr_t *
 uip_ds6_nbr_ipaddr_from_lladdr(const uip_lladdr_t *lladdr)
 {
   uip_ds6_nbr_t *nbr = uip_ds6_nbr_ll_lookup(lladdr);
+
   return nbr ? &nbr->ipaddr : NULL;
 }
 

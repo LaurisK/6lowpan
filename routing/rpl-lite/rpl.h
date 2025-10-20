@@ -47,17 +47,10 @@
 
 /********** Includes **********/
 
-//#include "net/ipv6/uip.h"
 #include "rpl-const.h"
 #include "rpl-conf.h"
 #include "rpl-types.h"
 #include "../routing.h"
-//#include "net/routing/rpl-lite/rpl-icmp6.h"
-//#include "net/routing/rpl-lite/rpl-dag.h"
-//#include "net/routing/rpl-lite/rpl-dag-root.h"
-//#include "net/routing/rpl-lite/rpl-neighbor.h"
-//#include "net/routing/rpl-lite/rpl-ext-header.h"
-//#include "net/routing/rpl-lite/rpl-timers.h"
 
 /********** Public symbols **********/
 

@@ -150,7 +150,7 @@ rpl_reset_prefix(rpl_prefix_t *last_prefix)
   set_ip_from_prefix(&ipaddr, last_prefix);
   rep = uip_ds6_addr_lookup(&ipaddr);
   if(rep != NULL) {
-	TRice("msg:removing global IP address %s\n", uip6_printAddr(&ipaddr, NULL));
+	TRiceS("msg:removing global IP address %s\n", uip6_printAddr(&ipaddr, NULL));
     uip_ds6_addr_rm(rep);
   }
   curr_instance.dag.prefix_info.length = 0;

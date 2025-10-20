@@ -47,11 +47,6 @@
 
 /********** Includes **********/
 
-//#include "net/routing/rpl-lite/rpl.h"
-//#include "lib/list.h"
-//#include "net/ipv6/uip.h"
-//#include "net/ipv6/uip-ds6.h"
-//#include "sys/ctimer.h"
 #include "../../network/nbr-table.h"
 #include "rpl-types.h"
 #include "../../network/link-stats.h"
@@ -130,14 +125,6 @@ uint16_t rpl_neighbor_get_link_metric(rpl_nbr_t *nbr);
 rpl_rank_t rpl_neighbor_rank_via_nbr(rpl_nbr_t *nbr);
 
 /**
- * Returns a neighbors's link-layer address
- *
- * \param nbr The neighbor
- * \return The link-layer address if any, NULL otherwise
-*/
-const linkaddr_t *rpl_neighbor_get_lladdr(rpl_nbr_t *nbr);
-
-/**
  * Returns a neighbor's link statistics
  *
  * \param nbr The neighbor
@@ -198,7 +185,6 @@ rpl_nbr_t *rpl_neighbor_select_best(void);
 typedef rpl_nbr_t rpl_parent_t;
 #define rpl_parent_get_from_ipaddr(addr) rpl_neighbor_get_from_ipaddr(addr)
 #define rpl_parent_get_ipaddr(nbr) rpl_neighbor_get_ipaddr(nbr)
-int log_6addr_compact_snprint(char *buf, size_t size, const uip_ipaddr_t *ipaddr);
  /** @} */
 
 #endif /* RPL_NEIGHBOR_H */

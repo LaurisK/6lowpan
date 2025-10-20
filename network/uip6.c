@@ -350,7 +350,7 @@ void
 uip_init(void)
 {
   int c;
-
+  linkaddr_get_node_addr((linkaddr_t *)&uip_lladdr);
   uipbuf_init();
   uip_ds6_init();
   uip_icmp6_init();
@@ -2334,21 +2334,22 @@ char *uip6_printAddr(const uip_ipaddr_t *addr, int16_t *len)
     uint8_t i = 0;
     uint8_t zeroCompressUsed = false;
     stringLen = 0;
-    while (UIP_802154_LONGADDR_LEN >= i) {
+    while (UIP_802154_LONGADDR_LEN > i) {
     	uint16_t revAddr = __REVSH(addr->u16[i]);
     	i++;
     	if ((0 == revAddr) && (false == zeroCompressUsed)) {
     		zeroCompressUsed = true;
-    		stringLen += snprintf(&printAddrBuff[stringLen], (IP_STRING_LEN - stringLen), "::");
+    		stringLen += snprintf(&printAddrBuff[stringLen], (IP_STRING_LEN - stringLen), (1 != i) ? ":" : "::");
     		while ((UIP_802154_LONGADDR_LEN >= i) && (0 == addr->u16[i])) {
     			i++;
     		}
-    	} else if (UIP_802154_LONGADDR_LEN != i) {
+    	} else if (UIP_802154_LONGADDR_LEN > i) {
     		stringLen += snprintf(&printAddrBuff[stringLen], (IP_STRING_LEN - stringLen), "%x:", revAddr);
     	} else {
-    		stringLen += snprintf(&printAddrBuff[stringLen], (IP_STRING_LEN - stringLen), "%x", revAddr);
+    		stringLen += snprintf(&printAddrBuff[stringLen], (IP_STRING_LEN - stringLen), "%01x", revAddr);
     	}
     }
+    printAddrBuff[stringLen] = 0x00;
   }
   if (NULL != len) {
 	  *len = stringLen;

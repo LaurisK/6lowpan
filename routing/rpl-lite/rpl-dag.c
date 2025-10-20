@@ -236,7 +236,7 @@ void
 rpl_local_repair(const char *str)
 {
   if(curr_instance.used) { /* Check needed because this is a public function */
-	  TRice("wrn:local repair (%s)\n", str);
+	  TRiceS("wrn:local repair (%s)\n", (char*)str);
     if(!rpl_dag_root_is_root()) {
       curr_instance.dag.state = DAG_INITIALIZED; /* Reset DAG state */
     }
@@ -479,7 +479,15 @@ init_dag(uint8_t instance_id, uip_ipaddr_t *dag_id, rpl_ocp_t ocp,
 {
   rpl_of_t *of;
 
-  memset(&curr_instance, 0, sizeof(curr_instance));
+  memset(&curr_instance, 0, offsetof(rpl_instance_t, dag));
+  curr_instance.dag.unicast_dio_target = NULL;
+#if RPL_WITH_PROBING
+  curr_instance.dag.urgent_probing_target = NULL;
+#endif /* RPL_WITH_PROBING */
+#if RPL_WITH_DAO_ACK
+  memset(&curr_instance.dag.dao_ack_target, 0, sizeof(uip_ipaddr_t));
+  curr_instance.dag.dao_ack_sequence = 0;
+#endif /* RPL_WITH_DAO_ACK */
 
   /* OF */
   of = find_objective_function(ocp);
@@ -613,7 +621,7 @@ rpl_process_dis(uip_ipaddr_t *from, int is_multicast)
   } else {
     /* Add neighbor to cache and reply to the unicast DIS with a unicast DIO*/
     if(rpl_icmp6_update_nbr_table(from, NBR_TABLE_REASON_RPL_DIS, NULL) != NULL) {
-    	TRice("msg:unicast DIS, reply to sender\n");
+      TRice("msg:unicast DIS, reply to sender\n");
       rpl_icmp6_dio_output(from);
     }
   }
@@ -626,7 +634,7 @@ rpl_process_dao(uip_ipaddr_t *from, rpl_dao_t *dao)
     uip_sr_expire_parent(NULL, from, &dao->parent_addr);
   } else {
     if(!uip_sr_update_node(NULL, from, &dao->parent_addr, RPL_LIFETIME(dao->lifetime))) {
-    	TRice("err:failed to add link on incoming DAO\n");
+      TRice("err:failed to add link on incoming DAO\n");
       return;
     }
   }

@@ -194,7 +194,7 @@ static int insert_srh_header(sUipBuff *uipBuff) {
   struct uip_routing_hdr *rh_hdr = (struct uip_routing_hdr *)(uipBuff->buff.u8 + UIP_IPH_LEN);
   struct uip_rpl_srh_hdr *srh_hdr = (struct uip_rpl_srh_hdr *)(uipBuff->buff.u8 + UIP_IPH_LEN + RPL_RH_LEN);
 
-  TRice("msg:SRH creating source routing header with destination %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
+  TRiceS("msg:SRH creating source routing header with destination %s\n", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, NULL));
 
   /* Construct source route. We do not do this recursively to keep the runtime stack usage constant. */
 

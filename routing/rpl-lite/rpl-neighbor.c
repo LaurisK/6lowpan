@@ -43,10 +43,6 @@
  */
 
 #include <stdio.h>
-//#include "net/routing/rpl-lite/rpl.h"
-//#include "net/link-stats.h"
-//#include "net/nbr-table.h"
-//#include "net/ipv6/uiplib.h"
 #include "rpl.h"
 #include "rpl-dag.h"
 #include "rpl-dag-root.h"
@@ -101,41 +97,65 @@ static int rpl_neighbor_snprint(char *buf, int buflen, rpl_nbr_t *nbr)
   rpl_nbr_t *best = best_parent(0);
   const struct link_stats *stats = rpl_neighbor_get_link_stats(nbr);
 
-  index += log_6addr_compact_snprint(buf+index, buflen-index, rpl_neighbor_get_ipaddr(nbr));
+  index = snprintf(buf, buflen, "%s, rank - %d", uip6_printAddr(rpl_neighbor_get_ipaddr(nbr), NULL), nbr->rank);
   if(index >= buflen) {
     return index;
   }
-  index += snprintf(buf+index, buflen-index,
-      "%5u, %5u => %5u -- %2u %c%c%c%c%c",
-      nbr->rank,
-      rpl_neighbor_get_link_metric(nbr),
-      rpl_neighbor_rank_via_nbr(nbr),
-      stats != NULL ? stats->freshness : 0,
-      (nbr->rank == curr_instance.min_hoprankinc) ? 'r' : ' ',
-      nbr == best ? 'b' : ' ',
-      (acceptable_rank(rpl_neighbor_rank_via_nbr(nbr)) && rpl_neighbor_is_acceptable_parent(nbr)) ? 'a' : ' ',
-      link_stats_is_fresh(stats) ? 'f' : ' ',
-      nbr == curr_instance.dag.preferred_parent ? 'p' : ' '
-  );
+  index += snprintf(&buf[index], (buflen-index), "(%u=>%u)", rpl_neighbor_get_link_metric(nbr), rpl_neighbor_rank_via_nbr(nbr));
   if(index >= buflen) {
     return index;
   }
-  if(stats != NULL && stats->last_tx_time > 0) {
-    index += snprintf(buf+index, buflen-index, " (last tx %lu min ago", ((Time_GetUptime() - stats->last_tx_time) / SECONDS_IN_MINUTE));
+  if (nbr->rank == curr_instance.min_hoprankinc) {
+	  index += snprintf(&buf[index], (buflen-index), ", DAG-root?");
+	  if(index >= buflen) {
+	    return index;
+	  }
+  }
+  if (nbr == best) {
+	  index += snprintf(&buf[index], (buflen-index), ", best");
+	  if(index >= buflen) {
+	    return index;
+	  }
+  }
+  if (nbr == best) {
+	  index += snprintf(&buf[index], (buflen-index), ", a(valid parent)");
+	  if(index >= buflen) {
+	    return index;
+	  }
+  }
+  if (link_stats_is_fresh(stats)) {
+	  index += snprintf(&buf[index], (buflen-index), ", fresh");
+	  if(index >= buflen) {
+	    return index;
+	  }
+  }
+  if (nbr == curr_instance.dag.preferred_parent) {
+	  index += snprintf(&buf[index], (buflen-index), ", prefered-parent");
+	  if(index >= buflen) {
+	    return index;
+	  }
+  }
+  index += snprintf(&buf[index], (buflen-index), ", freshness(%u)", stats != NULL ? stats->freshness : 0);
+  if(index >= buflen) {
+    return index;
+  }
+  if((stats != NULL) && (stats->last_tx_time > 0)) {
+    index += snprintf(&buf[index], (buflen-index), ", (last tx age %lus", (Time_GetUptime() - stats->last_tx_time));
   } else {
-    index += snprintf(buf+index, buflen-index, " (no tx");
+    index += snprintf(&buf[index], (buflen-index), ", (no tx");
   }
   if(index >= buflen) {
     return index;
   }
   if(nbr->better_parent_since > 0) {
-    index += snprintf(buf+index, buflen-index, ", better since %lu min)", ((Time_GetUptime() - nbr->better_parent_since) / SECONDS_IN_MINUTE));
+    index += snprintf(&buf[index], (buflen-index), ", better since %lus)", (Time_GetUptime() - nbr->better_parent_since));
   } else {
-    index += snprintf(buf+index, buflen-index, ")");
+    index += snprintf(&buf[index], (buflen-index), ")");
   }
   return index;
 }
 /*---------------------------------------------------------------------------*/
+#define NEIUBOR_PRINT_BUFF_LEN 160
 void
 rpl_neighbor_print_list(const char *str)
 {
@@ -143,19 +163,20 @@ rpl_neighbor_print_list(const char *str)
     int curr_dio_interval = curr_instance.dag.dio_intcurrent;
     int curr_rank = curr_instance.dag.rank;
     rpl_nbr_t *nbr = nbr_table_head(rpl_neighbors);
+    char *neighborInfo = pvPortMalloc(NEIUBOR_PRINT_BUFF_LEN);
 
-    TRiceS("msg:nbr: own state, addr %s, ", uip6_printAddr(rpl_get_global_address(), NULL));
-    TRiceS("msg:DAG state: %s, ", (char*)rpl_dag_state_to_str(curr_instance.dag.state));
-    TRice("msg:MOP %u OCP %u rank %u max-rank %u, dio-int %u, nbr count %u",
+    TRiceS("msg:Neighborhood update (%s)\n", (char*)str);
+    TRiceS("msg:\tMy  address %s\n", uip6_printAddr(rpl_get_global_address(), NULL));
+    TRiceS("msg:\tDAG state: %s\n", (char*)rpl_dag_state_to_str(curr_instance.dag.state));
+    TRice("msg:\tMOP %u, OCP %u, rank %u, max-rank %u, dio-int %u, nbr count %u\n",
             curr_instance.mop, curr_instance.of->ocp, curr_rank, max_acceptable_rank(), curr_dio_interval, rpl_neighbor_count());
-    TRiceS("msg: (%s)\n", (char*)str);
     while(nbr != NULL) {
-      char buf[120];
-      rpl_neighbor_snprint(buf, sizeof(buf), nbr);
-      TRiceS("msg:nbr: %s\n", buf);
+      rpl_neighbor_snprint(neighborInfo, NEIUBOR_PRINT_BUFF_LEN, nbr);
+      TRiceS("msg:\t - nbr: %s\n", neighborInfo);
       nbr = nbr_table_next(rpl_neighbors, nbr);
     }
     TRice("msg:nbr: end of list\n");
+    vPortFree(neighborInfo);
   }
 }
 /*---------------------------------------------------------------------------*/
@@ -176,7 +197,7 @@ rpl_neighbor_count(void)
 static uip_ds6_nbr_t *
 rpl_get_ds6_nbr(rpl_nbr_t *nbr)
 {
-  const uip_lladdr_t *lladdr = (const uip_lladdr_t *)rpl_neighbor_get_lladdr(nbr);
+  const uip_lladdr_t *lladdr = (const uip_lladdr_t *)nbr_table_get_lladdr(rpl_neighbors, nbr);
   if(lladdr != NULL) {
     return uip_ds6_nbr_ll_lookup(lladdr);
   } else {
@@ -237,23 +258,17 @@ rpl_neighbor_rank_via_nbr(rpl_nbr_t *nbr)
   return RPL_INFINITE_RANK;
 }
 /*---------------------------------------------------------------------------*/
-const linkaddr_t *
-rpl_neighbor_get_lladdr(rpl_nbr_t *nbr)
-{
-  return nbr_table_get_lladdr(rpl_neighbors, nbr);
-}
-/*---------------------------------------------------------------------------*/
 uip_ipaddr_t *
 rpl_neighbor_get_ipaddr(rpl_nbr_t *nbr)
 {
-  const linkaddr_t *lladdr = rpl_neighbor_get_lladdr(nbr);
+  const linkaddr_t *lladdr = nbr_table_get_lladdr(rpl_neighbors, nbr);
   return uip_ds6_nbr_ipaddr_from_lladdr((uip_lladdr_t *)lladdr);
 }
 /*---------------------------------------------------------------------------*/
 const struct link_stats *
 rpl_neighbor_get_link_stats(rpl_nbr_t *nbr)
 {
-  const linkaddr_t *lladdr = rpl_neighbor_get_lladdr(nbr);
+  const linkaddr_t *lladdr = nbr_table_get_lladdr(rpl_neighbors, nbr);
   return link_stats_from_lladdr(lladdr);
 }
 /*---------------------------------------------------------------------------*/
@@ -449,22 +464,6 @@ rpl_neighbor_select_best(void)
 /*---------------------------------------------------------------------------*/
 void rpl_neighbor_init(void) {
   nbr_table_register("rpl neighbors", rpl_neighbors, (nbr_table_callback *)remove_neighbor);
-}
-/*---------------------------------------------------------------------------*/
-int log_6addr_compact_snprint(char *buf, size_t size, const uip_ipaddr_t *ipaddr) {
-  if(ipaddr == NULL) {
-    return snprintf(buf, size, "6A-NULL");
-  } else {
-    char *prefix = NULL;
-    if(uip_is_addr_mcast(ipaddr)) {
-      prefix = "6M";
-    } else if(uip_is_addr_linklocal(ipaddr)) {
-      prefix = "6L";
-    } else {
-      prefix = "6G";
-    }
-    return snprintf(buf, size, "%s-%04x", prefix, __REVSH(ipaddr->u16[sizeof(uip_ipaddr_t)/2-1]));
-  }
 }
 
 /** @} */

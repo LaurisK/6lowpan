@@ -89,8 +89,12 @@ void linkaddr_get_node_addr(linkaddr_t *addr) {
 
 /*---------------------------------------------------------------------------*/
 const char *linkaddr_printAddr(const linkaddr_t *addr) {
+	uint16_t a0 = __REVSH(addr->u16[0]),
+			 a1 = __REVSH(addr->u16[1]),
+			 a2 = __REVSH(addr->u16[2]),
+			 a3 = __REVSH(addr->u16[3]);
 	memset(address, 0x00, 20);
-	snprintf(address, 20, "%04X:%04X:%04X:%04X", __REVSH(addr->u16[0]), __REVSH(addr->u16[1]), __REVSH(addr->u16[2]), __REVSH(addr->u16[3]));
+	snprintf(address, 20, "%01X:%01X:%01X:%01X", a0, a1, a2, a3);
 	return address;
 }
 /*---------------------------------------------------------------------------*/

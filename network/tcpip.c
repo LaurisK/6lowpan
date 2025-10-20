@@ -51,6 +51,8 @@
 #include "cmsis_os.h"
 #include "../evt_radio.h"
 #include "App/common.h"
+#include "../mac/framer/frame802154.h"
+
 
 
 #ifdef UIP_FALLBACK_INTERFACE
@@ -671,6 +673,8 @@ static void HandleTcpipPeriodicTimer(TimerHandle_t periodicTim) {
 #endif
 
 void tcpip_init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void))) {
+	linkaddr_t linkAddr;
+	uip_ds6_addr_t *localLinkInfo;
 #if UIP_TCP
 	  periodicTim = xTimerCreate("tcpipPeriodicTimer", pdMS_TO_TICKS(500), pdTRUE, 0, HandleTcpipPeriodicTimer);
 	  xTimerStart(periodicTim, 0);
@@ -682,11 +686,20 @@ void tcpip_init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void
 #ifdef UIP_FALLBACK_INTERFACE
   UIP_FALLBACK_INTERFACE.init();
 #endif
+  sicslowpan_driver.init(evtOffset, packedEvtHndl);
   /* Initialize routing protocol */
+  uip_init();
   rpl_lite_driver.init(evtOffset, packedEvtHndl);
 
-  uip_init();
-  sicslowpan_driver.init(evtOffset, packedEvtHndl);
+#warning "mesh root is started here manualy - this should be under some logic done automaticaly"
+  rpl_lite_driver.root_start();
+
+  linkaddr_get_node_addr(&linkAddr);
+  localLinkInfo = uip_ds6_get_link_local(-1);
+
+  TRice("info:Starting 6lowpan with:\n - 802.15.4 PANID: 0x%04x\n", IEEE802154_PANID);
+  TRiceS("info: - Link-layer address: %s\n", (char*)linkaddr_printAddr(&linkAddr));
+  TRiceS("info: - Tentative link-local IPv6 address: %s\n", uip6_printAddr((NULL != localLinkInfo) ? (&localLinkInfo->ipaddr) : NULL, NULL));
 }
 
 void tcpip_deinit() {

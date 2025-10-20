@@ -37,12 +37,6 @@
 *         DAG root utility functions for RPL.
 */
 
-//#include "contiki.h"
-//#include "contiki-net.h"
-
-//#include "net/routing/rpl-lite/rpl.h"
-//#include "net/ipv6/uip-ds6-route.h"
-//#include "net/ipv6/uip-sr.h"
 #include "../../addressing.h"
 #include "../../network/uip-ds6.h"
 #include "../../network/uip-nd6.h"
@@ -51,25 +45,27 @@
 #include "rpl-dag.h"
 #include "rpl-dag-root.h"
 
+#define ROOT_LINKS_PRINT_BUFF_LEN 150
+
 #warning "deglobalize uip_ds6_if with doing so - retrun uip_ds6_netif_t to *.c"
 extern uip_ds6_netif_t uip_ds6_if;
 /*---------------------------------------------------------------------------*/
-void
-rpl_dag_root_print_links(const char *str)
-{
+void rpl_dag_root_print_links(const char *str) {
   if(rpl_dag_root_is_root()) {
     if(uip_sr_num_nodes() > 0) {
+      char *linkInfo = pvPortMalloc(ROOT_LINKS_PRINT_BUFF_LEN);
       uip_sr_node_t *link;
       /* Our routing links */
-      TRice("msg:links: %u routing links in total (%s)\n", uip_sr_num_nodes(), str);
+      TRice("msg:links: %u routing link(s) in total ", uip_sr_num_nodes());
+      TRiceS("msg:(%s)\n", (char*)str);
       link = uip_sr_node_head();
       while(link != NULL) {
-        char buf[100];
-        uip_sr_link_snprint(buf, sizeof(buf), link);
-        TRice("msg:links: %s\n", buf);
+        uip_sr_link_snprint(linkInfo, ROOT_LINKS_PRINT_BUFF_LEN, link);
+        TRiceS("msg:link: %s\n", linkInfo);
         link = uip_sr_node_next(link);
       }
       TRice("msg:links: end of list\n");
+      vPortFree(linkInfo);
     } else {
     	TRice("msg:No routing links\n");
     }

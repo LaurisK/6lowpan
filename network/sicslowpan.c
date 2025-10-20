@@ -621,8 +621,8 @@ static void uncompress_addr(uip_ipaddr_t *ipaddr, uint8_t const prefix[], uint8_
   uint8_t prefcount = pref_post_count >> 4;
   uint8_t postcount = pref_post_count & 0x0f;
   /* full nibble 15 => 16 */
-  prefcount = prefcount == 15 ? 16 : prefcount;
-  postcount = postcount == 15 ? 16 : postcount;
+  prefcount = (prefcount == 15) ? 16 : prefcount;
+  postcount = (postcount == 15) ? 16 : postcount;
 
   if(prefcount > 0) {
     memcpy(ipaddr, prefix, prefcount);
@@ -642,8 +642,8 @@ static void uncompress_addr(uip_ipaddr_t *ipaddr, uint8_t const prefix[], uint8_
     /* no IID based configuration if no prefix and no data => unspec */
 	  Addr_SetInterfId(ipaddr, lladdr);
   }
-  TRice("msg:uncompression: address %d %d %04X:%04X:%04X:%04X:%04X:%04X:%04X:%04X\n",
-		 prefcount, postcount, ipaddr->u16[0], ipaddr->u16[1], ipaddr->u16[2], ipaddr->u16[3], ipaddr->u16[4], ipaddr->u16[5], ipaddr->u16[6], ipaddr->u16[7]);
+  TRice("msg:uncompression: %d(%d|%d)", pref_post_count, prefcount, postcount);
+  TRiceS("msg:address %s\n", uip6_printAddr(ipaddr, NULL));
 }
 
 /*--------------------------------------------------------------------*/
