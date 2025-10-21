@@ -373,8 +373,9 @@ static void send_packet(sPacket *packet, mac_callback_t sent, void *ptr) {
 /**
  *
  */
-static void input_packet(sPacket *rxPacket)
+static uint16_t input_packet(sPacket *rxPacket)
 {
+  uint16_t rxDataLen = 0;
   subGHz_radio_driver.read(rxPacket);
   if(packetbuf_datalen(rxPacket) == CSMA_ACK_LEN) {
     /* Ignore ack packets */
@@ -410,7 +411,9 @@ static void input_packet(sPacket *rxPacket)
       subGHz_radio_driver.send(&ackPacket);
     }
 #endif /* CSMA_SEND_SOFT_ACK */
+    rxDataLen = packetbuf_datalen(rxPacket);
   }
+  return rxDataLen;
 }
 
 /**

@@ -1763,7 +1763,9 @@ static uint8_t input(sUipBuff *rxBuff) {
 #endif /*SICSLOWPAN_CONF_FRAG*/
 
   packetbuf_clear(&rxPacket);
-  csma_driver.input(&rxPacket);
+  if (0 == csma_driver.input(&rxPacket)) {
+	  return 0;
+  }
 
   /* Save the RSSI of the incoming packet in case the upper layer will
      want to query us for it later. */
