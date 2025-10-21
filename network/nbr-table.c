@@ -40,20 +40,13 @@
 #if NBR_DEBUG
 #include "App/Time/time.h"
 #include "cmsis_os.h"
+#include "../routing/rpl-lite/rpl-nbr-policy.h"
 
 static uint8_t initialized = 0;
 static TimerHandle_t dbgTimer;
 #else
 #define PRINTF(...)
 #endif
-
-/* This is the callback function that will be called when there is a
- *  nbr-policy active
- **/
-#ifdef NBR_TABLE_FIND_REMOVABLE
-const linkaddr_t *NBR_TABLE_FIND_REMOVABLE(nbr_table_reason_t reason, void *data);
-#endif /* NBR_TABLE_FIND_REMOVABLE */
-
 
 /* List of link-layer addresses of the neighbors, used as key in the tables */
 typedef struct nbr_table_key {
@@ -217,10 +210,10 @@ nbr_table_allocate(nbr_table_reason_t reason, void *data)
   } else {
 #ifdef NBR_TABLE_FIND_REMOVABLE
     const linkaddr_t *lladdr;
-    lladdr = NBR_TABLE_FIND_REMOVABLE(reason, data);
+    lladdr = rpl_nbr_policy_find_removable(reason, data);
     if(lladdr == NULL) {
       /* Nothing found that can be deleted - return NULL to indicate failure */
-      PRINTF("*** Not removing entry to allocate new\n");
+    	TRice("*** Not removing entry to allocate new\n");
       return NULL;
     } else {
       /* used least_used_key to indicate what is the least useful entry */
@@ -232,7 +225,7 @@ nbr_table_allocate(nbr_table_reason_t reason, void *data)
       }
       /* Allow delete of locked item? */
       if(least_used_key != NULL && locked) {
-        PRINTF("Deleting locked item!\n");
+    	  TRice("Deleting locked item!\n");
         locked_map[index] = 0;
       }
     }

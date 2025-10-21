@@ -373,8 +373,7 @@ update_nbr_from_dio(uip_ipaddr_t *from, rpl_dio_t *dio)
     }
 
     /* Add neighbor to RPL table */
-    nbr = nbr_table_add_lladdr(rpl_neighbors, (linkaddr_t *)lladdr,
-                             NBR_TABLE_REASON_RPL_DIO, dio);
+    nbr = nbr_table_add_lladdr(rpl_neighbors, (linkaddr_t *)lladdr, NBR_TABLE_REASON_RPL_DIO, dio);
     if(nbr == NULL) {
     	TRice("err:failed to add neighbor\n");
       return NULL;
