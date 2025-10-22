@@ -197,8 +197,7 @@ static void DioTmoHandler(TimerHandle_t periodicTim) {
 /*---------------------------------------------------------------------------*/
 void rpl_timers_dio_reset(const char *str) {
   if(rpl_dag_ready_to_advertise() &&
-     (curr_instance.dag.dio_intcurrent == 0 ||
-      curr_instance.dag.dio_intcurrent > curr_instance.dio_intmin)) {
+     (curr_instance.dag.dio_intcurrent == 0 || curr_instance.dag.dio_intcurrent > curr_instance.dio_intmin)) {
     /*
      * don't reset the DIO timer if the current interval is Imin; see
      * Section 4.2, RFC 6206.
@@ -209,6 +208,8 @@ void rpl_timers_dio_reset(const char *str) {
         curr_instance.dag.dio_intcurrent = curr_instance.dio_intmin;
         new_dio_interval();
     }
+  } else {
+	  TRiceS("msg:DIO timer (%s) not issued ()\n", (char*)str);
   }
 }
 /*---------------------------------------------------------------------------*/

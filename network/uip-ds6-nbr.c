@@ -556,6 +556,7 @@ uip_ds6_link_callback(int status, int numtx)
 /** Periodic processing on neighbors */
 void uip_ds6_neighbor_periodic(sUipBuff *dsPeriodicBuff) {
   uip_ds6_nbr_t *nbr = uip_ds6_nbr_head();
+  TRice("msg:NBR - periodic processing on neighbors.\n");
   while(nbr != NULL) {
     switch(nbr->state) {
     case NBR_REACHABLE:
