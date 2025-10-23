@@ -214,7 +214,7 @@ nbr_table_allocate(nbr_table_reason_t reason, void *data)
     if(lladdr == NULL) {
       /* Nothing found that can be deleted - return NULL to indicate failure */
     	TRice("*** Not removing entry to allocate new\n");
-      return NULL;
+      //return NULL;
     } else {
       /* used least_used_key to indicate what is the least useful entry */
       int index;

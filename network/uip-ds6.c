@@ -171,8 +171,7 @@ static void uip_ds6_periodic(sUipBuff *dsPeriodicBuff)
   for(locprefix = uip_ds6_prefix_list;
       locprefix < uip_ds6_prefix_list + UIP_DS6_PREFIX_NB;
       locprefix++) {
-    if(locprefix->isused && !locprefix->isinfinite
-       && Time_TimerExpired(&(locprefix->vlifetime))) {
+    if(locprefix->isused && !locprefix->isinfinite && Time_TimerExpired(&(locprefix->vlifetime))) {
       uip_ds6_prefix_rm(locprefix);
     }
   }
@@ -348,7 +347,7 @@ uip_ds6_list_loop(uip_ds6_element_t *list, uint8_t size,
 /*---------------------------------------------------------------------------*/
 #if UIP_CONF_ROUTER
 /*---------------------------------------------------------------------------*/
-uip_ds6_prefix_t * uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t ipaddrlen, uint8_t advertise, uint8_t flags, uint32_t vtime, uint32_t ptime)
+uip_ds6_prefix_t* uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t ipaddrlen, uint8_t advertise, uint8_t flags, uint32_t vtime, uint32_t ptime)
 {
   if(uip_ds6_list_loop ((uip_ds6_element_t *)uip_ds6_prefix_list, UIP_DS6_PREFIX_NB, sizeof(uip_ds6_prefix_t), ipaddr, ipaddrlen, (uip_ds6_element_t **)&locprefix) == FREESPACE) {
     locprefix->isused = 1;
@@ -369,9 +368,7 @@ uip_ds6_prefix_t * uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t ipaddrlen, u
 
 
 #else /* UIP_CONF_ROUTER */
-uip_ds6_prefix_t *
-uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t ipaddrlen, uint32_t interval)
-{
+uip_ds6_prefix_t* uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t ipaddrlen, uint32_t interval) {
   if(uip_ds6_list_loop
      ((uip_ds6_element_t *)uip_ds6_prefix_list, UIP_DS6_PREFIX_NB,
       sizeof(uip_ds6_prefix_t), ipaddr, ipaddrlen,

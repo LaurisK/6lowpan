@@ -122,7 +122,7 @@ rpl_dag_leave(void)
 }
 /*---------------------------------------------------------------------------*/
 void rpl_dag_poison_and_leave(void) {
-  TRice("wrn:DAG expired, poison and leave\n");
+  TRice("notice:DAG expired, poison and leave (dag.state = DAG_POISONING)\n");
   curr_instance.dag.state = DAG_POISONING;
   rpl_timers_schedule_state_update();
 }
@@ -208,8 +208,9 @@ static void global_repair_non_root(rpl_dio_t *dio) {
 /*---------------------------------------------------------------------------*/
 void rpl_local_repair(const char *str) {
   if(curr_instance.used) { /* Check needed because this is a public function */
-	  TRiceS("wrn:local repair (%s)\n", (char*)str);
+	TRiceS("wrn:local repair (%s)\n", (char*)str);
     if(!rpl_dag_root_is_root()) {
+      TRice("notice:Reset DAG to initialized (dag.state = DAG_INITIALIZED)\n");
       curr_instance.dag.state = DAG_INITIALIZED; /* Reset DAG state */
     }
     curr_instance.of->reset(); /* Reset OF */
@@ -231,11 +232,11 @@ int rpl_dag_ready_to_advertise(void) {
 	readyToAdvertise = curr_instance.used && curr_instance.dag.state >= DAG_REACHABLE;
 	if (false == readyToAdvertise) {
 	  TRice("msg:DAG not ready to advertise - mop (%d), but (%d && %d >= %d)\n",
-			curr_instance.mop, curr_instance.used, curr_instance.dag.state, DAG_INITIALIZED);
+			curr_instance.mop, curr_instance.used, curr_instance.dag.state, DAG_REACHABLE);
 	}
   }
   if ((true == readyToAdvertise) && (NBR_TABLE_MAX_NEIGHBORS <= rpl_neighbor_count())) {
-	TRice("msg:DAG not ready to advertise - MAX_NEIGHBORS(%d) status reached.\n", NBR_TABLE_MAX_NEIGHBORS);
+	TRice("msg:DAG not ready to advertise - almost MAX_NEIGHBORS(%d of %d) status reached.\n",rpl_neighbor_count(), NBR_TABLE_MAX_NEIGHBORS);
 	readyToAdvertise = false;
   }
   return readyToAdvertise;
@@ -296,8 +297,7 @@ void rpl_dag_update_state(void) {
     if(curr_instance.dag.last_advertised_rank != RPL_INFINITE_RANK
         && curr_instance.dag.rank != RPL_INFINITE_RANK
         && ABS((int32_t)curr_instance.dag.rank - curr_instance.dag.last_advertised_rank) > RPL_SIGNIFICANT_CHANGE_THRESHOLD) {
-    	TRice("wrn:significant rank update %u->%u\n",
-          curr_instance.dag.last_advertised_rank, curr_instance.dag.rank);
+    	TRice("wrn:significant rank update %u->%u\n", curr_instance.dag.last_advertised_rank, curr_instance.dag.rank);
       /* Update already here to avoid multiple resets in a row */
       curr_instance.dag.last_advertised_rank = curr_instance.dag.rank;
       rpl_timers_dio_reset("Significant rank update");
@@ -311,7 +311,8 @@ void rpl_dag_update_state(void) {
         if(old_parent == NULL) {
           curr_instance.dag.state = DAG_JOINED;
           rpl_timers_dio_reset("Got parent");
-          TRiceS("wrn:found parent: %s, staying in DAG\n", uip6_printAddr(rpl_neighbor_get_ipaddr(curr_instance.dag.preferred_parent), NULL));
+          TRiceS("notice:Joined DAG[found parent: %s] (dag.state = DAG_JOINED)\n",
+        		 uip6_printAddr(rpl_neighbor_get_ipaddr(curr_instance.dag.preferred_parent), NULL));
           rpl_timers_unschedule_leaving();
         }
         /* Schedule a DAO */
@@ -319,7 +320,7 @@ void rpl_dag_update_state(void) {
       } else {
         /* We have no more parent, schedule DIS to get a chance to hear updated state */
         curr_instance.dag.state = DAG_INITIALIZED;
-        TRice("wrn:no parent, scheduling periodic DIS, will leave if no parent is found\n");
+        TRice("notice:Reset DAG to initialized - no parent found (dag.state = DAG_INITIALIZED)\n");
         rpl_timers_dio_reset("Poison routes");
         rpl_timers_schedule_periodic_dis();
         rpl_timers_schedule_leaving();
@@ -530,7 +531,7 @@ init_dag_from_dio(rpl_dio_t *dio)
   curr_instance.dag.version = dio->version;
   /* dio_intcurrent will be reset by rpl_timers_dio_reset() */
   curr_instance.dag.dio_intcurrent = 0;
-
+  TRice("notice:Set DAG to initialized (dag.state = DAG_INITIALIZED)\n");
   return 1;
 }
 /*---------------------------------------------------------------------------*/
@@ -639,6 +640,7 @@ rpl_process_dao_ack(uint8_t sequence, uint8_t status)
   if(sequence == curr_instance.dag.dao_last_seqno) {
     int status_ok = status < RPL_DAO_ACK_UNABLE_TO_ACCEPT;
     if(curr_instance.dag.state == DAG_JOINED && status_ok) {
+      TRice("notice:Set DAG to reachable (dag.state = DAG_REACHABLE)\n");
       curr_instance.dag.state = DAG_REACHABLE;
       rpl_timers_dio_reset("Reachable");
     }
@@ -647,8 +649,8 @@ rpl_process_dao_ack(uint8_t sequence, uint8_t status)
 
     if(!status_ok) {
       /* We got a NACK, start poisoning and leave */
-    	TRice("wrn:DAO-NACK received with seqno %u, status %u, poison and leave\n",
-              sequence, status);
+      TRice("wrn:DAO-NACK received with seqno %u, status %u, poison and leave\n", sequence, status);
+      TRice("notice:Set DAG to poisoning (dag.state = DAG_POISONING)\n");
       curr_instance.dag.state = DAG_POISONING;
     }
   }
@@ -731,6 +733,7 @@ rpl_dag_init_root(uint8_t instance_id, uip_ipaddr_t *dag_id,
 
   TRiceS("msg:created DAG with DAG ID %s, ", uip6_printAddr(&curr_instance.dag.dag_id, NULL));
   TRice("msg:instance ID %u, rank %u\n", curr_instance.instance_id, curr_instance.dag.rank);
+  TRice("notice:Set DAG to reachable - we root of it. (dag.state = DAG_REACHABLE)\n");
 }
 /*---------------------------------------------------------------------------*/
 void

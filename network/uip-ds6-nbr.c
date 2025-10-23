@@ -585,6 +585,7 @@ void uip_ds6_neighbor_periodic(sUipBuff *dsPeriodicBuff) {
       break;
     case NBR_INCOMPLETE:
       if(nbr->nscount >= UIP_ND6_MAX_MULTICAST_SOLICIT) {
+    	TRiceS("msg:NBR_INCOMPLETE END(%s)\n", uip6_printAddr(&nbr->ipaddr, NULL));
         uip_ds6_nbr_rm(nbr);
       } else if(Time_TimerExpired(&nbr->sendns) && (dsPeriodicBuff->len == 0)) {
         nbr->nscount++;
@@ -597,14 +598,14 @@ void uip_ds6_neighbor_periodic(sUipBuff *dsPeriodicBuff) {
       if(Time_TimerExpired(&nbr->reachable)) {
         nbr->state = NBR_PROBE;
         nbr->nscount = 0;
-        TRice("msg:DELAY: moving to PROBE\n");
+        TRiceS("msg:DELAY: moving to PROBE(%s)\n", uip6_printAddr(&nbr->ipaddr, NULL));
         Time_TimerSet(&nbr->sendns, 0);
       }
       break;
     case NBR_PROBE:
       if(nbr->nscount >= UIP_ND6_MAX_UNICAST_SOLICIT) {
         uip_ds6_defrt_t *locdefrt;
-        TRice("msg:PROBE END\n");
+        TRiceS("msg:PROBE END(%s)\n", uip6_printAddr(&nbr->ipaddr, NULL));
         if((locdefrt = uip_ds6_defrt_lookup(&nbr->ipaddr)) != NULL) {
           if (!locdefrt->isinfinite) {
             uip_ds6_defrt_rm(locdefrt);

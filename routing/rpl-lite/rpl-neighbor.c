@@ -302,9 +302,7 @@ rpl_neighbor_is_parent(rpl_nbr_t *nbr)
   return nbr != NULL && nbr->rank < curr_instance.dag.rank;
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_neighbor_set_preferred_parent(rpl_nbr_t *nbr)
-{
+void rpl_neighbor_set_preferred_parent(rpl_nbr_t *nbr) {
   if(curr_instance.dag.preferred_parent != nbr) {
 	TRiceS("msg:parent switch: %s", uip6_printAddr(rpl_neighbor_get_ipaddr(curr_instance.dag.preferred_parent), NULL));
 	TRiceS("msg: -> %s\n", uip6_printAddr(rpl_neighbor_get_ipaddr(nbr), NULL));
@@ -400,9 +398,7 @@ best_parent(int fresh_only)
   return best;
 }
 /*---------------------------------------------------------------------------*/
-rpl_nbr_t *
-rpl_neighbor_select_best(void)
-{
+rpl_nbr_t* rpl_neighbor_select_best(void) {
   rpl_nbr_t *best;
 
   if(rpl_dag_root_is_root()) {

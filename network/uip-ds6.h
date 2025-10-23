@@ -316,8 +316,7 @@ uint8_t uip_ds6_list_loop(uip_ds6_element_t *list, uint8_t size,
 /** \name Prefix list basic routines */
 /** @{ */
 #if UIP_CONF_ROUTER
-uip_ds6_prefix_t *uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t length,
-                                     uint8_t advertise, uint8_t flags, uint32_t vtime, uint32_t ptime);
+uip_ds6_prefix_t *uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t length, uint8_t advertise, uint8_t flags, uint32_t vtime, uint32_t ptime);
 #else /* UIP_CONF_ROUTER */
 uip_ds6_prefix_t *uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t length, uint32_t interval);
 #endif /* UIP_CONF_ROUTER */

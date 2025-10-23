@@ -163,8 +163,20 @@ static void DioTmoHandler(TimerHandle_t periodicTim) {
 #endif /* RPL_TRICKLE_REFRESH_DAO_ROUTES */
       curr_instance.dag.last_advertised_rank = curr_instance.dag.rank;
 #if 1/*UIP_IPV6_MULTICAST*/
-      TRice("msg:Issue periodical multicast-DIO\n");
-      rpl_icmp6_dio_output(NULL);
+      if ((NBR_TABLE_MAX_NEIGHBORS - 1) > rpl_neighbor_count()) {
+        TRice("msg:Issue periodical multicast-DIO\n");
+        rpl_icmp6_dio_output(NULL);
+      } else {
+      	rpl_nbr_t *nbr = nbr_table_head(rpl_neighbors);
+      	while (NULL != nbr) {
+      	  uip_ipaddr_t *nbrAddr = rpl_neighbor_get_ipaddr(nbr);
+      	  if (NULL != nbrAddr) {
+        	TRiceS("msg:Issue periodical unicast-DIO to neighbor %s\n", uip6_printAddr(nbrAddr, NULL));
+      		rpl_icmp6_dio_output(nbrAddr);
+      	  }
+      	  nbr = nbr_table_next(rpl_neighbors, nbr);
+      	}
+      }
 #else /* UIP_IPV6_MULTICAST */
      {
     	rpl_nbr_t *nbr = nbr_table_head(rpl_neighbors);
