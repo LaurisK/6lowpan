@@ -354,19 +354,6 @@ void uip_nd6_ra_output(sUipBuff *dsPeriodicBuff, uip_ipaddr_t *dest);
 #endif /*UIP_CONF_ROUTER*/
 
 /**
- * \brief Send a Router Solicitation
- *
- * src is chosen through the uip_netif_select_src function. If src is
- * unspecified  (i.e. we do not have a preferred address yet), then we do not
- * put a SLLAO option (MUST NOT in RFC 4861). Otherwise we do.
- *
- * RS message format,
- * possible option is SLLAO, MUST NOT be included if source = unspecified
- * SHOULD be included otherwise
- */
-void uip_nd6_rs_output(void);
-
-/**
  * \brief Initialise the uIP ND core
  */
 void uip_nd6_init(void);

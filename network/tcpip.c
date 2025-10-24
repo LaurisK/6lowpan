@@ -692,7 +692,7 @@ void tcpip_init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void
   rpl_lite_driver.init(evtOffset, packedEvtHndl);
 
 #warning "mesh root is started here manualy - this should be under some logic done automaticaly"
-  rpl_lite_driver.root_start();
+  //rpl_lite_driver.root_start();
 
   linkaddr_get_node_addr(&linkAddr);
   localLinkInfo = uip_ds6_get_link_local(-1);

@@ -435,7 +435,7 @@ rpl_icmp6_dio_output(uip_ipaddr_t *uc_addr)
   } else {
 	  TRice("msg:sending a multicast-DIO with rank %u", (uint16_t)curr_instance.dag.rank);
   }
-  TRiceS("msg:to %s\n", uip6_printAddr(addr, NULL));
+  TRiceS("msg: to %s\n", uip6_printAddr(addr, NULL));
 
   uip_icmp6_send(&dioBuff, addr, ICMP6_RPL, RPL_CODE_DIO, pos);
 }
@@ -525,9 +525,7 @@ static void dao_input(sUipBuff *uipBuff) {
     uipbuf_clear(uipBuff);
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_icmp6_dao_output(uint8_t lifetime)
-{
+void rpl_icmp6_dao_output(uint8_t lifetime) {
   unsigned char *buffer;
   uint8_t prefixlen;
   int pos;
@@ -634,9 +632,7 @@ static void dao_ack_input(sUipBuff *uipBuff) {
     uipbuf_clear(uipBuff);
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_icmp6_dao_ack_output(uip_ipaddr_t *dest, uint8_t sequence, uint8_t status)
-{
+void rpl_icmp6_dao_ack_output(uip_ipaddr_t *dest, uint8_t sequence, uint8_t status) {
   unsigned char *buffer;
 
   /* Make sure we're up-to-date before sending data out */
@@ -659,9 +655,7 @@ rpl_icmp6_dao_ack_output(uip_ipaddr_t *dest, uint8_t sequence, uint8_t status)
 }
 #endif /* RPL_WITH_DAO_ACK */
 /*---------------------------------------------------------------------------*/
-void
-rpl_icmp6_init()
-{
+void rpl_icmp6_init() {
   uip_icmp6_register_input_handler(&dis_handler);
   uip_icmp6_register_input_handler(&dio_handler);
   uip_icmp6_register_input_handler(&dao_handler);

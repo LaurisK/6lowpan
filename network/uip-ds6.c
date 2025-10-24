@@ -128,16 +128,13 @@ static void uip_ds6_send_ra_periodic(sUipBuff *dsPeriodicBuff) {
   }
 
   rand_time = UIP_ND6_MIN_RA_INTERVAL + System_Random(UIP_ND6_MAX_RA_INTERVAL - UIP_ND6_MIN_RA_INTERVAL);
-  TRice("dbg:Random time 1 = %u\n", rand_time);
 
   if(racount < UIP_ND6_MAX_INITIAL_RAS) {
     if(rand_time > UIP_ND6_MAX_INITIAL_RA_INTERVAL) {
       rand_time = UIP_ND6_MAX_INITIAL_RA_INTERVAL;
-      TRice("dbg:Random time 2 = %u\n", rand_time);
     }
     racount++;
   }
-  TRice("dbg:Random time 3 = %u\n", rand_time);
   Time_TimerSet(&uip_ds6_timer_ra, rand_time);
 }
 #endif /* UIP_CONF_ROUTER && UIP_ND6_SEND_RA */
@@ -197,6 +194,17 @@ static void HandleDs6PeriodicTimer(TimerHandle_t periodicTim) {
 
 #if !UIP_CONF_ROUTER
 /*---------------------------------------------------------------------------*/
+/**
+ * \brief Send a Router Solicitation
+ *
+ * src is chosen through the uip_netif_select_src function. If src is
+ * unspecified  (i.e. we do not have a preferred address yet), then we do not
+ * put a SLLAO option (MUST NOT in RFC 4861). Otherwise we do.
+ *
+ * RS message format,
+ * possible option is SLLAO, MUST NOT be included if source = unspecified
+ * SHOULD be included otherwise
+ */
 static void uip_nd6_rs_output(sUipBuff *uipBuff)
 {
   IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->vtc = 0x60;
@@ -346,36 +354,23 @@ uip_ds6_list_loop(uip_ds6_element_t *list, uint8_t size,
 
 /*---------------------------------------------------------------------------*/
 #if UIP_CONF_ROUTER
-/*---------------------------------------------------------------------------*/
 uip_ds6_prefix_t* uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t ipaddrlen, uint8_t advertise, uint8_t flags, uint32_t vtime, uint32_t ptime)
+#else /* UIP_CONF_ROUTER */
+uip_ds6_prefix_t* uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t ipaddrlen, uint32_t interval) {
+#endif /* UIP_CONF_ROUTER */
 {
-  if(uip_ds6_list_loop ((uip_ds6_element_t *)uip_ds6_prefix_list, UIP_DS6_PREFIX_NB, sizeof(uip_ds6_prefix_t), ipaddr, ipaddrlen, (uip_ds6_element_t **)&locprefix) == FREESPACE) {
+  if(uip_ds6_list_loop((uip_ds6_element_t *)uip_ds6_prefix_list, UIP_DS6_PREFIX_NB, sizeof(uip_ds6_prefix_t), ipaddr, ipaddrlen, (uip_ds6_element_t **)&locprefix) == FREESPACE) {
     locprefix->isused = 1;
     uip_ipaddr_copy(&locprefix->ipaddr, ipaddr);
     locprefix->length = ipaddrlen;
+#if UIP_CONF_ROUTER
     locprefix->advertise = advertise;
     locprefix->l_a_reserved = flags;
     locprefix->vlifetime = vtime;
     locprefix->plifetime = ptime;
     TRiceS("msg:Adding prefix %s ", uip6_printAddr(&locprefix->ipaddr, NULL));
     TRice("msg:length %u, flags %x, Valid lifetime %u, Preffered lifetime %u\n", ipaddrlen, flags, vtime, ptime);
-    return locprefix;
-  } else {
-	  TRice("msg:No more space in Prefix list\n");
-  }
-  return NULL;
-}
-
-
 #else /* UIP_CONF_ROUTER */
-uip_ds6_prefix_t* uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t ipaddrlen, uint32_t interval) {
-  if(uip_ds6_list_loop
-     ((uip_ds6_element_t *)uip_ds6_prefix_list, UIP_DS6_PREFIX_NB,
-      sizeof(uip_ds6_prefix_t), ipaddr, ipaddrlen,
-      (uip_ds6_element_t **)&locprefix) == FREESPACE) {
-    locprefix->isused = 1;
-    uip_ipaddr_copy(&locprefix->ipaddr, ipaddr);
-    locprefix->length = ipaddrlen;
     if(interval != 0) {
       Time_TimerSet(&(locprefix->vlifetime), interval);
       locprefix->isinfinite = 0;
@@ -384,25 +379,23 @@ uip_ds6_prefix_t* uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t ipaddrlen, ui
     }
     TRiceS("msg:Adding prefix %s ", uip6_printAddr(&locprefix->ipaddr, NULL));
     TRice("msg:length %u, vlifetime %lu\n", ipaddrlen, interval);
+#endif /* UIP_CONF_ROUTER */
     return locprefix;
+  } else {
+	  TRice("msg:No more space in Prefix list\n");
   }
   return NULL;
 }
-#endif /* UIP_CONF_ROUTER */
 
 /*---------------------------------------------------------------------------*/
-void
-uip_ds6_prefix_rm(uip_ds6_prefix_t *prefix)
-{
+void uip_ds6_prefix_rm(uip_ds6_prefix_t *prefix) {
   if(prefix != NULL) {
     prefix->isused = 0;
   }
   return;
 }
 /*---------------------------------------------------------------------------*/
-uip_ds6_prefix_t *
-uip_ds6_prefix_lookup(uip_ipaddr_t *ipaddr, uint8_t ipaddrlen)
-{
+uip_ds6_prefix_t * uip_ds6_prefix_lookup(uip_ipaddr_t *ipaddr, uint8_t ipaddrlen) {
   if(uip_ds6_list_loop((uip_ds6_element_t *)uip_ds6_prefix_list,
                        UIP_DS6_PREFIX_NB, sizeof(uip_ds6_prefix_t),
                        ipaddr, ipaddrlen,

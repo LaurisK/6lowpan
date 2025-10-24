@@ -313,8 +313,8 @@ upper_layer_chksum(sUipBuff *uipBuff, uint8_t proto)
 
   upper_layer_len = uip6_uipHdrGetLen(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)) - uipBuff->extLen;
 
-  TRice("msg:Upper layer checksum len: %d from: %d\n", upper_layer_len,
-         (int)((uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen) - uipBuff->buff.u8));
+//  TRice("msg:Upper layer checksum len: %d from: %d\n", upper_layer_len,
+//         (int)((uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen) - uipBuff->buff.u8));
 
   /* First sum pseudoheader. */
   /* IP protocol and length fields. This addition cannot carry. */
@@ -1389,51 +1389,95 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
   /* End of headers processing */
 
   icmp6_input:
-  /* This is IPv6 ICMPv6 processing code. */
-  TRice("msg:icmpv6 input length %d type: %d \n", uipBuff->len, ((struct uip_icmp_hdr*)(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen))->type);
+  {
+	uint8_t icmpType = ((struct uip_icmp_hdr*)(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen))->type;
+	/* This is IPv6 ICMPv6 processing code. */
+	switch(icmpType) {
+	case ICMP6_ECHO_REQUEST:
+		TRice("msg:icmpv6 {ICMP6_ECHO_REQUEST - Echo request} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_ECHO_REPLY:
+		TRice("msg:icmpv6 {ICMP6_ECHO_REPLY - Echo reply} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_RS:
+		TRice("msg:icmpv6 {ICMP6_RS - Router Solicitation} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_RA:
+		TRice("msg:icmpv6 {ICMP6_RA - Router Advertisement} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_NS:
+		TRice("msg:icmpv6 {ICMP6_NS - Neighbor Solicitation} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_NA:
+		TRice("msg:icmpv6 {ICMP6_NA - Neighbor advertisement} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_REDIRECT:
+		TRice("msg:icmpv6 {ICMP6_REDIRECT - Redirect} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_RPL:
+		TRice("msg:icmpv6 {ICMP6_RPL - RPL} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_MPL:
+		TRice("msg:icmpv6 {ICMP6_MPL - MPL} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_PRIV_EXP_100:
+		TRice("msg:icmpv6 {ICMP6_PRIV_EXP_100 - Private Experimentation} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_PRIV_EXP_101:
+		TRice("msg:icmpv6 {ICMP6_PRIV_EXP_101 - Private Experimentation} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_ROLL_TM:
+		TRice("msg:icmpv6 {ICMP6_ROLL_TM - ROLL Trickle Multicast} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_ESMRF:
+		TRice("msg:icmpv6 {ICMP6_ESMRF - ESMRF Multicast} input length %d.\n", uipBuff->len);
+		break;
+	default:
+	  TRice("msg:icmpv6 input length %d type: %d \n", uipBuff->len, icmpType);
+	}
 
 #if UIP_CONF_IPV6_CHECKS
-  /* Compute and check the ICMP header checksum */
-  if(uip_icmp6chksum(uipBuff) != 0xffff) {
-    UIP_STAT(++uip_stat.icmp.drop);
-    UIP_STAT(++uip_stat.icmp.chkerr);
-    TRice("err:icmpv6 bad checksum\n");
-    goto drop;
-  }
+	/* Compute and check the ICMP header checksum */
+	if(uip_icmp6chksum(uipBuff) != 0xffff) {
+      UIP_STAT(++uip_stat.icmp.drop);
+      UIP_STAT(++uip_stat.icmp.chkerr);
+      TRice("err:icmpv6 bad checksum\n");
+      goto drop;
+	}
 #endif /*UIP_CONF_IPV6_CHECKS*/
 
-  UIP_STAT(++uip_stat.icmp.recv);
-  /*
-   * Here we process incoming ICMPv6 packets
-   * For echo request, we send echo reply
-   * For ND pkts, we call the appropriate function in uip-nd6.c
-   * We do not treat Error messages for now
-   * If no pkt is to be sent as an answer to the incoming one, we
-   * "goto drop". Else we just break; then at the after the "switch"
-   * we "goto send"
-   */
+	UIP_STAT(++uip_stat.icmp.recv);
+	/*
+	 * Here we process incoming ICMPv6 packets
+	 * For echo request, we send echo reply
+	 * For ND pkts, we call the appropriate function in uip-nd6.c
+	 * We do not treat Error messages for now
+	 * If no pkt is to be sent as an answer to the incoming one, we
+	 * "goto drop". Else we just break; then at the after the "switch"
+	 * we "goto send"
+	 */
 #if UIP_CONF_ICMP6
-  UIP_ICMP6_APPCALL(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->type);
+	UIP_ICMP6_APPCALL(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->type);
 #endif /*UIP_CONF_ICMP6*/
 
-  /*
-   * Search generic input handlers.
-   * The handler is in charge of setting uip_len to 0
-   */
-  if(uip_icmp6_input(uipBuff, ((struct uip_icmp_hdr*)(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen))->type, ((struct uip_icmp_hdr*)(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen))->icode) == UIP_ICMP6_INPUT_ERROR) {
-	TRice("err:Unknown ICMPv6 message type/code %d\n", ((struct uip_icmp_hdr*)(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen))->type);
-    UIP_STAT(++uip_stat.icmp.drop);
-    UIP_STAT(++uip_stat.icmp.typeerr);
-    uipbuf_clear(uipBuff);
-  }
+	/*
+	 * Search generic input handlers.
+	 * The handler is in charge of setting uip_len to 0
+	 */
+	if(uip_icmp6_input(uipBuff, icmpType, ((struct uip_icmp_hdr*)(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen))->icode) == UIP_ICMP6_INPUT_ERROR) {
+	TRice("err:Unknown ICMPv6 message type/code %d\n", icmpType);
+	UIP_STAT(++uip_stat.icmp.drop);
+	UIP_STAT(++uip_stat.icmp.typeerr);
+	uipbuf_clear(uipBuff);
+	}
 
-  if(uipBuff->len > 0) {
-    goto send;
-  } else {
-    goto drop;
+	if(uipBuff->len > 0) {
+	goto send;
+	} else {
+	goto drop;
+	}
+	/* End of IPv6 ICMP processing. */
   }
-  /* End of IPv6 ICMP processing. */
-
 
 #if UIP_UDP
   /* UDP input processing. */

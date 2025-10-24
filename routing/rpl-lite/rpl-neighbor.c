@@ -155,7 +155,7 @@ static int rpl_neighbor_snprint(char *buf, int buflen, rpl_nbr_t *nbr)
   return index;
 }
 /*---------------------------------------------------------------------------*/
-#define NEIUBOR_PRINT_BUFF_LEN 160
+#define NEIUBOR_PRINT_BUFF_LEN 240
 void
 rpl_neighbor_print_list(const char *str)
 {
@@ -357,9 +357,7 @@ rpl_neighbor_get_from_ipaddr(uip_ipaddr_t *addr)
   return nbr_table_get_from_lladdr(rpl_neighbors, (linkaddr_t *)lladdr);
 }
 /*---------------------------------------------------------------------------*/
-static rpl_nbr_t *
-best_parent(int fresh_only)
-{
+static rpl_nbr_t * best_parent(int fresh_only) {
   rpl_nbr_t *nbr;
   rpl_nbr_t *best = NULL;
 
@@ -370,8 +368,7 @@ best_parent(int fresh_only)
   /* Search for the best parent according to the OF */
   for(nbr = nbr_table_head(rpl_neighbors); nbr != NULL; nbr = nbr_table_next(rpl_neighbors, nbr)) {
 
-    if(!acceptable_rank(rpl_neighbor_rank_via_nbr(nbr))
-      || !curr_instance.of->nbr_is_acceptable_parent(nbr)) {
+    if(!acceptable_rank(rpl_neighbor_rank_via_nbr(nbr)) || !curr_instance.of->nbr_is_acceptable_parent(nbr)) {
       /* Exclude neighbors with a rank that is not acceptable */
       continue;
     }
@@ -410,6 +407,8 @@ rpl_nbr_t* rpl_neighbor_select_best(void) {
 
 #if RPL_WITH_PROBING
   if(best != NULL) {
+	const struct link_stats *stats = rpl_neighbor_get_link_stats(best);
+	TRice("msg: best_parent(f-%d|%ds)\n", (stats != NULL) ? stats->freshness : 0, (stats != NULL) ? ((uint16_t)(Time_GetUptime() - stats->last_tx_time)) : 0);
     if(rpl_neighbor_is_fresh(best)) {
       /* Unschedule any already scheduled urgent probing */
       curr_instance.dag.urgent_probing_target = NULL;
@@ -451,6 +450,7 @@ rpl_nbr_t* rpl_neighbor_select_best(void) {
     }
   } else {
     /* No acceptable parent */
+	TRice("msg: best_parent(No acceptable parent)\n");
     return NULL;
   }
 #else /* RPL_WITH_PROBING */

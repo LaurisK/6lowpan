@@ -90,9 +90,7 @@ int rpl_dag_get_root_ipaddr(uip_ipaddr_t *ipaddr) {
   return 0;
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_dag_leave(void)
-{
+void rpl_dag_leave(void) {
   TRiceS("info:leaving DAG %s, ", uip6_printAddr(&curr_instance.dag.dag_id, NULL));
   TRice("info:instance %u\n", curr_instance.instance_id);
 
@@ -234,10 +232,6 @@ int rpl_dag_ready_to_advertise(void) {
 	  TRice("msg:DAG not ready to advertise - mop (%d), but (%d && %d >= %d)\n",
 			curr_instance.mop, curr_instance.used, curr_instance.dag.state, DAG_REACHABLE);
 	}
-  }
-  if ((true == readyToAdvertise) && (NBR_TABLE_MAX_NEIGHBORS <= rpl_neighbor_count())) {
-	TRice("msg:DAG not ready to advertise - almost MAX_NEIGHBORS(%d of %d) status reached.\n",rpl_neighbor_count(), NBR_TABLE_MAX_NEIGHBORS);
-	readyToAdvertise = false;
   }
   return readyToAdvertise;
 }
@@ -576,9 +570,7 @@ process_dio_init_dag(rpl_dio_t *dio)
   return 1;
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_process_dio(uip_ipaddr_t *from, rpl_dio_t *dio)
-{
+void rpl_process_dio(uip_ipaddr_t *from, rpl_dio_t *dio) {
   if(!curr_instance.used && !rpl_dag_root_is_root()) {
     /* Attempt to init our DAG from this DIO */
     if(!process_dio_init_dag(dio)) {
@@ -587,17 +579,13 @@ rpl_process_dio(uip_ipaddr_t *from, rpl_dio_t *dio)
     }
   }
 
-  if(curr_instance.used
-      && curr_instance.instance_id == dio->instance_id
-      && uip_ipaddr_cmp(&curr_instance.dag.dag_id, &dio->dag_id)) {
+  if(curr_instance.used && curr_instance.instance_id == dio->instance_id && uip_ipaddr_cmp(&curr_instance.dag.dag_id, &dio->dag_id)) {
     process_dio_from_current_dag(from, dio);
     rpl_dag_update_state();
   }
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_process_dis(uip_ipaddr_t *from, int is_multicast)
-{
+void rpl_process_dis(uip_ipaddr_t *from, int is_multicast) {
   if(is_multicast) {
     rpl_timers_dio_reset("Multicast DIS");
   } else {
@@ -609,9 +597,7 @@ rpl_process_dis(uip_ipaddr_t *from, int is_multicast)
   }
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_process_dao(uip_ipaddr_t *from, rpl_dao_t *dao)
-{
+void rpl_process_dao(uip_ipaddr_t *from, rpl_dao_t *dao) {
   if(dao->lifetime == 0) {
     uip_sr_expire_parent(NULL, from, &dao->parent_addr);
   } else {
@@ -624,14 +610,14 @@ rpl_process_dao(uip_ipaddr_t *from, rpl_dao_t *dao)
 #if RPL_WITH_DAO_ACK
   if(dao->flags & RPL_DAO_K_FLAG) {
     rpl_timers_schedule_dao_ack(from, dao->sequence);
+  } else {
+	TRice("msg:DAO-ACK not requested(%02x)\n", dao->flags);
   }
 #endif /* RPL_WITH_DAO_ACK */
 }
 /*---------------------------------------------------------------------------*/
 #if RPL_WITH_DAO_ACK
-void
-rpl_process_dao_ack(uint8_t sequence, uint8_t status)
-{
+void rpl_process_dao_ack(uint8_t sequence, uint8_t status) {
   /* Update dao_last_acked_seqno */
   if(rpl_lollipop_greater_than(sequence, curr_instance.dag.dao_last_acked_seqno)) {
     curr_instance.dag.dao_last_acked_seqno = sequence;
@@ -640,7 +626,7 @@ rpl_process_dao_ack(uint8_t sequence, uint8_t status)
   if(sequence == curr_instance.dag.dao_last_seqno) {
     int status_ok = status < RPL_DAO_ACK_UNABLE_TO_ACCEPT;
     if(curr_instance.dag.state == DAG_JOINED && status_ok) {
-      TRice("notice:Set DAG to reachable (dag.state = DAG_REACHABLE)\n");
+      TRice("notice:Set DAG to reachable - DAO-ACK received (dag.state = DAG_REACHABLE)\n");
       curr_instance.dag.state = DAG_REACHABLE;
       rpl_timers_dio_reset("Reachable");
     }
@@ -657,9 +643,7 @@ rpl_process_dao_ack(uint8_t sequence, uint8_t status)
 }
 #endif /* RPL_WITH_DAO_ACK */
 /*---------------------------------------------------------------------------*/
-int
-rpl_process_hbh(rpl_nbr_t *sender, uint16_t sender_rank, int loop_detected, int rank_error_signaled)
-{
+int rpl_process_hbh(rpl_nbr_t *sender, uint16_t sender_rank, int loop_detected, int rank_error_signaled) {
   int drop = 0;
 
   if(loop_detected) {

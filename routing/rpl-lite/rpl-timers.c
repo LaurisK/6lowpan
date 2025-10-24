@@ -299,9 +299,7 @@ static void schedule_dao_refresh(void) {
   }
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_timers_schedule_dao(void)
-{
+void rpl_timers_schedule_dao(void) {
   if(curr_instance.used && curr_instance.mop != RPL_MOP_NO_DOWNWARD_ROUTES) {
     /* No need for DAO aggregation delay as per RFC 6550 section 9.5, as this
     * only serves storing mode. Use simple delay instead, with the only purpose
@@ -317,6 +315,7 @@ rpl_timers_schedule_dao(void)
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
 static void handle_dao_ack_timer(void) {
+  TRice("msg:Calling DAO ACK call from task.\n");
   rpl_icmp6_dao_ack_output(&curr_instance.dag.dao_ack_target, curr_instance.dag.dao_ack_sequence, RPL_DAO_ACK_UNCONDITIONAL_ACCEPT);
 }
 /*---------------------------------------------------------------------------*/
@@ -324,15 +323,16 @@ void rpl_timers_schedule_dao_ack(uip_ipaddr_t *target, uint16_t sequence) {
   if(curr_instance.used) {
     uip_ipaddr_copy(&curr_instance.dag.dao_ack_target, target);
     curr_instance.dag.dao_ack_sequence = sequence;
+    TRice("msg:Requesting DAO ACK call from task.\n");
 	rplTimIrq2Task(rplTimEvtIdOffset + radio_taskCall, handle_dao_ack_timer);
+  } else {
+	TRice("msg:Current instance not used - Do not ACK DAO.\n");
   }
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_timers_notify_dao_ack(void)
-{
-  /* The last DAO was ACKed. Schedule refresh to avoid route expiration. This
-  implicitly de-schedules resend_dao, as both share curr_instance.dag.dao_timer */
+void rpl_timers_notify_dao_ack(void) {
+  /* The last DAO was ACKed. Schedule refresh to avoid route expiration.*/
+  xTimerStop(curr_instance.dag.timDaoResend, 0);
   schedule_dao_refresh();
 }
 /*---------------------------------------------------------------------------*/
@@ -453,9 +453,7 @@ void rpl_schedule_probing(void) {
   }
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_schedule_probing_now(void)
-{
+void rpl_schedule_probing_now(void) {
   if(curr_instance.used) {
 	xTimerChangePeriod(curr_instance.dag.probing_timer, pdMS_TO_TICKS(System_Random(1000 * 4)), 0);
 	xTimerStart(curr_instance.dag.probing_timer, 0);
@@ -520,9 +518,7 @@ rpl_timers_stop_dag_timers(void)
 #endif /* RPL_WITH_PROBING */
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_timers_unschedule_state_update(void)
-{
+void rpl_timers_unschedule_state_update(void) {
 //not as timer now - so no way to cancel
 }
 /*---------------------------------------------------------------------------*/

@@ -100,9 +100,7 @@ rpl_get_global_address(void)
   return ipaddr;
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_link_callback(const linkaddr_t *addr, int status, int numtx)
-{
+void rpl_link_callback(const linkaddr_t *addr, int status, int numtx) {
   if(curr_instance.used == 1 ) {
     rpl_nbr_t *nbr = rpl_neighbor_get_from_lladdr((uip_lladdr_t *)addr);
     if(nbr != NULL) {
