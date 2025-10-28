@@ -208,8 +208,8 @@ uint8_t uip_acc32[4];
  */
 /*---------------------------------------------------------------------------*/
 #if UIP_UDP
-struct uip_udp_conn *uip_udp_conn;
-struct uip_udp_conn uip_udp_conns[UIP_UDP_CONNS];
+struct uip_udp_conn *servicingUdpConn;
+struct uip_udp_conn uipUdpConns[UIP_UDP_CONNS];
 #endif /* UIP_UDP */
 /** @} */
 
@@ -346,9 +346,7 @@ uint16_t uip_udpchksum(sUipBuff *uipBuff) {
 #endif /* UIP_UDP && UIP_UDP_CHECKSUMS */
 #endif /* UIP_ARCH_CHKSUM */
 /*---------------------------------------------------------------------------*/
-void
-uip_init(void)
-{
+void uip_init(void) {
   int c;
   linkaddr_get_node_addr((linkaddr_t *)&uip_lladdr);
   uipbuf_init();
@@ -371,7 +369,7 @@ uip_init(void)
 
 #if UIP_UDP
   for(c = 0; c < UIP_UDP_CONNS; ++c) {
-    uip_udp_conns[c].lport = 0;
+	  uipUdpConns[c].lport = 0;
   }
 #endif /* UIP_UDP */
 
@@ -382,6 +380,21 @@ uip_init(void)
 #if UIP_CONF_IPV6_REASSEMBLY
 	reassemblyTmo = xTimerCreate("uIP6 reassembly", pdMS_TO_TICKS(1000 * UIP_REASS_MAXAGE), pdFALSE, 0, HandleReassemblyTmo);
 #endif /*UIP_CONF_IPV6_REASSEMBLY*/
+}
+/*---------------------------------------------------------------------------*/
+void uip_deinit(void) {
+#if UIP_UDP
+    {
+      struct uip_udp_conn *cptr;
+
+      for(cptr = &uipUdpConns[0];
+          cptr < &uipUdpConns[UIP_UDP_CONNS]; ++cptr) {
+//        if(cptr->appstate.p == p) {
+//          cptr->lport = 0;
+//        }
+      }
+    }
+#endif /* UIP_UDP */
 }
 /*---------------------------------------------------------------------------*/
 #if UIP_TCP && UIP_ACTIVE_OPEN
@@ -482,9 +495,7 @@ bool uip_remove_ext_hdr(sUipBuff *uipBuff)
 }
 /*---------------------------------------------------------------------------*/
 #if UIP_UDP
-struct uip_udp_conn *
-uip_udp_new(const uip_ipaddr_t *ripaddr, uint16_t rport)
-{
+struct uip_udp_conn * uip_udp_new(const uip_ipaddr_t *ripaddr, uint16_t rport, void (*portCb)(uint8_t*, uint16_t)) {
   int c;
   register struct uip_udp_conn *conn;
 
@@ -497,21 +508,21 @@ uip_udp_new(const uip_ipaddr_t *ripaddr, uint16_t rport)
   }
 
   for(c = 0; c < UIP_UDP_CONNS; ++c) {
-    if(uip_udp_conns[c].lport == __REVSH(lastport)) {
+    if(uipUdpConns[c].lport == __REVSH(lastport)) {
       goto again;
     }
   }
 
-  conn = 0;
+  conn = NULL;
   for(c = 0; c < UIP_UDP_CONNS; ++c) {
-    if(uip_udp_conns[c].lport == 0) {
-      conn = &uip_udp_conns[c];
+    if(uipUdpConns[c].lport == 0) {
+      conn = &uipUdpConns[c];
       break;
     }
   }
 
-  if(conn == 0) {
-    return 0;
+  if(NULL == conn) {
+    return NULL;
   }
 
   conn->lport = __REVSH(lastport);
@@ -522,7 +533,7 @@ uip_udp_new(const uip_ipaddr_t *ripaddr, uint16_t rport)
     uip_ipaddr_copy(&conn->ripaddr, ripaddr);
   }
   conn->ttl = Ds6_GetHopLimit();
-
+  conn->portRxCb = portCb;
   return conn;
 }
 #endif /* UIP_UDP */
@@ -1055,7 +1066,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
   }
 #if UIP_UDP
   if(flag == UIP_UDP_TIMER) {
-    if(uip_udp_conn->lport != 0) {
+    if(servicingUdpConn->lport != 0) {
       uip_conn = NULL;
       uip_sappdata = uip_appdata = &uipBuff->buff.u8[UIP_IPUDPH_LEN];
       uipBuff->len = 0;
@@ -1510,21 +1521,23 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
 	  TRice("err:udp: zero port.\n");
     goto drop;
   }
-
-  /* Demultiplex this UDP packet between the UDP "connections". */
-  for(uip_udp_conn = &uip_udp_conns[0]; uip_udp_conn < &uip_udp_conns[UIP_UDP_CONNS]; ++uip_udp_conn) {
-    /* If the local UDP port is non-zero, the connection is considered
-       to be used. If so, the local port number is checked against the
-       destination port number in the received packet. If the two port
-       numbers match, the remote port number is checked if the
-       connection is bound to a remote port. Finally, if the
-       connection is bound to a remote IP address, the source IP
-       address of the packet is checked. */
-    if(uip_udp_conn->lport != 0 &&
-    		UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->destport == uip_udp_conn->lport &&
-       (uip_udp_conn->rport == 0 || UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->srcport == uip_udp_conn->rport) &&
-       (uip_is_addr_unspecified(&uip_udp_conn->ripaddr) || uip_ipaddr_cmp(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, &uip_udp_conn->ripaddr))) {
-      goto udp_found;
+  {
+	struct uip_udp_conn *udpConnWalker;
+    /* Demultiplex this UDP packet between the UDP "connections". */
+    for(udpConnWalker = &uipUdpConns[0]; udpConnWalker < &uipUdpConns[UIP_UDP_CONNS]; ++udpConnWalker) {
+      /* If the local UDP port is non-zero, the connection is considered
+         to be used. If so, the local port number is checked against the
+         destination port number in the received packet. If the two port
+         numbers match, the remote port number is checked if the
+         connection is bound to a remote port. Finally, if the
+         connection is bound to a remote IP address, the source IP
+         address of the packet is checked. */
+      if(udpConnWalker->lport != 0 && UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->destport == udpConnWalker->lport &&
+         (udpConnWalker->rport == 0 || UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->srcport == udpConnWalker->rport) &&
+         (uip_is_addr_unspecified(&udpConnWalker->ripaddr) || uip_ipaddr_cmp(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, &udpConnWalker->ripaddr))) {
+    	servicingUdpConn = udpConnWalker;
+        goto udp_found;
+      }
     }
   }
   TRice("err:udp: no matching connection found\n");
@@ -1543,6 +1556,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
   uip_flags = UIP_NEWDATA;
   uip_sappdata = uip_appdata = &uipBuff->buff.u8[UIP_IPUDPH_LEN];
   uipBuff->sLen = 0;
+  servicingUdpConn->portRxCb(&uipBuff->buff.u8[UIP_IPUDPH_LEN], uipBuff->len);
   tcpip_uipcall();
 
   udp_send:
@@ -1559,16 +1573,16 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
 
   IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->vtc = 0x60;
   IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->tcflow = 0x00;
-  IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->ttl = uip_udp_conn->ttl;
+  IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->ttl = servicingUdpConn->ttl;
   IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->proto = UIP_PROTO_UDP;
 
   UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->udplen = __REVSH(uipBuff->sLen + UIP_UDPH_LEN);
   UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->udpchksum = 0;
 
-  UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->srcport  = uip_udp_conn->lport;
-  UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->destport = uip_udp_conn->rport;
+  UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->srcport  = servicingUdpConn->lport;
+  UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->destport = servicingUdpConn->rport;
 
-  uip_ipaddr_copy(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, &uip_udp_conn->ripaddr);
+  uip_ipaddr_copy(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, &servicingUdpConn->ripaddr);
   uip_ds6_select_src(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr);
 
   uip_appdata = &uipBuff->buff.u8[UIP_IPTCPH_LEN];

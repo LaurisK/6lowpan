@@ -48,7 +48,7 @@ void uip_udp_packet_send(struct uip_udp_conn *c, const void *data, int len)
 #if UIP_UDP
   if(data != NULL && len <= (UIP_BUFSIZE - UIP_IPUDPH_LEN)) {
 	sUipBuff txUipBuff;
-    uip_udp_conn = c;
+	servicingUdpConn = c;
     txUipBuff.sLen = len;
     //memmove(&uip_buf[UIP_IPUDPH_LEN], data, len);
     memcpy(&txUipBuff.buff.u8[UIP_IPUDPH_LEN], data, len);
@@ -56,7 +56,7 @@ void uip_udp_packet_send(struct uip_udp_conn *c, const void *data, int len)
 
 #if UIP_IPV6_MULTICAST
   /* Let the multicast engine process the datagram before we send it */
-  if(uip_is_addr_mcast_routable(&uip_udp_conn->ripaddr)) {
+  if(uip_is_addr_mcast_routable(&servicingUdpConn->ripaddr)) {
     UIP_MCAST6.out();
   }
 #endif /* UIP_IPV6_MULTICAST */

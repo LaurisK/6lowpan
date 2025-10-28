@@ -167,7 +167,6 @@ void tcpip_poll_tcp(struct uip_conn *conn);
  * @{
  */
 
-struct uip_udp_conn;
 /**
  * Create a new UDP connection.
  *
@@ -201,24 +200,6 @@ struct uip_udp_conn *udp_new(const uip_ipaddr_t *ripaddr, uint16_t port, void *a
  * memory could not be allocated for the connection.
  */
 struct uip_udp_conn *udp_broadcast_new(uint16_t port, void *appstate);
-
-/**
- * Bind a UDP connection to a local port.
- *
- * This function binds a UDP connection to a specified local port.
- *
- * When a connection is created with udp_new(), it gets a local port
- * number assigned automatically. If the application needs to bind the
- * connection to a specified local port, this function should be used.
- *
- * \note The port number must be provided in network byte order so a
- * conversion with __REVSH() usually is necessary.
- *
- * \param conn A pointer to the UDP connection that is to be bound.
- * \param port The port number in network byte order to which to bind
- * the connection.
- */
-#define udp_bind(conn, port) uip_udp_bind(conn, port)
 
 /**
  * Cause a specified UDP connection to be polled.
@@ -288,7 +269,7 @@ void tcpip_icmp6_call(uint8_t type);
  *             and the length of the packet must be in the global
  *             uip_len variable.
  */
-uint16_t tcpip_input(uint8_t **rxData);
+void tcpip_input(void);
 
 /**
  * \brief Output packet to layer 2

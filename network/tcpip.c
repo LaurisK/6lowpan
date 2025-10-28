@@ -226,42 +226,6 @@ tcp_listen(uint16_t port)
 //}
 #endif /* UIP_TCP */
 /*---------------------------------------------------------------------------*/
-#if UIP_UDP
-//void
-//udp_attach(struct uip_udp_conn *conn, void *appstate)
-//{
-//  //init_appstate(&conn->appstate, appstate);
-//}
-///*---------------------------------------------------------------------------*/
-struct uip_udp_conn *
-udp_new(const uip_ipaddr_t *ripaddr, uint16_t port, void *appstate)
-{
-  struct uip_udp_conn *c = uip_udp_new(ripaddr, port);
-
-  if(c == NULL) {
-    return NULL;
-  }
-
-  //init_appstate(&c->appstate, appstate);
-
-  return c;
-}
-/*---------------------------------------------------------------------------*/
-struct uip_udp_conn *udp_broadcast_new(uint16_t port, void *appstate)
-{
-  uip_ipaddr_t addr;
-  struct uip_udp_conn *conn;
-
-  uip_create_linklocal_allnodes_mcast(&addr);
-
-  conn = udp_new(&addr, port, appstate);
-  if(conn != NULL) {
-    udp_bind(conn, port);
-  }
-  return conn;
-}
-#endif /* UIP_UDP */
-/*---------------------------------------------------------------------------*/
 #if UIP_CONF_ICMP6
 uint8_t icmp6_new(void *appstate) {
   if(uip_icmp6_conns.appstate.p == PROCESS_NONE) {
@@ -283,17 +247,15 @@ tcpip_icmp6_call(uint8_t type)
 }
 #endif /* UIP_CONF_ICMP6 */
 /*---------------------------------------------------------------------------*/
-uint16_t tcpip_input(uint8_t **rxData)
+void tcpip_input(void)
 {
-	if (sicslowpan_driver.input(&rxBuff)) {
+  if (sicslowpan_driver.input(&rxBuff)) {
 #warning "netstack.c/h is for packet filtering, firewall or other functionality which is not needed for now"
-  if(1/*netstack_process_ip_callback(NETSTACK_IP_INPUT, NULL) == NETSTACK_IP_PROCESS*/) {
-	  uint16_t rxLen = packet_input(&rxBuff);
-	    return rxLen;
-  } /* else - do nothing and drop */
+    if(1/*netstack_process_ip_callback(NETSTACK_IP_INPUT, NULL) == NETSTACK_IP_PROCESS*/) {
+	  packet_input(&rxBuff);
+    } /* else - do nothing and drop */
   //uipbuf_clear(); do not care - we clear it at start of reception. and now use different buffers for RX/TX and stuff.
-	}
-	return 0;
+  }
 }
 /*---------------------------------------------------------------------------*/
 static void
@@ -575,7 +537,7 @@ sUipBuff uipPollBuff;
 static struct uip_udp_conn *pollUdpConn = NULL;
 static void PollUdp(void) {
     if(NULL != pollUdpConn) {
-      uip_udp_conn = pollUdpConn;
+      servicingUdpConn = pollUdpConn;
       uip_process(&uipPollBuff, UIP_UDP_TIMER);
       tcpip_ipv6_output(&uipPollBuff);
     }
@@ -607,9 +569,7 @@ void tcpip_poll_tcp(struct uip_conn *conn) {
 }
 #endif /* UIP_TCP */
 /*---------------------------------------------------------------------------*/
-void
-tcpip_uipcall(void)
-{
+void tcpip_uipcall(void) {
 //  uip_udp_appstate_t *ts;
 //
 //#if UIP_UDP
@@ -675,6 +635,8 @@ static void HandleTcpipPeriodicTimer(TimerHandle_t periodicTim) {
 void tcpip_init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void))) {
 	linkaddr_t linkAddr;
 	uip_ds6_addr_t *localLinkInfo;
+	tcpipEvtIdOffset = evtOffset;
+	tcpipIrq2Task = packedEvtHndl;
 #if UIP_TCP
 	  periodicTim = xTimerCreate("tcpipPeriodicTimer", pdMS_TO_TICKS(500), pdTRUE, 0, HandleTcpipPeriodicTimer);
 	  xTimerStart(periodicTim, 0);
@@ -709,6 +671,7 @@ void tcpip_deinit() {
          connections. */
 
 //    p = (struct process *)data;
+	uip_deinit();
 #if UIP_TCP
     l = s.listenports;
     for(i = 0; i < UIP_LISTENPORTS; ++i) {
@@ -731,17 +694,5 @@ void tcpip_deinit() {
       }
     }
 #endif /* UIP_TCP */
-#if UIP_UDP
-    {
-      struct uip_udp_conn *cptr;
-
-      for(cptr = &uip_udp_conns[0];
-          cptr < &uip_udp_conns[UIP_UDP_CONNS]; ++cptr) {
-//        if(cptr->appstate.p == p) {
-//          cptr->lport = 0;
-//        }
-      }
-    }
-#endif /* UIP_UDP */
 }
 /*---------------------------------------------------------------------------*/

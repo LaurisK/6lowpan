@@ -192,8 +192,7 @@ uip_ds6_nbr_add(const uip_ipaddr_t *ipaddr, const uip_lladdr_t *lladdr,
     rpl_lite_driver.neighbor_state_changed(nbr);
     return nbr;
   } else {
-    TRiceS("msg:Add drop ip addr %s link addr ", uip6_printAddr(&nbr->ipaddr, NULL));
-    TRice("msg:(%p) ", lladdr);
+    TRiceS("msg:Add drop ip addr %s link addr ", uip6_printAddr(ipaddr, NULL));
     TRiceS("msg:%s", (char*)linkaddr_printAddr((linkaddr_t*)lladdr));
     TRice("msg: state %u\n", state);
     return NULL;

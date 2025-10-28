@@ -63,9 +63,7 @@ static const linkaddr_t *worst_rank_nbr_lladdr; /* lladdr of the the neighbor wi
 static rpl_rank_t worst_rank;
 
 /*---------------------------------------------------------------------------*/
-static void
-update_state(void)
-{
+static void update_state(void) {
   uip_ds6_nbr_t *ds6_nbr;
   rpl_nbr_t *rpl_nbr;
   rpl_rank_t nbr_rank;
@@ -87,8 +85,7 @@ update_state(void)
 
     nbr_rank = rpl_neighbor_rank_via_nbr(rpl_nbr);
     /* Select worst-rank neighbor */
-    if(rpl_nbr != curr_instance.dag.preferred_parent
-       && nbr_rank > worst_rank) {
+    if(rpl_nbr != curr_instance.dag.preferred_parent && nbr_rank > worst_rank) {
       /* This is the worst-rank neighbor - this is a good candidate for removal */
       worst_rank = nbr_rank;
       worst_rank_nbr_lladdr = nbr_lladdr;
@@ -103,16 +100,12 @@ update_state(void)
   TRice("dbg:nbr-policy: free: %d, parents: %d\n", num_free, num_parents);
 }
 /*---------------------------------------------------------------------------*/
-static const linkaddr_t *
-find_worst_rank_nbr_lladdr(void)
-{
+static const linkaddr_t * find_worst_rank_nbr_lladdr(void) {
   update_state();
   return worst_rank_nbr_lladdr;
 }
 /*---------------------------------------------------------------------------*/
-static const linkaddr_t *
-find_removable_dio(/*uip_ipaddr_t *from, */rpl_dio_t *dio)
-{
+static const linkaddr_t * find_removable_dio(/*uip_ipaddr_t *from, */rpl_dio_t *dio) {
   update_state();
 
   if(!curr_instance.used || curr_instance.instance_id != dio->instance_id) {

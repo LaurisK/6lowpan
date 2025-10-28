@@ -195,9 +195,7 @@ static void remove_key(nbr_table_key_t *least_used_key) {
   }
 }
 /*---------------------------------------------------------------------------*/
-static nbr_table_key_t *
-nbr_table_allocate(nbr_table_reason_t reason, void *data)
-{
+static nbr_table_key_t * nbr_table_allocate(nbr_table_reason_t reason, void *data) {
   static uint8_t unusedKeyPos = 0;
   nbr_table_key_t *key;
   int least_used_count = 0;
@@ -213,7 +211,7 @@ nbr_table_allocate(nbr_table_reason_t reason, void *data)
     lladdr = rpl_nbr_policy_find_removable(reason, data);
     if(lladdr == NULL) {
       /* Nothing found that can be deleted - return NULL to indicate failure */
-    	TRice("*** Not removing entry to allocate new\n");
+      TRice("dbg:Not removing entry to allocate new\n");
       //return NULL;
     } else {
       /* used least_used_key to indicate what is the least useful entry */
@@ -225,7 +223,7 @@ nbr_table_allocate(nbr_table_reason_t reason, void *data)
       }
       /* Allow delete of locked item? */
       if(least_used_key != NULL && locked) {
-    	  TRice("Deleting locked item!\n");
+    	TRice("msg:Deleting locked item!\n");
         locked_map[index] = 0;
       }
     }
@@ -240,10 +238,12 @@ nbr_table_allocate(nbr_table_reason_t reason, void *data)
        * */
       /* Get item from first key */
       key = keyListHead;
+      TRice("dbg:No more space, try to free a neighbor.\n");
       while(key != NULL) {
         int item_index = index_from_key(key);
         int locked = locked_map[item_index];
         /* Never delete a locked item */
+        TRiceS("dbg:Neighbor %s ", (char*)linkaddr_printAddr(&neighborAddr[item_index].lladdr));
         if(!locked) {
           int used = used_map[item_index];
           int used_count = 0;
@@ -252,16 +252,21 @@ nbr_table_allocate(nbr_table_reason_t reason, void *data)
             if((used & 1) == 1) {
               used_count++;
             }
-          used >>= 1;
+            used >>= 1;
           }
           /* Find least used item */
-          if(least_used_key == NULL || used_count < least_used_count) {
+          if((least_used_key == NULL) || (used_count < least_used_count)) {
             least_used_key = key;
             least_used_count = used_count;
             if(used_count == 0) { /* We won't find any least used item */
+              TRice("msg:not used.\n");
               break;
             }
+            TRice("msg:new least used,");
           }
+          TRice("msg:used by %d\n", used_count);
+        } else {
+          TRice("msg:locked.\n");
         }
         key = key->next;
       }
@@ -269,6 +274,7 @@ nbr_table_allocate(nbr_table_reason_t reason, void *data)
 
     if(least_used_key == NULL) {
       /* We haven't found any unlocked item, allocation fails */
+      TRice("msg:no least used key found.\n");
       return NULL;
     } else {
       /* Reuse least used item */

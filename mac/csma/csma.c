@@ -94,6 +94,7 @@ static sPacket ackPacket;
 static uint16_t csmaEvtIdOffset;
 void (*csmaIrq2Task)(uint16_t, void(*cbFunc)(void));
 static volatile uint8_t radioDataReceived = 0;
+static uint8_t seqNr = 0;
 
 /* Private functions --------------------------------------------------------*/
 /**
@@ -129,8 +130,6 @@ static sNeighbor* GetNeighborForAddr(const linkaddr_t *addr) {
  *
  */
 static uint8_t GetSeqNr(void) {
-#warning "for now just hardcoded random random number."
-	static uint8_t seqNr = 0xA5;
 	seqNr++;
 	/* PACKETBUF_ATTR_MAC_SEQNO cannot be zero, due to a pecuilarity in framer-802154.c. */
 	if (0 == seqNr) {
@@ -445,6 +444,7 @@ static void init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(voi
 	TRice("msg:MCU uid %08X %08X %08X to %08X %08X MAC.\n", HAL_GetUIDw0(), HAL_GetUIDw1(), HAL_GetUIDw2(), (*(uint32_t*)node_mac), (*(((uint32_t*)node_mac)+1)));
 	linkaddr_set_node_addr((linkaddr_t*)node_mac);
   }
+  seqNr = (uint8_t)System_Random(0xFF);
   subGHz_radio_driver.init(evtOffset, packedEvtHndl);
   /* Check that the radio can correctly report its max supported payload */
   if(subGHz_radio_driver.get_value(RADIO_CONST_MAX_PAYLOAD_LEN, &radio_max_payload_len) != radio_ok) {
