@@ -298,6 +298,13 @@ static void TransmitFromQueue(void) {
 	}
 }
 
+static void CheckStalledTx(void) {
+	if ((0 == subGHz_radio_driver.transmitting_packet()) && (NULL != neighborList)) {
+		TRice("msg: Stalled transmission detected, and restarted.\n");
+		csmaIrq2Task(csmaEvtIdOffset + radio_taskCall, KickTranferQueue);
+	}
+}
+
 /**
  *
  */
@@ -333,9 +340,11 @@ static void EnqueuePacket(sPacket *packet, mac_callback_t sent, void *ptr) {
 			  TRice("msg: have %u packets in queue.\n", GetQueueLenOfNeighbor(walker));
 			  walker = walker->next;
 		  }
+		  CheckStalledTx();
 	  } else if ((1 << packetPos) != targetNeighbor->queuedTransmits) { // targetNeighbor here is always neighborList and we already checked if no other neighbors are present
 		  /* More packets are in queue, but only for this neighbor - print some info about them */
 		  TRice("msg:\t total of %u packets are queued for this neighbor\n", GetQueueLenOfNeighbor(targetNeighbor));
+		  CheckStalledTx();
 	  } else {
 		  /* Only one packet is in queue and only for this neighbor - start transmission of it*/
 		  TransmitFromQueue();

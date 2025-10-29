@@ -686,6 +686,18 @@ struct radio_driver {
   int8_t (* receiving_packet)(void);
 
   /**
+   * Check if the radio driver is currently transmitting a packet.
+   *
+   * \retval 1 Transmission of a packet is in progress
+   * \retval 0 No transmission in progress
+   *
+   * If at the point of calling this function the radio is not transmitting, for
+   * example as a result of a previous call to `off()`, this function will
+   * immediately return 0.
+   */
+  int8_t (* transmitting_packet)(void);
+
+  /**
    * Check if a packet has been received and is available in the radio driver's
    * buffers.
    *

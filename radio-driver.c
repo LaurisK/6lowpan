@@ -664,6 +664,10 @@ static int8_t Radio_channel_clear(void) {
 	return ret;
 }
 
+static int8_t Radio_transmitting_packet(void) {
+	return transmitting_packet;
+}
+
 static int8_t Radio_receiving_packet(void) {
 	return receiving_packet;
 }
@@ -859,6 +863,7 @@ const struct radio_driver subGHz_radio_driver = {
 		Radio_read,
 		Radio_channel_clear,
 		Radio_receiving_packet,
+		Radio_transmitting_packet,
 		Radio_pending_packet,
 		Radio_on,
 		Radio_off,
