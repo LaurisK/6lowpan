@@ -41,13 +41,13 @@
 #include "tcpip.h"
 
 #include <string.h>
+static sUipBuff txUipBuff;
 
 /*---------------------------------------------------------------------------*/
 void uip_udp_packet_send(sSocket *c, const void *data, int len)
 {
 #if UIP_UDP
   if(data != NULL && len <= (UIP_BUFSIZE - UIP_IPUDPH_LEN)) {
-	sUipBuff txUipBuff;
     txUipBuff.sLen = len;
     //memmove(&uip_buf[UIP_IPUDPH_LEN], data, len);
     memcpy(&txUipBuff.buff.u8[UIP_IPUDPH_LEN], data, len);

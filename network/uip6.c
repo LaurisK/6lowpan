@@ -348,7 +348,9 @@ uint16_t uip_udpchksum(sUipBuff *uipBuff) {
 #endif /* UIP_ARCH_CHKSUM */
 /*---------------------------------------------------------------------------*/
 void uip_init(void) {
+#if UIP_TCP
   int c;
+#endif /* UIP_TCP */
   linkaddr_get_node_addr((linkaddr_t *)&uip_lladdr);
   uipbuf_init();
   uip_ds6_init();
