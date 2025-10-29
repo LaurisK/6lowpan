@@ -42,8 +42,8 @@
 
 #include "uip.h"
 
-void uip_udp_packet_send(struct uip_udp_conn *c, const void *data, int len);
-void uip_udp_packet_sendto(struct uip_udp_conn *c, const void *data, int len,
+void uip_udp_packet_send(sSocket *c, const void *data, int len);
+void uip_udp_packet_sendto(sSocket *c, const void *data, int len,
 			   const uip_ipaddr_t *toaddr, uint16_t toport);
 
 #endif /* UIP_UDP_PACKET_H_ */

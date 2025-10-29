@@ -58,7 +58,6 @@
 #warning "deglobalize uip_ds6_if"
 extern uip_ds6_netif_t uip_ds6_if;
 
-uip_ipaddr_t rpl_multicast_addr;
 static uint8_t rpl_leaf_only = RPL_DEFAULT_LEAF_ONLY;
 
 /*---------------------------------------------------------------------------*/
@@ -192,10 +191,6 @@ rpl_set_prefix(rpl_prefix_t *prefix)
 /*---------------------------------------------------------------------------*/
 static void init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void))) {
 	TRice("msg:initializing\n");
-
-  /* Initialize multicast address and register it */
-  uip_create_linklocal_rplnodes_mcast(&rpl_multicast_addr);
-  uip_ds6_maddr_add(&rpl_multicast_addr);
 
   rpl_dag_init();
   rpl_neighbor_init();

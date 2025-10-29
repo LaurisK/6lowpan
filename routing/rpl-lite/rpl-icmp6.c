@@ -46,6 +46,7 @@
 
 #include <limits.h>
 #include "../../network/uip-icmp6.h"
+#include "../../network/uip-ds6.h"
 #include "../../network/sicslowpan.h"
 #include "rpl.h"
 #include "rpl-icmp6.h"
@@ -81,6 +82,8 @@ static sUipBuff daoBuff = {0};
 #if RPL_WITH_DAO_ACK
 static sUipBuff daoAckBuff = {0};
 #endif /* RPL_WITH_DAO_ACK */
+static const uip_ipaddr_t rpl_multicast_addr = {.u8 = {0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x1a}};
+
 /*---------------------------------------------------------------------------*/
 static uint32_t
 get32(uint8_t *buffer, int pos)
@@ -140,9 +143,7 @@ static void dis_input(sUipBuff *uipBuff) {
     uipbuf_clear(uipBuff);
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_icmp6_dis_output(uip_ipaddr_t *addr)
-{
+void rpl_icmp6_dis_output(uip_ipaddr_t *addr) {
   unsigned char *buffer;
 
   /* Make sure we're up-to-date before sending data out */
@@ -152,7 +153,7 @@ rpl_icmp6_dis_output(uip_ipaddr_t *addr)
   buffer[0] = buffer[1] = 0;
 
   if(addr == NULL) {
-    addr = &rpl_multicast_addr;
+    addr = (uip_ipaddr_t*)&rpl_multicast_addr;
   }
 
   TRiceS("msg:sending a DIS to %s\n", uip6_printAddr(addr, NULL));
@@ -427,7 +428,7 @@ rpl_icmp6_dio_output(uip_ipaddr_t *uc_addr)
   }
 
   if(!rpl_get_leaf_only()) {
-    addr = (addr != NULL) ? addr : &rpl_multicast_addr;
+    addr = (addr != NULL) ? addr : (uip_ipaddr_t*)&rpl_multicast_addr;
   }
 
   if (uc_addr != NULL) {
@@ -656,6 +657,8 @@ void rpl_icmp6_dao_ack_output(uip_ipaddr_t *dest, uint8_t sequence, uint8_t stat
 #endif /* RPL_WITH_DAO_ACK */
 /*---------------------------------------------------------------------------*/
 void rpl_icmp6_init() {
+  uip_ds6_maddr_add(&rpl_multicast_addr);
+
   uip_icmp6_register_input_handler(&dis_handler);
   uip_icmp6_register_input_handler(&dio_handler);
   uip_icmp6_register_input_handler(&dao_handler);

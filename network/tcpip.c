@@ -155,7 +155,7 @@ static uint16_t packet_input(sUipBuff *rxPacket) {
     }
 #endif /* UIP_TAG_TC_WITH_VARIABLE_RETRANSMISSIONS */
 
-    uip_process(rxPacket, UIP_DATA);
+    uip_process(NULL, rxPacket, UIP_DATA);
     if(rxPacket->len > 0) {
       tcpip_ipv6_output(rxPacket);
     }
@@ -534,18 +534,17 @@ exit:
 sUipBuff uipPollBuff;
 /*---------------------------------------------------------------------------*/
 #if UIP_UDP
-static struct uip_udp_conn *pollUdpConn = NULL;
+static sSocket *pollingSocket = NULL;
 static void PollUdp(void) {
-    if(NULL != pollUdpConn) {
-      servicingUdpConn = pollUdpConn;
-      uip_process(&uipPollBuff, UIP_UDP_TIMER);
+    if(NULL != pollingSocket) {
+      uip_process(pollingSocket, &uipPollBuff, UIP_UDP_TIMER);
       tcpip_ipv6_output(&uipPollBuff);
     }
-    pollUdpConn = NULL;
+    pollingSocket = NULL;
 }
 
-void tcpip_poll_udp(struct uip_udp_conn *conn) {
-	pollUdpConn = conn;
+void tcpip_poll_udp(sSocket *socket) {
+	pollingSocket = socket;
 	tcpipIrq2Task(tcpipEvtIdOffset + radio_taskCall, PollUdp);
 }
 #endif /* UIP_UDP */

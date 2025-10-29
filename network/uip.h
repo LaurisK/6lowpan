@@ -92,26 +92,6 @@
 #define UIP_TCP_BUF                           ((struct uip_tcp_hdr *)UIP_IP_PAYLOAD(uip_ext_len))
 #define UIP_TCP_PAYLOAD                            ((unsigned char *)UIP_IP_PAYLOAD(uip_ext_len) + UIP_TCPH_LEN)
 
-/* Multicast address: create and compare */
-
-/** \brief Set IP address addr to the link-local, all-rpl-nodes multicast address. */
-#define uip_create_linklocal_rplnodes_mcast(addr)	\
-  uip_ip6addr((addr), 0xff02, 0, 0, 0, 0, 0, 0, 0x001a)
-
-/** \brief Is IPv6 address addr the link-local, all-RPL-nodes
-   multicast address? */
-#define uip_is_addr_linklocal_rplnodes_mcast(addr)	    \
-  ((addr)->u8[0] == 0xff) &&				    \
-  ((addr)->u8[1] == 0x02) &&				    \
-  ((addr)->u16[1] == 0) &&				    \
-  ((addr)->u16[2] == 0) &&				    \
-  ((addr)->u16[3] == 0) &&				    \
-  ((addr)->u16[4] == 0) &&				    \
-  ((addr)->u16[5] == 0) &&				    \
-  ((addr)->u16[6] == 0) &&				    \
-  ((addr)->u8[14] == 0) &&				    \
-  ((addr)->u8[15] == 0x1a))
-
 /**
  * Representation of an IP address.
  *
@@ -140,6 +120,31 @@ struct uip_udp_conn {
   void (*portRxCb)(uint8_t*, uint16_t);
 //  uip_udp_appstate_t appstate;
 };
+
+typedef struct {
+	void (*rxCb)(const uint8_t*, const uint16_t, const uip_ipaddr_t*, const uint16_t);
+	struct {
+		uint8_t acceptUnicast:1;
+		uint8_t acceptLlBcast:1;
+		uint8_t acceptLlRtrMcast:1;
+	} options;
+} sUdpSocketInfo;
+
+typedef struct {
+	void (*rxCb)(uint8_t*, uint16_t);
+} sTcpSocketInfo;
+
+typedef struct {
+	union {
+		sUdpSocketInfo udp;
+		sTcpSocketInfo tcp;
+	} proto;
+	uip_ipaddr_t dstAddr;
+	uint16_t srcPort;
+	uint16_t dstPort;
+	uint8_t  protoNr;
+	uint8_t  ttl;
+} sSocket;
 
 /*---------------------------------------------------------------------------*/
 #define UIP_802154_SHORTADDR_LEN 2
@@ -762,6 +767,8 @@ void uip_send(const void *data, int len);
  * if no connection could be allocated.
  */
 struct uip_udp_conn *uip_udp_new(const uip_ipaddr_t *ripaddr, uint16_t rport, void (*portCb)(uint8_t*, uint16_t));
+sSocket *SocketUdp(uint16_t, void (*portCb)(const uint8_t*, const uint16_t, const uip_ipaddr_t*, const uint16_t));
+void BindUdp(sSocket *);
 
 /**
  * Remove a UDP connection.
@@ -1202,11 +1209,6 @@ extern struct uip_conn uip_conns[UIP_TCP_CONNS];
 extern uint8_t uip_acc32[4];
 /** @} */
 
-/**
- * The current UDP connection.
- */
-extern struct uip_udp_conn *servicingUdpConn;
-
 struct uip_fallback_interface {
   void (*init)(void);
   /**
@@ -1377,7 +1379,7 @@ uip_ext_hdr_options_process(); */
  *
  * The actual uIP function which does all the work.
  */
-void uip_process(sUipBuff *uipBuff, uint8_t flag);
+void uip_process(sSocket *socket, sUipBuff *uipBuff, uint8_t flag);
 
   /* The following flags are passed as an argument to the uip_process()
    function. They are used to distinguish between the two cases where

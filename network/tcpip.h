@@ -212,7 +212,7 @@ struct uip_udp_conn *udp_broadcast_new(uint16_t port, void *appstate);
  * \param conn A pointer to the UDP connection that should be polled.
  *
  */
-void tcpip_poll_udp(struct uip_udp_conn *conn);
+void tcpip_poll_udp(sSocket *socket);
 
 /** @} */
 
