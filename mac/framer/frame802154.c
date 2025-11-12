@@ -67,11 +67,7 @@
 #include "frame802154.h"
 #include "../llsec802154.h"
 #include <string.h>
-#if defined(STM32H753xx)
-#include "trice.h"
-#else
 #include "App/common.h"
-#endif
 
 /* Private defines ----------------------------------------------------------*/
 /* Private types ------------------------------------------------------------*/

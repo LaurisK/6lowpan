@@ -56,8 +56,11 @@
 #include <stdint.h>
 #include "../linkaddr.h"
 #include "uipopt.h"
+#include "uipbuf.h"
 /* For memcmp */
 //#include <string.h>
+
+#define NETSTACK_CONF_WITH_IPV6 1
 
 /* Header sizes. */
 #define UIP_IPH_LEN    40
@@ -70,18 +73,19 @@
 #define UIP_IPUDPH_LEN (UIP_UDPH_LEN + UIP_IPH_LEN)   /* Size of IP + UDP header */
 #define UIP_IPTCPH_LEN (UIP_TCPH_LEN + UIP_IPH_LEN)   /* Size of IP + TCP header */
 
-#define uip_l3_icmp_hdr_len (UIP_IPH_LEN + uip_ext_len + UIP_ICMPH_LEN)
-
 /**
  * Direct access to IPv6 header
  */
+#define IP_HDR_CAST_TO_BUFF(buff)   ((struct uip_ip_hdr *)(buff))
+#define UDP_HDR_CAST_TO_BUFF(buff)  ((struct uip_udp_hdr *)(buff))
+
 #define UIP_IP_BUF                             ((struct uip_ip_hdr *)uip_buf)
 #define UIP_IP_PAYLOAD(ext)                        ((unsigned char *)uip_buf + UIP_IPH_LEN + (ext))
 
 /**
  * Direct access to ICMP, UDP, and TCP headers and payload, with implicit ext header offset (global uip_ext_len)
  */
-#define UIP_ICMP_BUF                         ((struct uip_icmp_hdr *)UIP_IP_PAYLOAD(uip_ext_len))
+#define UIP_ICMP_BUF                         ((struct uip_icmp_hdr *)UIP_IP_PAYLOAD(uip_ext_len)) // >> (struct uip_icmp_hdr*)(faultyBuff->buff.u8 + UIP_IPH_LEN + faultyBuff->extLen)
 #define UIP_ICMP_PAYLOAD                           ((unsigned char *)UIP_IP_PAYLOAD(uip_ext_len) + UIP_ICMPH_LEN)
 #define UIP_UDP_BUF                           ((struct uip_udp_hdr *)UIP_IP_PAYLOAD(uip_ext_len))
 #define UIP_UDP_PAYLOAD                            ((unsigned char *)UIP_IP_PAYLOAD(uip_ext_len) + UIP_UDPH_LEN)
@@ -294,59 +298,6 @@ void uip_setipid(uint16_t id);
  */
 
 /**
- * Process an incoming packet.
- *
- * This function should be called when the device driver has received
- * a packet from the network. The packet from the device driver must
- * be present in the uip_buf buffer, and the length of the packet
- * should be placed in the uip_len variable.
- *
- * When the function returns, there may be an outbound packet placed
- * in the uip_buf packet buffer. If so, the uip_len variable is set to
- * the length of the packet. If no packet is to be sent out, the
- * uip_len variable is set to 0.
- *
- * The usual way of calling the function is presented by the source
- * code below.
- \code
- uip_len = devicedriver_poll();
- if(uip_len > 0) {
- uip_input();
- if(uip_len > 0) {
- devicedriver_send();
- }
- }
- \endcode
- *
- * \note If you are writing a uIP device driver that needs ARP
- * (Address Resolution Protocol), e.g., when running uIP over
- * Ethernet, you will need to call the uIP ARP code before calling
- * this function:
- \code
- #define BUF ((struct uip_eth_hdr *)&uip_buf[0])
- uip_len = ethernet_devicedrver_poll();
- if(uip_len > 0) {
- if(BUF->type == UIP_HTONS(UIP_ETHTYPE_IP)) {
- uip_arp_ipin();
- uip_input();
- if(uip_len > 0) {
- uip_arp_out();
- ethernet_devicedriver_send();
- }
- } else if(BUF->type == UIP_HTONS(UIP_ETHTYPE_ARP)) {
- uip_arp_arpin();
- if(uip_len > 0) {
- ethernet_devicedriver_send();
- }
- }
- \endcode
- *
- * \hideinitializer
- */
-#define uip_input()        uip_process(UIP_DATA)
-
-
-/**
  * Periodic processing for a connection identified by its number.
  *
  * This function does the necessary periodic processing (timers,
@@ -485,11 +436,6 @@ void uip_setipid(uint16_t id);
     uip_process(UIP_UDP_TIMER); } while(0)
 #endif /* UIP_UDP */
 
-/** \brief Abandon the reassembly of the current packet */
-void uip_reass_over(void);
-
-/** Macro to access uip_aligned_buf as an array of bytes */
-//#define uip_buf (uip_aligned_buf.u8)
 
 
 /** @} */
@@ -510,10 +456,10 @@ void uip_reass_over(void);
  * Start listening to the specified port.
  *
  * \note Since this function expects the port number in network byte
- * order, a conversion using UIP_HTONS() or uip_htons() is necessary.
+ * order, a conversion using __REVSH() is necessary.
  *
  \code
- uip_listen(UIP_HTONS(80));
+ uip_listen(__REVSH(80));
  \endcode
  *
  * \param port A 16-bit port number in network byte order.
@@ -524,10 +470,10 @@ void uip_listen(uint16_t port);
  * Stop listening to the specified port.
  *
  * \note Since this function expects the port number in network byte
- * order, a conversion using UIP_HTONS() or uip_htons() is necessary.
+ * order, a conversion using __REVSH() is necessary.
  *
  \code
- uip_unlisten(UIP_HTONS(80));
+ uip_unlisten(__REVSH(80));
  \endcode
  *
  * \param port A 16-bit port number in network byte order.
@@ -549,13 +495,13 @@ void uip_unlisten(uint16_t port);
  * has been configured by defining UIP_ACTIVE_OPEN to 1 in uipopt.h.
  *
  * \note Since this function requires the port number to be in network
- * byte order, a conversion using UIP_HTONS() or uip_htons() is necessary.
+ * byte order, a conversion using __REVSH() is necessary.
  *
  \code
  uip_ipaddr_t ipaddr;
 
  uip_ipaddr(&ipaddr, 192,168,1,2);
- uip_connect(&ipaddr, UIP_HTONS(80));
+ uip_connect(&ipaddr, __REVSH(80));
  \endcode
  *
  * \param ripaddr The IP address of the remote host.
@@ -821,9 +767,9 @@ void uip_send(const void *data, int len);
  struct uip_udp_conn *c;
 
  uip_ipaddr(&addr, 192,168,2,1);
- c = uip_udp_new(&addr, UIP_HTONS(12345));
+ c = uip_udp_new(&addr, __REVSH(12345));
  if(c != NULL) {
- uip_udp_bind(c, UIP_HTONS(12344));
+ uip_udp_bind(c, __REVSH(12344));
  }
  \endcode
  * \param ripaddr The IP address of the remote host.
@@ -855,20 +801,6 @@ struct uip_udp_conn *uip_udp_new(const uip_ipaddr_t *ripaddr, uint16_t rport);
  * \hideinitializer
  */
 #define uip_udp_bind(conn, port) (conn)->lport = port
-
-/**
- * Send a UDP datagram of length len on the current connection.
- *
- * This function can only be called in response to a UDP event (poll
- * or newdata). The data must be present in the uip_buf buffer, at the
- * place pointed to by the uip_appdata pointer.
- *
- * \param len The length of the data in the uip_buf buffer.
- *
- * \hideinitializer
- */
-#define uip_udp_send(len) uip_send((char *)uip_appdata, len)
-
 
 /** @} */
 
@@ -909,7 +841,7 @@ struct uip_udp_conn *uip_udp_new(const uip_ipaddr_t *ripaddr, uint16_t rport);
  struct uip_conn *c;
 
  uip_ipaddr(&ipaddr, 192,168,1,2);
- c = uip_connect(&ipaddr, UIP_HTONS(80));
+ c = uip_connect(&ipaddr, __REVSH(80));
  \endcode
  *
  * \param addr A pointer to a uip_ipaddr_t variable that will be
@@ -937,14 +869,14 @@ struct uip_udp_conn *uip_udp_new(const uip_ipaddr_t *ripaddr, uint16_t rport);
  * \hideinitializer
  */
 #define uip_ip6addr(addr, addr0,addr1,addr2,addr3,addr4,addr5,addr6,addr7) do { \
-    (addr)->u16[0] = UIP_HTONS(addr0);                                      \
-    (addr)->u16[1] = UIP_HTONS(addr1);                                      \
-    (addr)->u16[2] = UIP_HTONS(addr2);                                      \
-    (addr)->u16[3] = UIP_HTONS(addr3);                                      \
-    (addr)->u16[4] = UIP_HTONS(addr4);                                      \
-    (addr)->u16[5] = UIP_HTONS(addr5);                                      \
-    (addr)->u16[6] = UIP_HTONS(addr6);                                      \
-    (addr)->u16[7] = UIP_HTONS(addr7);                                      \
+    (addr)->u16[0] = __REVSH(addr0);                                      \
+    (addr)->u16[1] = __REVSH(addr1);                                      \
+    (addr)->u16[2] = __REVSH(addr2);                                      \
+    (addr)->u16[3] = __REVSH(addr3);                                      \
+    (addr)->u16[4] = __REVSH(addr4);                                      \
+    (addr)->u16[5] = __REVSH(addr5);                                      \
+    (addr)->u16[6] = __REVSH(addr6);                                      \
+    (addr)->u16[7] = __REVSH(addr7);                                      \
   } while(0)
 
 /**
@@ -1189,48 +1121,6 @@ struct uip_udp_conn *uip_udp_new(const uip_ipaddr_t *ripaddr, uint16_t rport);
  * \hideinitializer
  */
 #define uip_ipaddr4(addr) ((addr)->u8[3])
-
-/**
- * Convert 16-bit quantity from host byte order to network byte order.
- *
- * This macro is primarily used for converting constants from host
- * byte order to network byte order. For converting variables to
- * network byte order, use the uip_htons() function instead.
- *
- * \hideinitializer
- */
-#ifndef UIP_HTONS
-#   if UIP_BYTE_ORDER == UIP_BIG_ENDIAN
-#      define UIP_HTONS(n) (n)
-#      define UIP_HTONL(n) (n)
-#   else /* UIP_BYTE_ORDER == UIP_BIG_ENDIAN */
-#      define UIP_HTONS(n) (uint16_t)((((uint16_t) (n)) << 8) | (((uint16_t) (n)) >> 8))
-#      define UIP_HTONL(n) (((uint32_t)UIP_HTONS(n) << 16) | UIP_HTONS((uint32_t)(n) >> 16))
-#   endif /* UIP_BYTE_ORDER == UIP_BIG_ENDIAN */
-#else
-#error "UIP_HTONS already defined!"
-#endif /* UIP_HTONS */
-
-/**
- * Convert a 16-bit quantity from host byte order to network byte order.
- *
- * This function is primarily used for converting variables from host
- * byte order to network byte order. For converting constants to
- * network byte order, use the UIP_HTONS() macro instead.
- */
-#ifndef uip_htons
-uint16_t uip_htons(uint16_t val);
-#endif /* uip_htons */
-#ifndef uip_ntohs
-#define uip_ntohs uip_htons
-#endif
-
-#ifndef uip_htonl
-uint32_t uip_htonl(uint32_t val);
-#endif /* uip_htonl */
-#ifndef uip_ntohl
-#define uip_ntohl uip_htonl
-#endif
 
 /** @} */
 
@@ -1502,7 +1392,7 @@ uip_ext_hdr_options_process(); */
  *
  * The actual uIP function which does all the work.
  */
-void uip_process(uint8_t flag);
+void uip_process(sUipBuff *uipBuff, uint8_t flag);
 
   /* The following flags are passed as an argument to the uip_process()
    function. They are used to distinguish between the two cases where
@@ -1666,13 +1556,6 @@ struct uip_tcp_hdr {
   uint8_t optdata[4];
 };
 
-/* The ICMP headers. */
-struct uip_icmp_hdr {
-  uint8_t type, icode;
-  uint16_t icmpchksum;
-};
-
-
 /* The UDP headers. */
 struct uip_udp_hdr {
   uint16_t srcport;
@@ -1832,7 +1715,7 @@ extern uip_lladdr_t uip_lladdr;
 /** \brief set IP address a to the link local all-routers multicast address */
 #define uip_create_linklocal_allrouters_mcast(a) uip_ip6addr(a, 0xff02, 0, 0, 0, 0, 0, 0, 0x0002)
 #define uip_create_linklocal_prefix(addr) do { \
-    (addr)->u16[0] = UIP_HTONS(0xfe80);            \
+    (addr)->u16[0] = __REVSH(0xfe80);            \
     (addr)->u16[1] = 0;                        \
     (addr)->u16[2] = 0;                        \
     (addr)->u16[3] = 0;                        \
@@ -2028,35 +1911,6 @@ extern uip_lladdr_t uip_lladdr;
 #define UIP_FW_DROPPED   5
 
 /**
- * Calculate the Internet checksum over a buffer.
- *
- * The Internet checksum is the one's complement of the one's
- * complement sum of all 16-bit words in the buffer.
- *
- * See RFC1071.
- *
- * \param data A pointer to the buffer over which the checksum is to be
- * computed.
- *
- * \param len The length of the buffer over which the checksum is to
- * be computed.
- *
- * \return The Internet checksum of the buffer.
- */
-uint16_t uip_chksum(uint16_t *data, uint16_t len);
-
-/**
- * Calculate the IP header checksum of the packet header in uip_buf.
- *
- * The IP header checksum is the Internet checksum of the 20 bytes of
- * the IP header.
- *
- * \return The IP header checksum of the IP header in the uip_buf
- * buffer.
- */
-uint16_t uip_ipchksum(void);
-
-/**
  * Calculate the TCP checksum of the packet in uip_buf and uip_appdata.
  *
  * The TCP checksum is the Internet checksum of data contents of the
@@ -2065,7 +1919,7 @@ uint16_t uip_ipchksum(void);
  * \return The TCP checksum of the TCP segment in uip_buf and pointed
  * to by uip_appdata.
  */
-uint16_t uip_tcpchksum(void);
+uint16_t uip_tcpchksum(sUipBuff *uipBuff);
 
 /**
  * Calculate the UDP checksum of the packet in uip_buf and uip_appdata.
@@ -2076,14 +1930,14 @@ uint16_t uip_tcpchksum(void);
  * \return The UDP checksum of the UDP segment in uip_buf and pointed
  * to by uip_appdata.
  */
-uint16_t uip_udpchksum(void);
+uint16_t uip_udpchksum(sUipBuff *uipBuff);
 
 /**
  * Calculate the ICMP checksum of the packet in uip_buf.
  *
  * \return The ICMP checksum of the ICMP packet in uip_buf
  */
-uint16_t uip_icmp6chksum(void);
+uint16_t uip_icmp6chksum(sUipBuff *uipBuff);
 
 /**
  * Removes all IPv6 extension headers from uip_buf, updates length fields
@@ -2091,7 +1945,16 @@ uint16_t uip_icmp6chksum(void);
  *
  * \return true upon success, false otherwise.
  */
-uint8_t uip_remove_ext_hdr(void);
+bool uip_remove_ext_hdr(sUipBuff *uipBuff);
+
+/**
+ * \brief          Updates the length field in the uIP buffer
+ * \param buffer   The IPv6 header
+ * \param len      The new length value
+ */
+void uip6_uipHdrSetLen(struct uip_ip_hdr *hdr, uint16_t len);
+
+char *uip6_printAddr(const uip_ip6addr_t*, int16_t*);
 
 #endif /* UIP_H_ */
 

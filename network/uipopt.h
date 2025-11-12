@@ -134,6 +134,13 @@
 #define UIP_BUFSIZE (UIP_CONF_BUFFER_SIZE)
 #endif /* UIP_CONF_BUFFER_SIZE */
 
+/* NETSTACK_MAX_ROUTE_ENTRIES specifies the maximum number of entries
+   the routing module will handle. Applies to uIP routing tables if they are
+   used, or to RPL non-storing mode links instead */
+#ifndef NETSTACK_MAX_ROUTE_ENTRIES
+#define NETSTACK_MAX_ROUTE_ENTRIES 16
+#endif /* NETSTACK_MAX_ROUTE_ENTRIES */
+
 /**
  * Determines if statistics support should be compiled in.
  *
@@ -256,6 +263,22 @@ void uip_log(char *msg);
 #endif
 /** @} */
 
+#ifndef UIP_CONF_ND6_SEND_RA
+#define UIP_ND6_SEND_RA                     1   /* enable/disable RA sending */
+#else
+#define UIP_ND6_SEND_RA UIP_CONF_ND6_SEND_RA
+#endif
+#ifndef UIP_CONF_ND6_SEND_NS
+#define UIP_ND6_SEND_NS                     1   /* enable/disable NS sending */
+#else
+#define UIP_ND6_SEND_NS UIP_CONF_ND6_SEND_NS
+#endif
+#ifndef UIP_CONF_ND6_SEND_NA
+#define UIP_ND6_SEND_NA                     1   /* enable/disable NA sending */
+#else
+#define UIP_ND6_SEND_NA UIP_CONF_ND6_SEND_NA
+#endif
+
 /*------------------------------------------------------------------------------*/
 /**
  * \defgroup uipoptudp UDP configuration options
@@ -316,6 +339,7 @@ void uip_log(char *msg);
  * \defgroup uipopttcp TCP configuration options
  * @{
  */
+#define UIP_CONF_ROUTER                 1
 
 /**
  * Toggles whether TCP support should be compiled in or not.
@@ -325,7 +349,7 @@ void uip_log(char *msg);
 #ifdef UIP_CONF_TCP
 #define UIP_TCP (UIP_CONF_TCP)
 #else /* UIP_CONF_TCP */
-#define UIP_TCP           1
+#define UIP_TCP           0//1
 #endif /* UIP_CONF_TCP */
 
 /**
@@ -372,17 +396,6 @@ void uip_log(char *msg);
 #else /* UIP_CONF_MAX_LISTENPORTS */
 #define UIP_LISTENPORTS (UIP_CONF_MAX_LISTENPORTS)
 #endif /* UIP_CONF_MAX_LISTENPORTS */
-
-/**
- * Determines if support for TCP urgent data notification should be
- * compiled in.
- *
- * Urgent data (out-of-band data) is a rarely used TCP feature that
- * very seldom would be required.
- *
- * \hideinitializer
- */
-#define UIP_URGDATA      0
 
 /**
  * The initial retransmission timeout counted in timer pulses.

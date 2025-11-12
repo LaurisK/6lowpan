@@ -87,7 +87,7 @@ extern "C" {
 #define LLSEC802154_HTONL(n) (n)
 #else /* UIP_CONF_BYTE_ORDER == UIP_LITTLE_ENDIAN */
 #define LLSEC802154_HTONS(n) (uint16_t)((((uint16_t) (n)) << 8) | (((uint16_t) (n)) >> 8))
-#define LLSEC802154_HTONL(n) (((uint32_t)UIP_HTONS(n) << 16) | UIP_HTONS((uint32_t)(n) >> 16))
+#define LLSEC802154_HTONL(n) (((uint32_t)__REVSH(n) << 16) | __REVSH((uint32_t)(n) >> 16))
 #endif /* UIP_CONF_BYTE_ORDER == UIP_LITTLE_ENDIAN */
 
 #define LLSEC802154_MIC_LEN(sec_lvl)   (2 << (sec_lvl & 3))

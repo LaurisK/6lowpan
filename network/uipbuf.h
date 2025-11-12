@@ -33,8 +33,9 @@
 #ifndef UIPBUF_H_
 #define UIPBUF_H_
 
-#include "uip.h"
 #include <stdbool.h>
+#include <stdint.h>
+#include "uipopt.h"
 
 /**
  * \brief The bits defined for uipbuf attributes flag.
@@ -104,14 +105,19 @@ enum {
 typedef struct {
 	uint16_t   attributes[UIPBUF_ATTR_MAX];
 	uint16_t   len;
+	uint16_t   sLen; //not sure what it does yet
+	/** \brief The final protocol after IPv6 extension headers:
+	  * UIP_PROTO_TCP, UIP_PROTO_UDP or UIP_PROTO_ICMP6 */
 	uint8_t    lastProto;
+	/**
+	 * \brief Total length of all IPv6 extension headers
+	 */
 	uint16_t   extLen;
 	union {
 	  uint32_t u32[(UIP_BUFSIZE + 3) / 4];
 	  uint8_t u8[UIP_BUFSIZE];
 	} buff;
 } sUipBuff;
-//struct uip_ip_hdr;
 
 /**
  * \brief          Resets uIP buffer
@@ -131,20 +137,6 @@ bool uipbuf_add_ext_hdr(sUipBuff *uipBuff, int16_t len);
  * \retval         true if the len was successfully set, false otherwise
  */
 bool uipbuf_set_len(sUipBuff *uipBuff, uint16_t len);
-
-/**
- * \brief          Updates the length field in the uIP buffer
- * \param buffer   The IPv6 header
- * \param len      The new length value
- */
-void uipbuf_set_len_field(struct uip_ip_hdr *hdr, uint16_t len);
-
-/**
- * \brief          Returns the value of the length field in the uIP buffer
- * \param buffer   The IPv6 header
- * \retvel         The length value
- */
-uint16_t uipbuf_get_len_field(struct uip_ip_hdr *hdr);
 
 /**
  * \brief          Get the next IPv6 header.

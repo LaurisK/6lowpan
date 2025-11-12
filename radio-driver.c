@@ -7,11 +7,7 @@
 #include "s2lp_management.h"
 #include "S2LP_Types.h"
 #include "S2LP_PktBasic.h"
-#if defined(STM32H753xx)
-#include "trice.h"
-#else
 #include "App/common.h"
-#endif
 #include "Middlewares/Third_Party/6lowpan/evt_radio.h"
 #include "cmsis_os.h"
 

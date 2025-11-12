@@ -43,8 +43,9 @@
  */
 
 /* Includes -----------------------------------------------------------------*/
-#include "linkaddr.h"
+#include <stdio.h>
 #include <string.h>
+#include "linkaddr.h"
 #include "trice.h"
 
 /* Private defines ----------------------------------------------------------*/
@@ -63,6 +64,7 @@ const linkaddr_t linkaddr_null = { { 0, 0, 0, 0, 0, 0 } };
 #endif /*LINKADDR_SIZE == 6*/
 #endif /*LINKADDR_SIZE == 2*/
 
+static char address[20];
 /* Private functions --------------------------------------------------------*/
 /* Functions ----------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
@@ -86,8 +88,10 @@ void linkaddr_get_node_addr(linkaddr_t *addr) {
 }
 
 /*---------------------------------------------------------------------------*/
-void linkaddr_print(const linkaddr_t *addr) {
-	TRice("%04X:%04X:%04X:%04X", addr->u16[0], addr->u16[1], addr->u16[2], addr->u16[3]);
+const char *linkaddr_printAddr(const linkaddr_t *addr) {
+	memset(address, 0x00, 20);
+	snprintf(address, 20, "%04X:%04X:%04X:%04X", __REVSH(addr->u16[0]), __REVSH(addr->u16[1]), __REVSH(addr->u16[2]), __REVSH(addr->u16[3]));
+	return address;
 }
 /*---------------------------------------------------------------------------*/
 /** @} */

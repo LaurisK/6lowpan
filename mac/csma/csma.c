@@ -45,12 +45,7 @@
 #include "Middlewares/Third_Party/6lowpan/radio-driver.h"
 #include "../framer/framer-802154.h"
 #include "../llsec802154.h"
-#if defined(STM32H753xx)
-#include "trice.h"
-#include "main.h"
-#else
 #include "App/common.h"
-#endif
 #include "Middlewares/Third_Party/6lowpan/evt_radio.h"
 
 /* Private defines ----------------------------------------------------------*/
@@ -335,8 +330,7 @@ static void EnqueuePacket(sPacket *packet, mac_callback_t sent, void *ptr) {
 		  sNeighbor *walker = (sNeighbor *)neighborList;
 		  while (NULL != walker) {
 			  //print neighbor info
-			  TRice("msg:\t neighbor ");
-			  linkaddr_print(&walker->addr);
+			  TRiceS("msg:\t neighbor %s", (char*)linkaddr_printAddr(&walker->addr));
 			  TRice("msg: have %u packets in queue.\n", GetQueueLenOfNeighbor(walker));
 			  walker = walker->next;
 		  }
@@ -436,8 +430,7 @@ static int off(void) {
 /**
  *
  */
-static void init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void)))
-{
+static void init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void))) {
   radio_value_t radio_max_payload_len;
   csmaEvtIdOffset = evtOffset;
   csmaIrq2Task = packedEvtHndl;

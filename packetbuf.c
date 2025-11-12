@@ -45,11 +45,7 @@
 /* Includes -----------------------------------------------------------------*/
 #include <string.h>
 #include "packetbuf.h"
-#if defined(STM32H753xx)
-#include "main.h"
-#else
 #include "App/common.h"
-#endif
 
 /* Private defines ----------------------------------------------------------*/
 /* Private types ------------------------------------------------------------*/
