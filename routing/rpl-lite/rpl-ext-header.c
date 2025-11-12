@@ -57,9 +57,7 @@
 #include "rpl-neighbor.h"
 
 /*---------------------------------------------------------------------------*/
-int
-rpl_ext_header_srh_get_next_hop(sUipBuff *uipBuff, uip_ipaddr_t *ipaddr)
-{
+int rpl_ext_header_srh_get_next_hop(sUipBuff *uipBuff, uip_ipaddr_t *ipaddr) {
   struct uip_routing_hdr *rh_header;
   uip_sr_node_t *dest_node;
   uip_sr_node_t *root_node;
@@ -89,9 +87,7 @@ rpl_ext_header_srh_get_next_hop(sUipBuff *uipBuff, uip_ipaddr_t *ipaddr)
   return 0;
 }
 /*---------------------------------------------------------------------------*/
-int
-rpl_ext_header_srh_update(sUipBuff *uipBuff)
-{
+int rpl_ext_header_srh_update(sUipBuff *uipBuff) {
   struct uip_routing_hdr *rh_header;
   struct uip_rpl_srh_hdr *srh_header;
   uint8_t cmpri, cmpre;

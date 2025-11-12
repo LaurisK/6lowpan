@@ -47,12 +47,9 @@
 #ifndef ROUTING_H_
 #define ROUTING_H_
 
-//#include "contiki.h"
-//#include "net/ipv6/uip.h"
 #include "../network/uip-ds6-nbr.h"
 #include "../network/uip-ds6-route.h"
 #include "../network/uip-sr.h"
-//#include "net/linkaddr.h"
 
 /**
  * The structure of a routing protocol driver.
@@ -60,7 +57,7 @@
 struct routing_driver {
   char *name;
   /** Initialize the routing protocol */
-  void (* init)(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void)));
+  void (* init)(uint16_t evtOffset, fRadioEvtHndl);
   /**
    * Set the prefix, for nodes that will operate as root
    *

@@ -44,12 +44,6 @@
 
 #include "uip.h"
 #include "App/Time/time.h"
-//#include "net/ipv6/multicast/uip-mcast6.h"
-//#include "sys/stimer.h"
-/* The size of uip_ds6_addr_t depends on UIP_ND6_DEF_MAXDADNS. Include uip-nd6.h to define it. */
-//#include "net/ipv6/uip-nd6.h"
-//#include "uip-ds6-nbr.h"
-//#include "net/ipv6/uip-ds6-route.h"
 
 /*--------------------------------------------------*/
 /** \name RFC 4861 Host constant */
@@ -206,7 +200,7 @@
 /** \brief General DS6 definitions */
 /** Period for uip-ds6 periodic task*/
 #ifndef UIP_DS6_CONF_PERIOD
-#define UIP_DS6_PERIOD   (60)
+#define UIP_DS6_PERIOD   1
 #else
 #define UIP_DS6_PERIOD UIP_DS6_CONF_PERIOD
 #endif
@@ -221,25 +215,17 @@
 #endif                          /*UIP_CONF_QUEUE_PKT */
 
 /** \brief A prefix list entry */
-#if UIP_CONF_ROUTER
 typedef struct uip_ds6_prefix {
-  uint8_t isused;
+  uint8_t prexifActive;
   uip_ipaddr_t ipaddr;
   uint8_t length;
   uint8_t advertise;
   uint32_t vlifetime;
   uint32_t plifetime;
   uint8_t l_a_reserved; /**< on-link and autonomous flags + 6 reserved bits */
-} uip_ds6_prefix_t;
-#else /* UIP_CONF_ROUTER */
-typedef struct uip_ds6_prefix {
-  uint8_t isused;
-  uip_ipaddr_t ipaddr;
-  uint8_t length;
-  sTimeTimer vlifetime;
   uint8_t isinfinite;
+  sTimeTimer prefixTmo;
 } uip_ds6_prefix_t;
-#endif /*UIP_CONF_ROUTER */
 
 /** * \brief Unicast address structure */
 typedef struct uip_ds6_addr {
@@ -248,7 +234,7 @@ typedef struct uip_ds6_addr {
   uint8_t state;
   uint8_t type;
   uint8_t isinfinite;
-  sTimeTimer vlifetime;
+  sTimeTimer addrTmo;
 #if UIP_ND6_DEF_MAXDADNS > 0
   struct timer dadtimer;
   uint8_t dadnscount;
@@ -301,7 +287,7 @@ extern uip_ds6_prefix_t uip_ds6_prefix_list[UIP_DS6_PREFIX_NB];
 
 /*---------------------------------------------------------------------------*/
 /** \brief Initialize data structures */
-void uip_ds6_init(void);
+void uip_ds6_init(uint16_t, fRadioEvtHndl);
 
 /** \brief Generic loop routine on an abstract data structure, which generalizes
  * all data structures used in DS6 */
@@ -315,12 +301,7 @@ uint8_t uip_ds6_list_loop(uip_ds6_element_t *list, uint8_t size,
 
 /** \name Prefix list basic routines */
 /** @{ */
-#if UIP_CONF_ROUTER
-uip_ds6_prefix_t *uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t length,
-                                     uint8_t advertise, uint8_t flags, uint32_t vtime, uint32_t ptime);
-#else /* UIP_CONF_ROUTER */
 uip_ds6_prefix_t *uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t length, uint32_t interval);
-#endif /* UIP_CONF_ROUTER */
 void uip_ds6_prefix_rm(uip_ds6_prefix_t *prefix);
 uip_ds6_prefix_t *uip_ds6_prefix_lookup(uip_ipaddr_t *ipaddr, uint8_t ipaddrlen);
 uint8_t uip_ds6_is_addr_onlink(uip_ipaddr_t *ipaddr);
@@ -346,7 +327,7 @@ void uip_ds6_set_default_prefix(const uip_ip6addr_t *prefix);
 /** \name Unicast address list basic routines */
 /** @{ */
 /** \brief Add a unicast address to the interface */
-uip_ds6_addr_t *uip_ds6_addr_add(uip_ipaddr_t *ipaddr, uint32_t vlifetime, uint8_t type);
+uip_ds6_addr_t *uip_ds6_addr_add(uip_ipaddr_t *ipaddr, uint32_t addrLifetime, uint8_t type);
 void uip_ds6_addr_rm(uip_ds6_addr_t *addr);
 uip_ds6_addr_t *uip_ds6_addr_lookup(uip_ipaddr_t *ipaddr);
 uip_ds6_addr_t *uip_ds6_get_link_local(int8_t state);
@@ -388,7 +369,7 @@ void uip_ds6_select_src(uip_ipaddr_t *src, uip_ipaddr_t *dst);
 #if UIP_CONF_ROUTER
 #if UIP_ND6_SEND_RA
 /** \brief Send a RA as an asnwer to a RS */
-void uip_ds6_send_ra_sollicited(void);
+void uip_ds6_send_ra_sollicited(const uip_ipaddr_t*);
 #endif /* UIP_ND6_SEND_RA */
 #endif /* UIP_CONF_ROUTER */
 
@@ -403,7 +384,10 @@ void uip_ds6_send_ra_sollicited(void);
 uint8_t Ds6_GetHopLimit(void);
 void Ds6_SetHopLimit(const uint8_t);
 uint32_t Ds6_GetRetransmitTmoInMs(void);
+uint32_t Ds6_GetBaseReachableTime(void);
+uint32_t Ds6_GetMyReachableTime(void);
 void Ds6_SetReachableTimes(const uint32_t);
 void Ds6_SetRetransmitTim(const uint32_t);
+void Ds6_SetMaxTransmitUnit(const uint32_t);
 
 #endif /* UIP_DS6_H_ */

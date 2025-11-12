@@ -8,7 +8,6 @@
 #include "S2LP_Types.h"
 #include "S2LP_PktBasic.h"
 #include "App/common.h"
-#include "Middlewares/Third_Party/6lowpan/evt_radio.h"
 #include "cmsis_os.h"
 
 /* Private defines ----------------------------------------------------------*/
@@ -91,7 +90,7 @@ SRssiInit xSRssiInit = { .cRssiFlt = 14, .xRssiMode = RSSI_STATIC_MODE, .cRssiTh
 #endif /*RADIO_HW_CSMA*/
 
 static uint16_t radioEvtIdOffset;
-void (*radioIrq2Task)(uint16_t, void(*cbFunc)(void));
+static fRadioEvtHndl radioEvtHndl;
 void (*overridenRxCb)(void);
 /* Private functions --------------------------------------------------------*/
 /**
@@ -361,10 +360,10 @@ static int8_t Radio_off(void) {
 	return 0;
 }
 
-static int8_t Radio_init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void))) {
+static int8_t Radio_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
 	TRice("msg:RADIO INIT IN\n");
 	radioEvtIdOffset = evtOffset;
-	radioIrq2Task = packedEvtHndl;
+	radioEvtHndl = packedEvtHndl;
 	S2LPInterfaceInit();
 
 	/* Configures the Radio library */
@@ -385,8 +384,9 @@ static int8_t Radio_init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, voi
 	} else {
 		/* in case we are using the PA board, the S2LP_RADIO_SetPALeveldBm will be not functioning because the output power is affected by the amplification
 		 of this external component. Set the raw register. */
-		uint8_t paLevelValue = 0x25; /* for example, this value will give 23dBm about */
-		S2LP_WriteRegister(PA_POWER8_ADDR, 1, &paLevelValue);
+		uint8_t maxPaPwr = (uint8_t)((int32_t)29 - (2 * MAX(MIN(0/*calibration.data.S2LP_tx_power*/, 14/*MAX_PA_VALUE*/), (-31)/*MIN_PA_VALUE*/)));
+		uint8_t rampScheme[8] = {maxPaPwr, (maxPaPwr - 6), (maxPaPwr - 12), (maxPaPwr - 24), (maxPaPwr - 36), (maxPaPwr - 48), (maxPaPwr - 72), (maxPaPwr - 96)};
+		S2LP_WriteRegister(PA_POWER8_ADDR, 8, rampScheme);
 	}
 	S2LP_RADIO_SetPALevelMaxIndex(POWER_INDEX);
 
@@ -664,6 +664,10 @@ static int8_t Radio_channel_clear(void) {
 	return ret;
 }
 
+static int8_t Radio_transmitting_packet(void) {
+	return transmitting_packet;
+}
+
 static int8_t Radio_receiving_packet(void) {
 	return receiving_packet;
 }
@@ -859,6 +863,7 @@ const struct radio_driver subGHz_radio_driver = {
 		Radio_read,
 		Radio_channel_clear,
 		Radio_receiving_packet,
+		Radio_transmitting_packet,
 		Radio_pending_packet,
 		Radio_on,
 		Radio_off,
@@ -908,7 +913,7 @@ void Radio_process_irq_cb(void) {
 
 		pending_packet = 1;
 		if (NULL == overridenRxCb) {
-			radioIrq2Task(radioEvtIdOffset + radio_incomingData, NULL);
+			radioEvtHndl(radioEvtIdOffset + radio_incomingData, NULL);
 		} else {
 			overridenRxCb();
 			overridenRxCb = NULL;

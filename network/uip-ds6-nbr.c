@@ -97,15 +97,13 @@ NBR_TABLE(uip_ds6_nbr_t, ds6_neighbors);
 #endif /* UIP_DS6_NBR_MULTI_IPV6_ADDRS */
 
 /*---------------------------------------------------------------------------*/
-void
-uip_ds6_neighbors_init(void)
-{
+void uip_ds6_neighbors_init(void) {
   //link_stats_init();
 #if UIP_DS6_NBR_MULTI_IPV6_ADDRS
   memb_init(&uip_ds6_nbr_memb);
-  nbr_table_register("ds6 multi neighbors", uip_ds6_nbr_entries, (nbr_table_callback *)callback_nbr_entry_removal);
+  nbr_table_register("ds6 multi neighbors", uip_ds6_nbr_entries, (nbr_table_callback *)callback_nbr_entry_removal, LAYER_NET);
 #else
-  nbr_table_register("ds6 neighbors", ds6_neighbors, (nbr_table_callback *)uip_ds6_nbr_rm);
+  nbr_table_register("ds6 neighbors", ds6_neighbors, (nbr_table_callback *)uip_ds6_nbr_rm, LAYER_NET);
 #endif /* UIP_DS6_NBR_MULTI_IPV6_ADDRS */
 }
 /*---------------------------------------------------------------------------*/
@@ -172,16 +170,17 @@ uip_ds6_nbr_add(const uip_ipaddr_t *ipaddr, const uip_lladdr_t *lladdr,
 #if UIP_ND6_SEND_RA || !UIP_CONF_ROUTER
     nbr->isrouter = isrouter;
 #endif /* UIP_ND6_SEND_RA || !UIP_CONF_ROUTER */
-    nbr->state = state;
+    nbr->nbrState = state;
+    TRice("info:New neighbor state(%d).\n", state);
 #if UIP_CONF_IPV6_QUEUE_PKT
     uip_packetqueue_new(&nbr->packethandle);
 #endif /* UIP_CONF_IPV6_QUEUE_PKT */
 #if UIP_ND6_SEND_NS
-    if(nbr->state == NBR_REACHABLE) {
-    	Time_TimerSet(&nbr->reachable, UIP_ND6_REACHABLE_TIME / 1000);
+    if(nbr->nbrState == NBR_REACHABLE) {
+    	Time_TimerSet(&nbr->reachTmo, Ds6_GetMyReachableTime() / 1000);
     } else {
       /* We set the timer in expired state */
-    	Time_TimerSet(&nbr->reachable, 0);
+    	Time_TimerSet(&nbr->reachTmo, 0);
     }
     Time_TimerSet(&nbr->sendns, 0);
     nbr->nscount = 0;
@@ -192,8 +191,7 @@ uip_ds6_nbr_add(const uip_ipaddr_t *ipaddr, const uip_lladdr_t *lladdr,
     rpl_lite_driver.neighbor_state_changed(nbr);
     return nbr;
   } else {
-    TRiceS("msg:Add drop ip addr %s link addr ", uip6_printAddr(&nbr->ipaddr, NULL));
-    TRice("msg:(%p) ", lladdr);
+    TRiceS("msg:Add drop ip addr %s link addr ", uip6_printAddr(ipaddr, NULL));
     TRiceS("msg:%s", (char*)linkaddr_printAddr((linkaddr_t*)lladdr));
     TRice("msg: state %u\n", state);
     return NULL;
@@ -271,9 +269,7 @@ callback_nbr_entry_removal(uip_ds6_nbr_entry_t *nbr_entry)
 }
 #endif /* UIP_DS6_NBR_MULTI_IPV6_ADDRS */
 /*---------------------------------------------------------------------------*/
-int
-uip_ds6_nbr_rm(uip_ds6_nbr_t *nbr)
-{
+int uip_ds6_nbr_rm(uip_ds6_nbr_t *nbr) {
 #if UIP_DS6_NBR_MULTI_IPV6_ADDRS
   if(nbr == NULL) {
     return 0;
@@ -294,9 +290,7 @@ uip_ds6_nbr_rm(uip_ds6_nbr_t *nbr)
 }
 
 /*---------------------------------------------------------------------------*/
-int
-uip_ds6_nbr_update_ll(uip_ds6_nbr_t **nbr_pp, const uip_lladdr_t *new_ll_addr)
-{
+int uip_ds6_nbr_update_ll(uip_ds6_nbr_t **nbr_pp, const uip_lladdr_t *new_ll_addr) {
 #if UIP_DS6_NBR_MULTI_IPV6_ADDRS
   uip_ds6_nbr_entry_t *nbr_entry;
   uip_ds6_nbr_t *nbr;
@@ -305,7 +299,7 @@ uip_ds6_nbr_update_ll(uip_ds6_nbr_t **nbr_pp, const uip_lladdr_t *new_ll_addr)
 #endif /* UIP_DS6_NBR_MULTI_IPV6_ADDRS */
 
   if(nbr_pp == NULL || new_ll_addr == NULL) {
-	  TRiceS("err:%s: invalid argument\n", (char*)__func__);
+	TRiceS("err:%s: invalid argument\n", (char*)__func__);
     return -1;
   }
 
@@ -345,14 +339,12 @@ uip_ds6_nbr_update_ll(uip_ds6_nbr_t **nbr_pp, const uip_lladdr_t *new_ll_addr)
 
   memcpy(&nbr_backup, *nbr_pp, sizeof(uip_ds6_nbr_t));
   if(uip_ds6_nbr_rm(*nbr_pp) == 0) {
-	  TRiceS("err:%s: input nbr cannot be removed\n", (char*)__func__);
+	TRiceS("err:%s: input nbr cannot be removed\n", (char*)__func__);
     return -1;
   }
 
-  if((*nbr_pp = uip_ds6_nbr_add(&nbr_backup.ipaddr, new_ll_addr,
-                                nbr_backup.isrouter, nbr_backup.state,
-                                NBR_TABLE_REASON_IPV6_ND, NULL)) == NULL) {
-	  TRiceS("err:%s: cannot allocate a new nbr for new_ll_addr\n", (char*)__func__);
+  if((*nbr_pp = uip_ds6_nbr_add(&nbr_backup.ipaddr, new_ll_addr, nbr_backup.isrouter, nbr_backup.nbrState, NBR_TABLE_REASON_IPV6_ND, NULL)) == NULL) {
+	TRiceS("err:%s: cannot allocate a new nbr for new_ll_addr\n", (char*)__func__);
     return -1;
   }
   memcpy(*nbr_pp, &nbr_backup, sizeof(uip_ds6_nbr_t));
@@ -464,8 +456,7 @@ uip_ds6_nbr_ll_lookup(const uip_lladdr_t *lladdr)
    * return the first entry associated with lladdr.
    */
   nbr_entry =
-    (uip_ds6_nbr_entry_t *)nbr_table_get_from_lladdr(uip_ds6_nbr_entries,
-                                                     (linkaddr_t*)lladdr);
+    (uip_ds6_nbr_entry_t *)nbr_table_get_from_lladdr(uip_ds6_nbr_entries, (linkaddr_t*)lladdr);
   if(nbr_entry == NULL) {
     return NULL;
   }
@@ -477,9 +468,7 @@ uip_ds6_nbr_ll_lookup(const uip_lladdr_t *lladdr)
 }
 
 /*---------------------------------------------------------------------------*/
-uip_ipaddr_t *
-uip_ds6_nbr_ipaddr_from_lladdr(const uip_lladdr_t *lladdr)
-{
+uip_ipaddr_t * uip_ds6_nbr_ipaddr_from_lladdr(const uip_lladdr_t *lladdr) {
   uip_ds6_nbr_t *nbr = uip_ds6_nbr_ll_lookup(lladdr);
 
   return nbr ? &nbr->ipaddr : NULL;
@@ -494,21 +483,17 @@ uip_ds6_nbr_lladdr_from_ipaddr(const uip_ipaddr_t *ipaddr)
 }
 #if UIP_DS6_LL_NUD
 /*---------------------------------------------------------------------------*/
-static void
-update_nbr_reachable_state_by_ack(uip_ds6_nbr_t *nbr, const linkaddr_t *lladdr)
-{
-  if(nbr != NULL && nbr->state != NBR_INCOMPLETE) {
-    nbr->state = NBR_REACHABLE;
-    Time_TimerSet(&nbr->reachable, UIP_ND6_REACHABLE_TIME / 1000);
+static void update_nbr_reachable_state_by_ack(uip_ds6_nbr_t *nbr, const linkaddr_t *lladdr) {
+  if(nbr != NULL && nbr->nbrState != NBR_INCOMPLETE) {
+    nbr->nbrState = NBR_REACHABLE;
+    Time_TimerSet(&nbr->reachTmo, Ds6_GetMyReachableTime() / 1000);
     TRice("msg:received a link layer ACK : ");
   	TRiceS("msg:%s is reachable.\n", (char*)linkaddr_printAddr(lladdr));
   }
 }
 #endif /* UIP_DS6_LL_NUD */
 /*---------------------------------------------------------------------------*/
-void
-uip_ds6_link_callback(int status, int numtx)
-{
+void uip_ds6_link_callback(int status, int numtx) {
 #if UIP_DS6_LL_NUD
   const linkaddr_t *dest = packetbuf_addr(PACKETBUF_ADDR_RECEIVER);
   if(linkaddr_cmp(dest, &linkaddr_null)) {
@@ -534,9 +519,7 @@ uip_ds6_link_callback(int status, int numtx)
     uip_ds6_nbr_t *nbr;
 #if UIP_DS6_NBR_MULTI_IPV6_ADDRS
     uip_ds6_nbr_entry_t *nbr_entry;
-    if((nbr_entry =
-        (uip_ds6_nbr_entry_t *)nbr_table_get_from_lladdr(uip_ds6_nbr_entries,
-                                                         dest)) == NULL) {
+    if((nbr_entry = (uip_ds6_nbr_entry_t *)nbr_table_get_from_lladdr(uip_ds6_nbr_entries, dest)) == NULL) {
       return;
     }
     for(nbr = (uip_ds6_nbr_t *)list_head(nbr_entry->uip_ds6_nbrs);
@@ -557,9 +540,9 @@ uip_ds6_link_callback(int status, int numtx)
 void uip_ds6_neighbor_periodic(sUipBuff *dsPeriodicBuff) {
   uip_ds6_nbr_t *nbr = uip_ds6_nbr_head();
   while(nbr != NULL) {
-    switch(nbr->state) {
+    switch(nbr->nbrState) {
     case NBR_REACHABLE:
-      if(Time_TimerExpired(&nbr->reachable)) {
+      if(Time_TimerExpired(&nbr->reachTmo)) {
 #if UIP_CONF_ROUTER
         /* when a neighbor leave its REACHABLE state and is a default router,
            instead of going to STALE state it enters DELAY state in order to
@@ -568,42 +551,43 @@ void uip_ds6_neighbor_periodic(sUipBuff *dsPeriodicBuff) {
            mimics the 6LoWPAN-ND behavior.
          */
         if(uip_ds6_defrt_lookup(&nbr->ipaddr) != NULL) {
-          TRiceS("msg:REACHABLE: defrt moving to DELAY (%s)\n", uip6_printAddr(&nbr->ipaddr, NULL));
-          nbr->state = NBR_DELAY;
-          Time_TimerSet(&nbr->reachable, UIP_ND6_DELAY_FIRST_PROBE_TIME);
+          TRiceS("info:REACHABLE: defrt moving to NBR_DELAY (%s)\n", uip6_printAddr(&nbr->ipaddr, NULL));
+          nbr->nbrState = NBR_DELAY;
+          Time_TimerSet(&nbr->reachTmo, UIP_ND6_DELAY_FIRST_PROBE_TIME);
           nbr->nscount = 0;
         } else {
-          TRiceS("msg:REACHABLE: moving to STALE (%s)\n", uip6_printAddr(&nbr->ipaddr, NULL));
-          nbr->state = NBR_STALE;
+          TRiceS("info:REACHABLE: moving to NBR_STALE (%s)\n", uip6_printAddr(&nbr->ipaddr, NULL));
+          nbr->nbrState = NBR_STALE;
         }
 #else /* UIP_CONF_ROUTER */
         TRiceS("msg:REACHABLE: moving to STALE (%s)\n", uip6_printAddr(&nbr->ipaddr, NULL));
-        nbr->state = NBR_STALE;
+        nbr->nbrState = NBR_STALE;
 #endif /* UIP_CONF_ROUTER */
       }
       break;
     case NBR_INCOMPLETE:
       if(nbr->nscount >= UIP_ND6_MAX_MULTICAST_SOLICIT) {
+    	TRiceS("msg:NBR_INCOMPLETE END(%s)\n", uip6_printAddr(&nbr->ipaddr, NULL));
         uip_ds6_nbr_rm(nbr);
       } else if(Time_TimerExpired(&nbr->sendns) && (dsPeriodicBuff->len == 0)) {
         nbr->nscount++;
         TRice("msg:NBR_INCOMPLETE: NS %u\n", nbr->nscount);
-        uip_nd6_ns_output(NULL, NULL, &nbr->ipaddr);
+        uip_nd6_ns_output(dsPeriodicBuff, NULL, NULL, &nbr->ipaddr);
         Time_TimerSet(&nbr->sendns, Ds6_GetRetransmitTmoInMs() / 1000);
       }
       break;
     case NBR_DELAY:
-      if(Time_TimerExpired(&nbr->reachable)) {
-        nbr->state = NBR_PROBE;
+      if(Time_TimerExpired(&nbr->reachTmo)) {
+        nbr->nbrState = NBR_PROBE;
         nbr->nscount = 0;
-        TRice("msg:DELAY: moving to PROBE\n");
+        TRiceS("info:DELAY: moving to NBR_PROBE(%s)\n", uip6_printAddr(&nbr->ipaddr, NULL));
         Time_TimerSet(&nbr->sendns, 0);
       }
       break;
     case NBR_PROBE:
       if(nbr->nscount >= UIP_ND6_MAX_UNICAST_SOLICIT) {
         uip_ds6_defrt_t *locdefrt;
-        TRice("msg:PROBE END\n");
+        TRiceS("msg:PROBE END(%s)\n", uip6_printAddr(&nbr->ipaddr, NULL));
         if((locdefrt = uip_ds6_defrt_lookup(&nbr->ipaddr)) != NULL) {
           if (!locdefrt->isinfinite) {
             uip_ds6_defrt_rm(locdefrt);
@@ -613,7 +597,7 @@ void uip_ds6_neighbor_periodic(sUipBuff *dsPeriodicBuff) {
       } else if(Time_TimerExpired(&nbr->sendns) && (dsPeriodicBuff->len == 0)) {
         nbr->nscount++;
         TRice("msg:PROBE: NS %u\n", nbr->nscount);
-        uip_nd6_ns_output(NULL, &nbr->ipaddr, &nbr->ipaddr);
+        uip_nd6_ns_output(dsPeriodicBuff, NULL, &nbr->ipaddr, &nbr->ipaddr);
         Time_TimerSet(&nbr->sendns, Ds6_GetRetransmitTmoInMs() / 1000);
       }
       break;
@@ -624,27 +608,26 @@ void uip_ds6_neighbor_periodic(sUipBuff *dsPeriodicBuff) {
   }
 }
 /*---------------------------------------------------------------------------*/
-void
-uip_ds6_nbr_refresh_reachable_state(const uip_ipaddr_t *ipaddr)
-{
+void uip_ds6_nbr_refresh_reachable_state(const uip_ipaddr_t *ipaddr) {
   uip_ds6_nbr_t *nbr;
   nbr = uip_ds6_nbr_lookup(ipaddr);
   if(nbr != NULL) {
-    nbr->state = NBR_REACHABLE;
+	TRiceS("info:Refreshing %s link (NBR_REACHABLE).\n", uip6_printAddr(ipaddr, NULL));
+	nbr->nbrState = NBR_REACHABLE;
     nbr->nscount = 0;
-    Time_TimerSet(&nbr->reachable, UIP_ND6_REACHABLE_TIME / 1000);
+    Time_TimerSet(&nbr->reachTmo, Ds6_GetMyReachableTime() / 1000);
+  } else {
+	TRiceS("dbg:Unable to refresh %s link - neighbor not found.\n", uip6_printAddr(ipaddr, NULL));
   }
 }
 /*---------------------------------------------------------------------------*/
-uip_ds6_nbr_t *
-uip_ds6_get_least_lifetime_neighbor(void)
-{
+uip_ds6_nbr_t * uip_ds6_get_least_lifetime_neighbor(void) {
   uip_ds6_nbr_t *nbr = uip_ds6_nbr_head();
   uip_ds6_nbr_t *nbr_expiring = NULL;
   while(nbr != NULL) {
     if(nbr_expiring != NULL) {
-      int32_t curr = Time_TimerRemaining(&nbr->reachable);
-      if(curr < Time_TimerRemaining(&nbr->reachable)) {
+      int32_t curr = Time_TimerRemaining(&nbr->reachTmo);
+      if(curr < Time_TimerRemaining(&nbr_expiring->reachTmo)) {
         nbr_expiring = nbr;
       }
     } else {

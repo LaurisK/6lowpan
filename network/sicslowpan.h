@@ -51,6 +51,7 @@
 
 #include "../linkaddr.h"
 #include "uipbuf.h"
+#include "Middlewares/Third_Party/6lowpan/evt_radio.h"
 //#include "net/ipv6/uip.h"
 //#include "net/mac/mac.h"
 
@@ -241,7 +242,7 @@ struct network_driver {
   char *name;
 
   /** Initialize the network driver */
-  void (*init)(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void)));
+  void (*init)(uint16_t, fRadioEvtHndl);
 
   /** Callback for getting notified of incoming packet in packetbuf. */
   uint8_t (*input)(sUipBuff *rxBuff);

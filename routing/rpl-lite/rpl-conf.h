@@ -160,12 +160,12 @@
 
 /*
  * Function used to select the next neighbor to be probed.
- */
+
 #ifdef RPL_CONF_PROBING_SELECT_FUNC
 #define RPL_PROBING_SELECT_FUNC RPL_CONF_PROBING_SELECT_FUNC
 #else
 #define RPL_PROBING_SELECT_FUNC get_probing_target
-#endif
+#endif*/
 
 /*
  * This value decides if this node must stay as a leaf or not

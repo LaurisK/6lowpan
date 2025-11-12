@@ -166,7 +166,7 @@ void rpl_process_dio(uip_ipaddr_t *from, rpl_dio_t *dio);
  * \param from The IPv6 address of the originator
  * \param dao A pointer to a parsed DAO
 */
-void rpl_process_dao(uip_ipaddr_t *from, rpl_dao_t *dao);
+void rpl_process_dao(rpl_dao_t *dao);
 
 /**
  * Processes incoming DAO-ACK
@@ -187,12 +187,12 @@ int rpl_dag_ready_to_advertise(void);
  * Updates RPL internal state: selects preferred parent, updates rank & metreic
  * container, triggers control traffic accordingly and updates uIP6 internal state.
 */
-void rpl_dag_update_state(void);
+void rpl_dag_update_state(void*);
 
 /**
  * Initializes rpl-dag module
 */
-void rpl_dag_init(void);
+void rpl_dag_init(uint16_t, fRadioEvtHndl);
 
  /** @} */
 

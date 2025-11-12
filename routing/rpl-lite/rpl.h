@@ -56,8 +56,6 @@
 
 /* The only instance */
 extern rpl_instance_t curr_instance;
-/* The RPL multicast address (used for DIS and DIO) */
-extern uip_ipaddr_t rpl_multicast_addr;
 
 /********** Public functions **********/
 

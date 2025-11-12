@@ -54,10 +54,16 @@ void rpl_dag_root_print_links(const char *str) {
   if(rpl_dag_root_is_root()) {
     if(uip_sr_num_nodes() > 0) {
       char *linkInfo = pvPortMalloc(ROOT_LINKS_PRINT_BUFF_LEN);
+      uint8_t linksCnt = uip_sr_num_nodes();
       uip_sr_node_t *link;
       /* Our routing links */
-      TRice("msg:links: %u routing link(s) in total ", uip_sr_num_nodes());
+      TRice("msg:links: %u routing link(s) in total ", linksCnt);
       TRiceS("msg:(%s)\n", (char*)str);
+      if (1 < linksCnt) {
+    	  System_FanStatusUpdate(fan_rootWithLinks);
+      } else {
+    	  System_FanStatusUpdate(fan_rootOnly);
+      }
       link = uip_sr_node_head();
       while(link != NULL) {
         uip_sr_link_snprint(linkInfo, ROOT_LINKS_PRINT_BUFF_LEN, link);
@@ -72,9 +78,7 @@ void rpl_dag_root_print_links(const char *str) {
   }
 }
 /*---------------------------------------------------------------------------*/
-static void
-set_global_address(uip_ipaddr_t *prefix, uip_ipaddr_t *iid)
-{
+static void set_global_address(uip_ipaddr_t *prefix, uip_ipaddr_t *iid) {
   static uip_ipaddr_t root_ipaddr;
   const uip_ipaddr_t *default_prefix;
   int i;
@@ -106,9 +110,7 @@ set_global_address(uip_ipaddr_t *prefix, uip_ipaddr_t *iid)
   }
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_dag_root_set_prefix(uip_ipaddr_t *prefix, uip_ipaddr_t *iid)
-{
+void rpl_dag_root_set_prefix(uip_ipaddr_t *prefix, uip_ipaddr_t *iid) {
   static uint8_t initialized = 0;
 
   if(!initialized) {
@@ -117,9 +119,7 @@ rpl_dag_root_set_prefix(uip_ipaddr_t *prefix, uip_ipaddr_t *iid)
   }
 }
 /*---------------------------------------------------------------------------*/
-int
-rpl_dag_root_start(void)
-{
+int rpl_dag_root_start(void) {
   struct uip_ds6_addr *root_if;
   int i;
   uint8_t state;
@@ -129,8 +129,7 @@ rpl_dag_root_start(void)
 
   for(i = 0; i < UIP_DS6_ADDR_NB; i++) {
     state = uip_ds6_if.addr_list[i].state;
-    if(uip_ds6_if.addr_list[i].isused && state == ADDR_PREFERRED &&
-       !uip_is_addr_linklocal(&uip_ds6_if.addr_list[i].ipaddr)) {
+    if(uip_ds6_if.addr_list[i].isused && state == ADDR_PREFERRED && !uip_is_addr_linklocal(&uip_ds6_if.addr_list[i].ipaddr)) {
       ipaddr = &uip_ds6_if.addr_list[i].ipaddr;
     }
   }
@@ -139,7 +138,7 @@ rpl_dag_root_start(void)
   if(ipaddr != NULL || root_if != NULL) {
 
     rpl_dag_init_root(RPL_DEFAULT_INSTANCE, ipaddr, (uip_ipaddr_t *)rpl_get_global_address(), 64, UIP_ND6_RA_FLAG_AUTONOMOUS);
-    rpl_dag_update_state();
+    rpl_dag_update_state(NULL);
 
     TRice("msg:created a new RPL DAG\n");
     return 0;
@@ -149,9 +148,7 @@ rpl_dag_root_start(void)
   }
 }
 /*---------------------------------------------------------------------------*/
-int
-rpl_dag_root_is_root(void)
-{
+int rpl_dag_root_is_root(void) {
   return curr_instance.used && curr_instance.dag.rank == curr_instance.min_hoprankinc;
 }
 /*---------------------------------------------------------------------------*/

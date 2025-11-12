@@ -46,6 +46,7 @@
 
 #include <limits.h>
 #include "../../network/uip-icmp6.h"
+#include "../../network/uip-ds6.h"
 #include "../../network/sicslowpan.h"
 #include "rpl.h"
 #include "rpl-icmp6.h"
@@ -81,6 +82,8 @@ static sUipBuff daoBuff = {0};
 #if RPL_WITH_DAO_ACK
 static sUipBuff daoAckBuff = {0};
 #endif /* RPL_WITH_DAO_ACK */
+static const uip_ipaddr_t rpl_multicast_addr = {.u8 = {0xFF, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x1a}};
+
 /*---------------------------------------------------------------------------*/
 static uint32_t
 get32(uint8_t *buffer, int pos)
@@ -140,19 +143,17 @@ static void dis_input(sUipBuff *uipBuff) {
     uipbuf_clear(uipBuff);
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_icmp6_dis_output(uip_ipaddr_t *addr)
-{
+void rpl_icmp6_dis_output(uip_ipaddr_t *addr) {
   unsigned char *buffer;
 
   /* Make sure we're up-to-date before sending data out */
-  rpl_dag_update_state();
+  rpl_dag_update_state(NULL);
 
   buffer = disBuff.buff.u8 + UIP_IPH_LEN + UIP_ICMPH_LEN + disBuff.extLen;
   buffer[0] = buffer[1] = 0;
 
   if(addr == NULL) {
-    addr = &rpl_multicast_addr;
+    addr = (uip_ipaddr_t*)&rpl_multicast_addr;
   }
 
   TRiceS("msg:sending a DIS to %s\n", uip6_printAddr(addr, NULL));
@@ -178,7 +179,7 @@ static void dio_input(sUipBuff *uipBuff) {
   dio.dag_min_hoprankinc = RPL_MIN_HOPRANKINC;
   dio.dag_max_rankinc = RPL_MAX_RANKINC;
   dio.ocp = RPL_OF_OCP;
-  dio.default_lifetime = RPL_DEFAULT_LIFETIME;
+  dio.dagLifetime = RPL_DEFAULT_LIFETIME;
   dio.lifetime_unit = RPL_DEFAULT_LIFETIME_UNIT;
 
   uip_ipaddr_copy(&from, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr);
@@ -280,7 +281,7 @@ static void dio_input(sUipBuff *uipBuff) {
         dio.dag_min_hoprankinc = get16(buffer, i + 8);
         dio.ocp = get16(buffer, i + 10);
         /* buffer + 12 is reserved */
-        dio.default_lifetime = buffer[i + 13];
+        dio.dagLifetime = buffer[i + 13];
         dio.lifetime_unit = get16(buffer, i + 14);
         break;
       case RPL_OPTION_PREFIX_INFO:
@@ -316,15 +317,13 @@ discard:
   uipbuf_clear(uipBuff);
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_icmp6_dio_output(uip_ipaddr_t *uc_addr)
-{
+void rpl_icmp6_dio_output(uip_ipaddr_t *uc_addr) {
   unsigned char *buffer;
   int pos;
   uip_ipaddr_t *addr = uc_addr;
 
   /* Make sure we're up-to-date before sending data out */
-  rpl_dag_update_state();
+  rpl_dag_update_state(NULL);
 
   if(rpl_get_leaf_only()) {
     /* In leaf mode, we only send DIO messages as unicasts in response to
@@ -406,7 +405,7 @@ rpl_icmp6_dio_output(uip_ipaddr_t *uc_addr)
   set16(buffer, pos, curr_instance.of->ocp);
   pos += 2;
   buffer[pos++] = 0; /* reserved */
-  buffer[pos++] = curr_instance.default_lifetime;
+  buffer[pos++] = curr_instance.rplLifetime;
   set16(buffer, pos, curr_instance.lifetime_unit);
   pos += 2;
 
@@ -427,7 +426,7 @@ rpl_icmp6_dio_output(uip_ipaddr_t *uc_addr)
   }
 
   if(!rpl_get_leaf_only()) {
-    addr = (addr != NULL) ? addr : &rpl_multicast_addr;
+    addr = (addr != NULL) ? addr : (uip_ipaddr_t*)&rpl_multicast_addr;
   }
 
   if (uc_addr != NULL) {
@@ -435,7 +434,7 @@ rpl_icmp6_dio_output(uip_ipaddr_t *uc_addr)
   } else {
 	  TRice("msg:sending a multicast-DIO with rank %u", (uint16_t)curr_instance.dag.rank);
   }
-  TRiceS("msg:to %s\n", uip6_printAddr(addr, NULL));
+  TRiceS("msg: to %s\n", uip6_printAddr(addr, NULL));
 
   uip_icmp6_send(&dioBuff, addr, ICMP6_RPL, RPL_CODE_DIO, pos);
 }
@@ -448,7 +447,6 @@ static void dao_input(sUipBuff *uipBuff) {
   int pos;
   int len;
   int i;
-  uip_ipaddr_t from;
 
   memset(&dao, 0, sizeof(dao));
 
@@ -458,7 +456,7 @@ static void dao_input(sUipBuff *uipBuff) {
     goto discard;
   }
 
-  uip_ipaddr_copy(&from, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr);
+  memset(&dao.prefix, 0, 16);
   memset(&dao.parent_addr, 0, 16);
 
   buffer = uipBuff->buff.u8 + UIP_IPH_LEN + UIP_ICMPH_LEN + uipBuff->extLen;
@@ -466,7 +464,7 @@ static void dao_input(sUipBuff *uipBuff) {
 
   pos = 0;
   pos++; /* instance ID */
-  dao.lifetime = curr_instance.default_lifetime;
+  dao.lifetime = curr_instance.rplLifetime;
   dao.flags = buffer[pos++];
   pos++; /* reserved */
   dao.sequence = buffer[pos++];
@@ -519,15 +517,21 @@ static void dao_input(sUipBuff *uipBuff) {
   TRiceS("msg:, prefix %s", uip6_printAddr(&dao.prefix, NULL));
   TRiceS("msg:, parent %s\n", uip6_printAddr(&dao.parent_addr, NULL));
 
-  rpl_process_dao(&from, &dao);
+  if (!rpl_lite_driver.node_is_root()) {
+	/* Send DAO to root (IPv6 address is DAG ID) */
+	TRiceS("msg: \t Forward it to our parent %s\n", uip6_printAddr(rpl_neighbor_get_ipaddr(curr_instance.dag.preferred_parent), NULL));
+	uip_icmp6_send(uipBuff, rpl_neighbor_get_ipaddr(curr_instance.dag.preferred_parent), ICMP6_RPL, RPL_CODE_DAO, buffer_length);
+  } else if (!uip_is_addr_unspecified(&dao.prefix)) {
+	rpl_process_dao(&dao);
+  } else {
+	TRice("err:Child address not received.\n");
+  }
 
   discard:
     uipbuf_clear(uipBuff);
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_icmp6_dao_output(uint8_t lifetime)
-{
+void rpl_icmp6_dao_output(uint8_t lifetime) {
   unsigned char *buffer;
   uint8_t prefixlen;
   int pos;
@@ -535,7 +539,7 @@ rpl_icmp6_dao_output(uint8_t lifetime)
   uip_ipaddr_t *parent_ipaddr = rpl_neighbor_get_ipaddr(curr_instance.dag.preferred_parent);
 
   /* Make sure we're up-to-date before sending data out */
-  rpl_dag_update_state();
+  rpl_dag_update_state(NULL);
 
   if(!curr_instance.used) {
 	  TRice("wrn:rpl_icmp6_dao_output: not in an instance, skip sending DAO\n");
@@ -600,7 +604,7 @@ rpl_icmp6_dao_output(uint8_t lifetime)
   TRiceS("msg:, parent %s\n", uip6_printAddr(parent_ipaddr, NULL));
 
   /* Send DAO to root (IPv6 address is DAG ID) */
-  uip_icmp6_send(&daoBuff, &curr_instance.dag.dag_id, ICMP6_RPL, RPL_CODE_DAO, pos);
+  uip_icmp6_send(&daoBuff, parent_ipaddr, ICMP6_RPL, RPL_CODE_DAO, pos);
 }
 #if RPL_WITH_DAO_ACK
 /*---------------------------------------------------------------------------*/
@@ -634,13 +638,11 @@ static void dao_ack_input(sUipBuff *uipBuff) {
     uipbuf_clear(uipBuff);
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_icmp6_dao_ack_output(uip_ipaddr_t *dest, uint8_t sequence, uint8_t status)
-{
+void rpl_icmp6_dao_ack_output(uip_ipaddr_t *dest, uint8_t sequence, uint8_t status) {
   unsigned char *buffer;
 
   /* Make sure we're up-to-date before sending data out */
-  rpl_dag_update_state();
+  rpl_dag_update_state(NULL);
 
   buffer = daoAckBuff.buff.u8 + UIP_IPH_LEN + UIP_ICMPH_LEN + daoAckBuff.extLen;
   buffer[0] = curr_instance.instance_id;
@@ -659,9 +661,9 @@ rpl_icmp6_dao_ack_output(uip_ipaddr_t *dest, uint8_t sequence, uint8_t status)
 }
 #endif /* RPL_WITH_DAO_ACK */
 /*---------------------------------------------------------------------------*/
-void
-rpl_icmp6_init()
-{
+void rpl_icmp6_init() {
+  uip_ds6_maddr_add(&rpl_multicast_addr);
+
   uip_icmp6_register_input_handler(&dis_handler);
   uip_icmp6_register_input_handler(&dio_handler);
   uip_icmp6_register_input_handler(&dao_handler);

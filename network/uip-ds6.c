@@ -54,6 +54,7 @@
 #include "../addressing.h"
 #include "cmsis_os.h"
 #include "App/common.h"
+#include "../routing/rpl-lite/rpl.h"
 
 #ifdef UIP_CONF_ND6_RETRANS_TIMER
 #define UIP_ND6_RETRANS_TIMER          UIP_CONF_ND6_RETRANS_TIMER
@@ -63,10 +64,6 @@
 
 #if UIP_CONF_ROUTER
 sTimeTimer uip_ds6_timer_ra;                                 /**< RA timer, to schedule RA sending */
-#if UIP_ND6_SEND_RA
-static uint8_t racount;                                         /**< number of RA already sent */
-static uint16_t rand_time;                                      /**< random time value for timers */
-#endif
 #endif /* UIP_CONF_ROUTER */
 
 /** \name "DS6" Data structures */
@@ -103,54 +100,50 @@ static uip_ip6addr_t default_prefix = {
 static TimerHandle_t rsSendTmo;
 #endif /* !UIP_CONF_ROUTER */
 static TimerHandle_t periodicTim;
+static TimerHandle_t raDelayTimer;
 sUipBuff dsPeriodicBuff;
+static uint16_t ds6EvtIdOffset;
+static fRadioEvtHndl ds6EvtHndl;
+uip_ipaddr_t raDest;
 
 /*---------------------------------------------------------------------------*/
-const uip_ip6addr_t *
-uip_ds6_default_prefix()
-{
+const uip_ip6addr_t * uip_ds6_default_prefix() {
   return &default_prefix;
 }
 /*---------------------------------------------------------------------------*/
-void
-uip_ds6_set_default_prefix(const uip_ip6addr_t *prefix)
-{
+void uip_ds6_set_default_prefix(const uip_ip6addr_t *prefix) {
   uip_ip6addr_copy(&default_prefix, prefix);
 }
 
+/*---------------------------------------------------------------------------*/
+static void ProcessPeriodicRa(sUipBuff *dsPeriodicBuff) {
 #if UIP_CONF_ROUTER && UIP_ND6_SEND_RA
-/*---------------------------------------------------------------------------*/
-static void uip_ds6_send_ra_periodic(sUipBuff *dsPeriodicBuff) {
-  if(racount > 0) {
-    /* send previously scheduled RA */
-    uip_nd6_ra_output(dsPeriodicBuff, NULL);
-    TRice("msg:Sending periodic RA\n");
+  if (Time_TimerExpired(&uip_ds6_timer_ra) && (dsPeriodicBuff->len == 0)) {
+	static uint8_t initRaCnt = UIP_ND6_MAX_INITIAL_RAS;
+	uint16_t       nextPeriod = UIP_ND6_MIN_RA_INTERVAL + System_Random(UIP_ND6_MAX_RA_INTERVAL - UIP_ND6_MIN_RA_INTERVAL);
+	if (initRaCnt) {
+		initRaCnt--;
+		nextPeriod = MAX(nextPeriod, UIP_ND6_MAX_INITIAL_RA_INTERVAL);
+	}
+	Time_TimerSet(&uip_ds6_timer_ra, nextPeriod);
+	if (rpl_lite_driver.node_is_reachable()) {
+      TRice("msg:Sending periodic RA\n");
+      uip_nd6_ra_output(dsPeriodicBuff, NULL);
+	}
+  } else if (Time_TimerExpired(&uip_ds6_timer_ra)) {
+	TRice("dbg:Periodic RA timer expired, but buffer is ocupied.\n");
   }
-
-  rand_time = UIP_ND6_MIN_RA_INTERVAL + System_Random(UIP_ND6_MAX_RA_INTERVAL - UIP_ND6_MIN_RA_INTERVAL);
-  TRice("dbg:Random time 1 = %u\n", rand_time);
-
-  if(racount < UIP_ND6_MAX_INITIAL_RAS) {
-    if(rand_time > UIP_ND6_MAX_INITIAL_RA_INTERVAL) {
-      rand_time = UIP_ND6_MAX_INITIAL_RA_INTERVAL;
-      TRice("dbg:Random time 2 = %u\n", rand_time);
-    }
-    racount++;
-  }
-  TRice("dbg:Random time 3 = %u\n", rand_time);
-  Time_TimerSet(&uip_ds6_timer_ra, rand_time);
-}
 #endif /* UIP_CONF_ROUTER && UIP_ND6_SEND_RA */
+}
 
 /*---------------------------------------------------------------------------*/
-static void uip_ds6_periodic(sUipBuff *dsPeriodicBuff)
-{
-
+#warning "uip_ds6_periodic() is being triggered every second, ugly stuff. Will need to make them work properly."
+static void uip_ds6_periodic(sUipBuff *dsPeriodicBuff) {
   /* Periodic processing on unicast addresses */
   for(locaddr = uip_ds6_if.addr_list;
       locaddr < uip_ds6_if.addr_list + UIP_DS6_ADDR_NB; locaddr++) {
     if(locaddr->isused) {
-      if((!locaddr->isinfinite) && (Time_TimerExpired(&locaddr->vlifetime))) {
+      if((!locaddr->isinfinite) && (Time_TimerExpired(&locaddr->addrTmo))) {
         uip_ds6_addr_rm(locaddr);
 #if UIP_ND6_DEF_MAXDADNS > 0
       } else if((locaddr->state == ADDR_TENTATIVE)
@@ -166,13 +159,11 @@ static void uip_ds6_periodic(sUipBuff *dsPeriodicBuff)
   /* Periodic processing on default routers */
   uip_ds6_defrt_periodic();
 
-#if !UIP_CONF_ROUTER
+#if 1//!UIP_CONF_ROUTER
   /* Periodic processing on prefixes */
-  for(locprefix = uip_ds6_prefix_list;
-      locprefix < uip_ds6_prefix_list + UIP_DS6_PREFIX_NB;
-      locprefix++) {
-    if(locprefix->isused && !locprefix->isinfinite
-       && Time_TimerExpired(&(locprefix->vlifetime))) {
+  for(locprefix = uip_ds6_prefix_list; locprefix < uip_ds6_prefix_list + UIP_DS6_PREFIX_NB; locprefix++) {
+    if(locprefix->prexifActive && !locprefix->isinfinite && Time_TimerExpired(&(locprefix->prefixTmo))) {
+      TRiceS("msg:Prefix %s expired.\n", uip6_printAddr(&locprefix->ipaddr, NULL));
       uip_ds6_prefix_rm(locprefix);
     }
   }
@@ -181,14 +172,15 @@ static void uip_ds6_periodic(sUipBuff *dsPeriodicBuff)
 #if UIP_ND6_SEND_NS
   uip_ds6_neighbor_periodic(dsPeriodicBuff);
 #endif /* UIP_ND6_SEND_NS */
-
-#if UIP_CONF_ROUTER && UIP_ND6_SEND_RA
-  /* Periodic RA sending */
-  if(Time_TimerExpired(&uip_ds6_timer_ra) && (dsPeriodicBuff->len == 0)) {
-    uip_ds6_send_ra_periodic(dsPeriodicBuff);
-  }
-#endif /* UIP_CONF_ROUTER && UIP_ND6_SEND_RA */
+  ProcessPeriodicRa(dsPeriodicBuff);
   return;
+}
+
+static void IssueUnicastRa(void* unused) {
+	//raDest
+    TRice("msg:Sending unicast RA (RS reply)\n");
+    uip_nd6_ra_output(&dsPeriodicBuff, &raDest);
+    tcpip_ipv6_output(&dsPeriodicBuff);
 }
 
 static void HandleDs6PeriodicTimer(TimerHandle_t periodicTim) {
@@ -196,8 +188,24 @@ static void HandleDs6PeriodicTimer(TimerHandle_t periodicTim) {
     tcpip_ipv6_output(&dsPeriodicBuff);
 }
 
+static void HandleRsToRaDelay(TimerHandle_t delayTim) {
+	//switch context from timers task to ours.
+	ds6EvtHndl(ds6EvtIdOffset + radio_taskCall, IssueUnicastRa);
+}
+
 #if !UIP_CONF_ROUTER
 /*---------------------------------------------------------------------------*/
+/**
+ * \brief Send a Router Solicitation
+ *
+ * src is chosen through the uip_netif_select_src function. If src is
+ * unspecified  (i.e. we do not have a preferred address yet), then we do not
+ * put a SLLAO option (MUST NOT in RFC 4861). Otherwise we do.
+ *
+ * RS message format,
+ * possible option is SLLAO, MUST NOT be included if source = unspecified
+ * SHOULD be included otherwise
+ */
 static void uip_nd6_rs_output(sUipBuff *uipBuff)
 {
   IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->vtc = 0x60;
@@ -261,8 +269,33 @@ static uint32_t uip_ds6_compute_reachable_time(uint32_t baseReachTime)
 }
 
 /*---------------------------------------------------------------------------*/
-void uip_ds6_init(void)
+static void uip_ds6_prefix_init(uip_ipaddr_t *addr, uint8_t addrLen, uint8_t adv, uint8_t fl, uint32_t vTm, uint32_t pTm) {
+  if(uip_ds6_list_loop((uip_ds6_element_t *)uip_ds6_prefix_list, UIP_DS6_PREFIX_NB, sizeof(uip_ds6_prefix_t), addr, addrLen, (uip_ds6_element_t **)&locprefix) == FREESPACE) {
+	locprefix->prexifActive = 1;
+    uip_ipaddr_copy(&locprefix->ipaddr, addr);
+    locprefix->length = addrLen;
+    locprefix->advertise = adv;
+    locprefix->l_a_reserved = fl;
+    locprefix->vlifetime = vTm;
+    locprefix->plifetime = pTm;
+    if ((0 == vTm) && (0 == vTm)) {
+      locprefix->isinfinite = 1;
+    } else {
+      Time_TimerSet(&(locprefix->prefixTmo), locprefix->vlifetime);
+      locprefix->isinfinite = 0;
+    }
+    TRiceS("msg:Init prefix %s ", uip6_printAddr(&locprefix->ipaddr, NULL));
+    TRice("msg:length %u, flags %x, Valid lifetime %u, Preffered lifetime %u\n", addrLen, fl, vTm, pTm);
+  } else {
+	  TRice("msg:No more space in Prefix list\n");
+  }
+}
+
+/*---------------------------------------------------------------------------*/
+void uip_ds6_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl)
 {
+  ds6EvtIdOffset = evtOffset;
+  ds6EvtHndl = packedEvtHndl;
   if(uip_is_addr_unspecified(&default_prefix)) {
     uip_ip6addr(&default_prefix, UIP_DS6_DEFAULT_PREFIX, 0, 0, 0, 0, 0, 0, 0);
   }
@@ -287,11 +320,8 @@ void uip_ds6_init(void)
 
   /* Create link local address, prefix, multicast addresses, anycast addresses */
   uip_create_linklocal_prefix(&loc_fipaddr);
-#if UIP_CONF_ROUTER
-  uip_ds6_prefix_add(&loc_fipaddr, UIP_DEFAULT_PREFIX_LEN, 0, 0, 0, 0);
-#else /* UIP_CONF_ROUTER */
-  uip_ds6_prefix_add(&loc_fipaddr, UIP_DEFAULT_PREFIX_LEN, 0);
-#endif /* UIP_CONF_ROUTER */
+  TRiceS("msg:link local address %s\n", uip6_printAddr(&loc_fipaddr, NULL));
+  uip_ds6_prefix_init(&loc_fipaddr, UIP_DEFAULT_PREFIX_LEN, 0, 0, 0, 0);
   Addr_SetInterfId(&loc_fipaddr, &uip_lladdr);
   uip_ds6_addr_add(&loc_fipaddr, 0, ADDR_AUTOCONF);
 
@@ -307,8 +337,9 @@ void uip_ds6_init(void)
   rsSendTmo = xTimerCreate("rsSendingTmo", pdMS_TO_TICKS(System_Random(1000 * UIP_ND6_MAX_RTR_SOLICITATION_DELAY)), pdFALSE, 0, HandleRsSendingTmo);
   xTimerStart(rsSendTmo, 0);
 #endif /* UIP_CONF_ROUTER */
-  periodicTim = xTimerCreate("ds6PeriodicTimer", pdMS_TO_TICKS(1000 * UIP_DS6_PERIOD), pdTRUE, 0, HandleDs6PeriodicTimer);
+  periodicTim = xTimerCreate("ds6-PeriodicTimer", pdMS_TO_TICKS(1000 * UIP_DS6_PERIOD), pdTRUE, 0, HandleDs6PeriodicTimer);
   xTimerStart(periodicTim, 0);
+  raDelayTimer = xTimerCreate("ds6-RsToRaDelayTimer", 1/*Is to be set on actual use*/, pdFALSE, 0, HandleRsToRaDelay);
 
   return;
 }
@@ -346,20 +377,20 @@ uip_ds6_list_loop(uip_ds6_element_t *list, uint8_t size,
 }
 
 /*---------------------------------------------------------------------------*/
-#if UIP_CONF_ROUTER
-/*---------------------------------------------------------------------------*/
-uip_ds6_prefix_t * uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t ipaddrlen, uint8_t advertise, uint8_t flags, uint32_t vtime, uint32_t ptime)
+uip_ds6_prefix_t* uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t ipaddrlen, uint32_t interval)
 {
-  if(uip_ds6_list_loop ((uip_ds6_element_t *)uip_ds6_prefix_list, UIP_DS6_PREFIX_NB, sizeof(uip_ds6_prefix_t), ipaddr, ipaddrlen, (uip_ds6_element_t **)&locprefix) == FREESPACE) {
-    locprefix->isused = 1;
+  if(uip_ds6_list_loop((uip_ds6_element_t *)uip_ds6_prefix_list, UIP_DS6_PREFIX_NB, sizeof(uip_ds6_prefix_t), ipaddr, ipaddrlen, (uip_ds6_element_t **)&locprefix) == FREESPACE) {
+    locprefix->prexifActive = 1;
     uip_ipaddr_copy(&locprefix->ipaddr, ipaddr);
     locprefix->length = ipaddrlen;
-    locprefix->advertise = advertise;
-    locprefix->l_a_reserved = flags;
-    locprefix->vlifetime = vtime;
-    locprefix->plifetime = ptime;
-    TRiceS("msg:Adding prefix %s ", uip6_printAddr(&locprefix->ipaddr, NULL));
-    TRice("msg:length %u, flags %x, Valid lifetime %u, Preffered lifetime %u\n", ipaddrlen, flags, vtime, ptime);
+    if(interval != 0) {
+      Time_TimerSet(&(locprefix->prefixTmo), interval);
+      locprefix->isinfinite = 0;
+    } else {
+      locprefix->isinfinite = 1;
+    }
+    TRiceS("msg:Adding prefix timeout %s ", uip6_printAddr(&locprefix->ipaddr, NULL));
+    TRice("msg:length %u, vlifetime %lu\n", ipaddrlen, interval);
     return locprefix;
   } else {
 	  TRice("msg:No more space in Prefix list\n");
@@ -367,45 +398,16 @@ uip_ds6_prefix_t * uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t ipaddrlen, u
   return NULL;
 }
 
-
-#else /* UIP_CONF_ROUTER */
-uip_ds6_prefix_t *
-uip_ds6_prefix_add(uip_ipaddr_t *ipaddr, uint8_t ipaddrlen, uint32_t interval)
-{
-  if(uip_ds6_list_loop
-     ((uip_ds6_element_t *)uip_ds6_prefix_list, UIP_DS6_PREFIX_NB,
-      sizeof(uip_ds6_prefix_t), ipaddr, ipaddrlen,
-      (uip_ds6_element_t **)&locprefix) == FREESPACE) {
-    locprefix->isused = 1;
-    uip_ipaddr_copy(&locprefix->ipaddr, ipaddr);
-    locprefix->length = ipaddrlen;
-    if(interval != 0) {
-      Time_TimerSet(&(locprefix->vlifetime), interval);
-      locprefix->isinfinite = 0;
-    } else {
-      locprefix->isinfinite = 1;
-    }
-    TRiceS("msg:Adding prefix %s ", uip6_printAddr(&locprefix->ipaddr, NULL));
-    TRice("msg:length %u, vlifetime %lu\n", ipaddrlen, interval);
-    return locprefix;
-  }
-  return NULL;
-}
-#endif /* UIP_CONF_ROUTER */
-
 /*---------------------------------------------------------------------------*/
-void
-uip_ds6_prefix_rm(uip_ds6_prefix_t *prefix)
-{
+void uip_ds6_prefix_rm(uip_ds6_prefix_t *prefix) {
   if(prefix != NULL) {
-    prefix->isused = 0;
+	TRiceS("msg:Prefix %s is removed.\n", uip6_printAddr(&prefix->ipaddr, NULL));
+    prefix->prexifActive = 0;
   }
   return;
 }
 /*---------------------------------------------------------------------------*/
-uip_ds6_prefix_t *
-uip_ds6_prefix_lookup(uip_ipaddr_t *ipaddr, uint8_t ipaddrlen)
-{
+uip_ds6_prefix_t * uip_ds6_prefix_lookup(uip_ipaddr_t *ipaddr, uint8_t ipaddrlen) {
   if(uip_ds6_list_loop((uip_ds6_element_t *)uip_ds6_prefix_list,
                        UIP_DS6_PREFIX_NB, sizeof(uip_ds6_prefix_t),
                        ipaddr, ipaddrlen,
@@ -416,13 +418,9 @@ uip_ds6_prefix_lookup(uip_ipaddr_t *ipaddr, uint8_t ipaddrlen)
 }
 
 /*---------------------------------------------------------------------------*/
-uint8_t
-uip_ds6_is_addr_onlink(uip_ipaddr_t *ipaddr)
-{
-  for(locprefix = uip_ds6_prefix_list;
-      locprefix < uip_ds6_prefix_list + UIP_DS6_PREFIX_NB; locprefix++) {
-    if(locprefix->isused &&
-       uip_ipaddr_prefixcmp(&locprefix->ipaddr, ipaddr, locprefix->length)) {
+uint8_t uip_ds6_is_addr_onlink(uip_ipaddr_t *ipaddr) {
+  for(locprefix = uip_ds6_prefix_list; locprefix < uip_ds6_prefix_list + UIP_DS6_PREFIX_NB; locprefix++) {
+    if(locprefix->prexifActive && uip_ipaddr_prefixcmp(&locprefix->ipaddr, ipaddr, locprefix->length)) {
       return 1;
     }
   }
@@ -430,9 +428,7 @@ uip_ds6_is_addr_onlink(uip_ipaddr_t *ipaddr)
 }
 
 /*---------------------------------------------------------------------------*/
-uip_ds6_addr_t *
-uip_ds6_addr_add(uip_ipaddr_t *ipaddr, uint32_t vlifetime, uint8_t type)
-{
+uip_ds6_addr_t * uip_ds6_addr_add(uip_ipaddr_t *ipaddr, uint32_t addrLifetime, uint8_t type) {
   if(uip_ds6_list_loop((uip_ds6_element_t *)uip_ds6_if.addr_list,
 		  	  	  	   UIP_DS6_ADDR_NB,
 					   sizeof(uip_ds6_addr_t),
@@ -443,11 +439,11 @@ uip_ds6_addr_add(uip_ipaddr_t *ipaddr, uint32_t vlifetime, uint8_t type)
     locaddr->isused = 1;
     uip_ipaddr_copy(&locaddr->ipaddr, ipaddr);
     locaddr->type = type;
-    if(vlifetime == 0) {
+    if(addrLifetime == 0) {
       locaddr->isinfinite = 1;
     } else {
       locaddr->isinfinite = 0;
-      Time_TimerSet(&(locaddr->vlifetime), vlifetime);
+      Time_TimerSet(&(locaddr->addrTmo), addrLifetime);
     }
 #if UIP_ND6_DEF_MAXDADNS > 0
     locaddr->state = ADDR_TENTATIVE;
@@ -464,9 +460,7 @@ uip_ds6_addr_add(uip_ipaddr_t *ipaddr, uint32_t vlifetime, uint8_t type)
 }
 
 /*---------------------------------------------------------------------------*/
-void
-uip_ds6_addr_rm(uip_ds6_addr_t *addr)
-{
+void uip_ds6_addr_rm(uip_ds6_addr_t *addr) {
   if(addr != NULL) {
 	TRiceS("msg:Removing unicast address %s\n", uip6_printAddr(&addr->ipaddr, NULL));
     uip_create_solicited_node(&addr->ipaddr, &loc_fipaddr);
@@ -479,9 +473,7 @@ uip_ds6_addr_rm(uip_ds6_addr_t *addr)
 }
 
 /*---------------------------------------------------------------------------*/
-uip_ds6_addr_t *
-uip_ds6_addr_lookup(uip_ipaddr_t *ipaddr)
-{
+uip_ds6_addr_t * uip_ds6_addr_lookup(uip_ipaddr_t *ipaddr) {
   if(uip_ds6_list_loop
      ((uip_ds6_element_t *)uip_ds6_if.addr_list, UIP_DS6_ADDR_NB,
       sizeof(uip_ds6_addr_t), ipaddr, 128,
@@ -497,9 +489,7 @@ uip_ds6_addr_lookup(uip_ipaddr_t *ipaddr)
  * state = -1 => any address is ok. Otherwise state = desired state of addr.
  * (TENTATIVE, PREFERRED, DEPRECATED)
  */
-uip_ds6_addr_t *
-uip_ds6_get_link_local(int8_t state)
-{
+uip_ds6_addr_t * uip_ds6_get_link_local(int8_t state) {
   for(locaddr = uip_ds6_if.addr_list;
       locaddr < uip_ds6_if.addr_list + UIP_DS6_ADDR_NB; locaddr++) {
     if(locaddr->isused && (state == -1 || locaddr->state == state)
@@ -717,34 +707,18 @@ uip_ds6_dad_failed(uip_ds6_addr_t *addr)
 #endif /*UIP_ND6_DEF_MAXDADNS > 0 */
 
 /*---------------------------------------------------------------------------*/
-#if UIP_CONF_ROUTER
-#if UIP_ND6_SEND_RA
-void
-uip_ds6_send_ra_sollicited(void)
-{
-  /* We have a pb here: RA timer max possible value is 1800s,
-   * hence we have to use stimers. However, when receiving a RS, we
-   * should delay the reply by a random value between 0 and 500ms timers.
-   * stimers are in seconds, hence we cannot do this. Therefore we just send
-   * the RA (setting the timer to 0 below). We keep the code logic for
-   * the days contiki will support appropriate timers */
-  rand_time = 0;
-  TRice("msg:Solicited RA, random time %u\n", rand_time);
-
-  if(Time_TimerRemaining(&uip_ds6_timer_ra) > rand_time) {
-    if(Time_TimerElapsed(&uip_ds6_timer_ra) < UIP_ND6_MIN_DELAY_BETWEEN_RAS) {
-      /* Ensure that the RAs are rate limited */
-/*      Time_TimerSet(&uip_ds6_timer_ra, rand_time +
-                 UIP_ND6_MIN_DELAY_BETWEEN_RAS -
-                 Time_TimerElapsed(&uip_ds6_timer_ra));
-  */ } else {
-	  Time_TimerSet(&uip_ds6_timer_ra, rand_time);
-    }
+#if UIP_CONF_ROUTER && UIP_ND6_SEND_RA
+void uip_ds6_send_ra_sollicited(const uip_ipaddr_t *raDestAddr) {
+  if(pdFALSE == xTimerIsTimerActive(raDelayTimer)) {
+	uint16_t raDelay = System_Random(UIP_ND6_MAX_RA_DELAY_TIME_MS);
+	memcpy(&raDest, raDestAddr, sizeof(uip_ipaddr_t));
+	TRice("msg:Solicited RA in %u mS.\n", raDelay);
+    xTimerChangePeriod(raDelayTimer, pdMS_TO_TICKS(raDelay), 0);
+    xTimerStart(raDelayTimer, 0);
   }
 }
 
-#endif /* UIP_ND6_SEND_RA */
-#endif /* UIP_CONF_ROUTER */
+#endif /* UIP_ND6_SEND_RA && UIP_CONF_ROUTER */
 /*---------------------------------------------------------------------------*/
 uint8_t Ds6_GetHopLimit(void) {
 	return uip_ds6_if.cur_hop_limit;
@@ -761,8 +735,16 @@ uint32_t Ds6_GetRetransmitTmoInMs(void) {
 	return uip_ds6_if.retrans_timer;
 }
 
+uint32_t Ds6_GetBaseReachableTime(void) {
+	return uip_ds6_if.base_reachable_time;
+}
+
+uint32_t Ds6_GetMyReachableTime(void) {
+	return uip_ds6_if.reachable_time;
+}
+
 void Ds6_SetReachableTimes(const uint32_t baseReachTime) {
-    if(baseReachTime != uip_ds6_if.base_reachable_time) {
+    if ((0 != baseReachTime) && (baseReachTime != uip_ds6_if.base_reachable_time)) {
       uip_ds6_if.base_reachable_time = baseReachTime;
       uip_ds6_if.reachable_time = uip_ds6_compute_reachable_time(baseReachTime);
 	    TRice("msg:[uIP DS6] Reachable time updated - base(%u), my(%d)\n", uip_ds6_if.base_reachable_time, uip_ds6_if.reachable_time);
@@ -773,6 +755,13 @@ void Ds6_SetRetransmitTim(const uint32_t retransTmo) {
   if(0 != retransTmo) {
     uip_ds6_if.retrans_timer = retransTmo;
     TRice("msg:[uIP DS6] Retransmit timeout set to - %u\n", uip_ds6_if.retrans_timer);
+  }
+}
+
+void Ds6_SetMaxTransmitUnit(const uint32_t newMtu) {
+  if(0 != newMtu) {
+	uip_ds6_if.link_mtu = newMtu;
+    TRice("msg:[uIP DS6] Maximum transmission unit set to - %u\n", uip_ds6_if.link_mtu);
   }
 }
 

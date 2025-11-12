@@ -57,6 +57,7 @@
 #include "../linkaddr.h"
 #include "uipopt.h"
 #include "uipbuf.h"
+#include "../evt_radio.h"
 /* For memcmp */
 //#include <string.h>
 
@@ -107,6 +108,45 @@ typedef union uip_ip6addr_t {
 } uip_ip6addr_t;
 
 typedef uip_ip6addr_t uip_ipaddr_t;
+
+/**
+ * Representation of a uIP UDP connection.
+ */
+struct uip_udp_conn {
+  uip_ipaddr_t ripaddr;   /**< The IP address of the remote peer. */
+  uint16_t lport;        /**< The local port number in network byte order. */
+  uint16_t rport;        /**< The remote port number in network byte order. */
+  uint8_t  ttl;          /**< Default time-to-live. */
+  /** The application state. */
+  void (*portRxCb)(uint8_t*, uint16_t);
+//  uip_udp_appstate_t appstate;
+};
+
+typedef struct {
+	void (*rxCb)(const uint8_t*, const uint16_t, const uip_ipaddr_t*, const uint16_t);
+	struct {
+		uint8_t acceptUnicast:1;
+		uint8_t acceptLlBcast:1;
+		uint8_t acceptLlRtrMcast:1;
+		uint8_t acceptAll:1;
+	} options;
+} sUdpSocketInfo;
+
+typedef struct {
+	void (*rxCb)(uint8_t*, uint16_t);
+} sTcpSocketInfo;
+
+typedef struct {
+	union {
+		sUdpSocketInfo udp;
+		sTcpSocketInfo tcp;
+	} proto;
+	uip_ipaddr_t dstAddr;
+	uint16_t srcPort;
+	uint16_t dstPort;
+	uint8_t  protoNr;
+	uint8_t  ttl;
+} sSocket;
 
 /*---------------------------------------------------------------------------*/
 #define UIP_802154_SHORTADDR_LEN 2
@@ -278,7 +318,8 @@ typedef uip_eth_addr uip_lladdr_t;
  * This function should be called at boot up to initilize the uIP
  * TCP/IP stack.
  */
-void uip_init(void);
+void uip_init(uint16_t, fRadioEvtHndl);
+void uip_deinit(void);
 
 /**
  * uIP initialization function.
@@ -384,59 +425,7 @@ void uip_setipid(uint16_t id);
 #endif /* UIP_TCP */
 
 #if UIP_UDP
-/**
- * Periodic processing for a UDP connection identified by its number.
- *
- * This function is essentially the same as uip_periodic(), but for
- * UDP connections. It is called in a similar fashion as the
- * uip_periodic() function:
- \code
- for(i = 0; i < UIP_UDP_CONNS; i++) {
- uip_udp_periodic(i);
- if(uip_len > 0) {
- devicedriver_send();
- }
- }
- \endcode
- *
- * \note As for the uip_periodic() function, special care has to be
- * taken when using uIP together with ARP and Ethernet:
- \code
- for(i = 0; i < UIP_UDP_CONNS; i++) {
- uip_udp_periodic(i);
- if(uip_len > 0) {
- uip_arp_out();
- ethernet_devicedriver_send();
- }
- }
- \endcode
- *
- * \param conn The number of the UDP connection to be processed.
- *
- * \hideinitializer
- */
-#define uip_udp_periodic(conn) do { uip_udp_conn = &uip_udp_conns[conn]; \
-    uip_process(UIP_UDP_TIMER); } while(0)
-
-/**
- * Periodic processing for a UDP connection identified by a pointer to
- * its structure.
- *
- * Same as uip_udp_periodic() but takes a pointer to the actual
- * uip_conn struct instead of an integer as its argument. This
- * function can be used to force periodic processing of a specific
- * connection.
- *
- * \param conn A pointer to the uip_udp_conn struct for the connection
- * to be processed.
- *
- * \hideinitializer
- */
-#define uip_udp_periodic_conn(conn) do { uip_udp_conn = conn;   \
-    uip_process(UIP_UDP_TIMER); } while(0)
 #endif /* UIP_UDP */
-
-
 
 /** @} */
 
@@ -779,7 +768,9 @@ void uip_send(const void *data, int len);
  * \return The uip_udp_conn structure for the new connection, or NULL
  * if no connection could be allocated.
  */
-struct uip_udp_conn *uip_udp_new(const uip_ipaddr_t *ripaddr, uint16_t rport);
+struct uip_udp_conn *uip_udp_new(const uip_ipaddr_t *ripaddr, uint16_t rport, void (*portCb)(uint8_t*, uint16_t));
+sSocket *SocketUdp(uint16_t, void (*portCb)(const uint8_t*, const uint16_t, const uip_ipaddr_t*, const uint16_t));
+void BindUdp(sSocket *);
 
 /**
  * Remove a UDP connection.
@@ -790,6 +781,22 @@ struct uip_udp_conn *uip_udp_new(const uip_ipaddr_t *ripaddr, uint16_t rport);
  */
 #define uip_udp_remove(conn) (conn)->lport = 0
 
+ /**
+  * Bind a UDP connection to a local port.
+  *
+  * This function binds a UDP connection to a specified local port.
+  *
+  * When a connection is created with udp_new(), it gets a local port
+  * number assigned automatically. If the application needs to bind the
+  * connection to a specified local port, this function should be used.
+  *
+  * \note The port number must be provided in network byte order so a
+  * conversion with __REVSH() usually is necessary.
+  *
+  * \param conn A pointer to the UDP connection that is to be bound.
+  * \param port The port number in network byte order to which to bind
+  * the connection.
+  */
 /**
  * Bind a UDP connection to a local port.
  *
@@ -800,7 +807,7 @@ struct uip_udp_conn *uip_udp_new(const uip_ipaddr_t *ripaddr, uint16_t rport);
  *
  * \hideinitializer
  */
-#define uip_udp_bind(conn, port) (conn)->lport = port
+#define udp_bind(conn, port) (conn)->lport = port
 
 /** @} */
 
@@ -1204,24 +1211,6 @@ extern struct uip_conn uip_conns[UIP_TCP_CONNS];
 extern uint8_t uip_acc32[4];
 /** @} */
 
-/**
- * Representation of a uIP UDP connection.
- */
-struct uip_udp_conn {
-  uip_ipaddr_t ripaddr;   /**< The IP address of the remote peer. */
-  uint16_t lport;        /**< The local port number in network byte order. */
-  uint16_t rport;        /**< The remote port number in network byte order. */
-  uint8_t  ttl;          /**< Default time-to-live. */
-  /** The application state. */
-//  uip_udp_appstate_t appstate;
-};
-
-/**
- * The current UDP connection.
- */
-extern struct uip_udp_conn *uip_udp_conn;
-extern struct uip_udp_conn uip_udp_conns[UIP_UDP_CONNS];
-
 struct uip_fallback_interface {
   void (*init)(void);
   /**
@@ -1392,7 +1381,7 @@ uip_ext_hdr_options_process(); */
  *
  * The actual uIP function which does all the work.
  */
-void uip_process(sUipBuff *uipBuff, uint8_t flag);
+void uip_process(sSocket *socket, sUipBuff *uipBuff, uint8_t flag);
 
   /* The following flags are passed as an argument to the uip_process()
    function. They are used to distinguish between the two cases where

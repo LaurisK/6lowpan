@@ -172,7 +172,7 @@ void uip_sr_periodic(unsigned seconds);
 /**
  * Initialize this module
 */
-void uip_sr_init(void);
+void uip_sr_init(uint16_t, fRadioEvtHndl);
 
 /**
  * Deallocate all neighbors

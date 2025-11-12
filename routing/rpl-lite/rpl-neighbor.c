@@ -62,9 +62,7 @@ static rpl_nbr_t * best_parent(int fresh_only);
 NBR_TABLE_GLOBAL(rpl_nbr_t, rpl_neighbors);
 
 /*---------------------------------------------------------------------------*/
-static int
-max_acceptable_rank(void)
-{
+static int max_acceptable_rank(void) {
   if(curr_instance.max_rankinc == 0) {
     /* There is no max rank increment */
     return RPL_INFINITE_RANK;
@@ -75,9 +73,7 @@ max_acceptable_rank(void)
 }
 /*---------------------------------------------------------------------------*/
 /* As per RFC 6550, section 8.2.2.4 */
-static int
-acceptable_rank(rpl_rank_t rank)
-{
+static int acceptable_rank(rpl_rank_t rank) {
   return rank != RPL_INFINITE_RANK
       && rank >= curr_instance.min_hoprankinc
       && rank <= max_acceptable_rank();
@@ -155,10 +151,8 @@ static int rpl_neighbor_snprint(char *buf, int buflen, rpl_nbr_t *nbr)
   return index;
 }
 /*---------------------------------------------------------------------------*/
-#define NEIUBOR_PRINT_BUFF_LEN 160
-void
-rpl_neighbor_print_list(const char *str)
-{
+#define NEIUBOR_PRINT_BUFF_LEN 240
+void rpl_neighbor_print_list(const char *str) {
   if(curr_instance.used) {
     int curr_dio_interval = curr_instance.dag.dio_intcurrent;
     int curr_rank = curr_instance.dag.rank;
@@ -180,9 +174,7 @@ rpl_neighbor_print_list(const char *str)
   }
 }
 /*---------------------------------------------------------------------------*/
-int
-rpl_neighbor_count(void)
-{
+int rpl_neighbor_count(void) {
   int count = 0;
   rpl_nbr_t *nbr = nbr_table_head(rpl_neighbors);
   for(nbr = nbr_table_head(rpl_neighbors);
@@ -206,9 +198,7 @@ rpl_get_ds6_nbr(rpl_nbr_t *nbr)
 }
 #endif /* UIP_ND6_SEND_NS */
 /*---------------------------------------------------------------------------*/
-static void
-remove_neighbor(rpl_nbr_t *nbr)
-{
+static void remove_neighbor(rpl_nbr_t *nbr) {
   /* Make sure we don't point to a removed neighbor. Note that we do not need
   to worry about preferred_parent here, as it is locked in the the table
   and will never be removed by external modules. */
@@ -225,69 +215,54 @@ remove_neighbor(rpl_nbr_t *nbr)
   rpl_timers_schedule_state_update(); /* Updating from here is unsafe; postpone */
 }
 /*---------------------------------------------------------------------------*/
-rpl_nbr_t *
-rpl_neighbor_get_from_lladdr(uip_lladdr_t *addr)
-{
+rpl_nbr_t * rpl_neighbor_get_from_lladdr(uip_lladdr_t *addr) {
   return nbr_table_get_from_lladdr(rpl_neighbors, (linkaddr_t *)addr);
 }
 /*---------------------------------------------------------------------------*/
-int
-rpl_neighbor_is_acceptable_parent(rpl_nbr_t *nbr)
-{
+int rpl_neighbor_is_acceptable_parent(rpl_nbr_t *nbr) {
   if(nbr != NULL && curr_instance.of->nbr_is_acceptable_parent != NULL) {
     return curr_instance.of->nbr_is_acceptable_parent(nbr);
   }
   return 0xffff;
 }
 /*---------------------------------------------------------------------------*/
-uint16_t
-rpl_neighbor_get_link_metric(rpl_nbr_t *nbr)
-{
+uint16_t rpl_neighbor_get_link_metric(rpl_nbr_t *nbr) {
   if(nbr != NULL && curr_instance.of->nbr_link_metric != NULL) {
     return curr_instance.of->nbr_link_metric(nbr);
   }
   return 0xffff;
 }
 /*---------------------------------------------------------------------------*/
-rpl_rank_t
-rpl_neighbor_rank_via_nbr(rpl_nbr_t *nbr)
-{
+rpl_rank_t rpl_neighbor_rank_via_nbr(rpl_nbr_t *nbr) {
   if(nbr != NULL && curr_instance.of->rank_via_nbr != NULL) {
     return curr_instance.of->rank_via_nbr(nbr);
   }
   return RPL_INFINITE_RANK;
 }
 /*---------------------------------------------------------------------------*/
-uip_ipaddr_t *
-rpl_neighbor_get_ipaddr(rpl_nbr_t *nbr)
-{
+uip_ipaddr_t * rpl_neighbor_get_ipaddr(rpl_nbr_t *nbr) {
   const linkaddr_t *lladdr = nbr_table_get_lladdr(rpl_neighbors, nbr);
   return uip_ds6_nbr_ipaddr_from_lladdr((uip_lladdr_t *)lladdr);
 }
 /*---------------------------------------------------------------------------*/
-const struct link_stats *
-rpl_neighbor_get_link_stats(rpl_nbr_t *nbr)
-{
+const struct link_stats * rpl_neighbor_get_link_stats(rpl_nbr_t *nbr) {
   const linkaddr_t *lladdr = nbr_table_get_lladdr(rpl_neighbors, nbr);
   return link_stats_from_lladdr(lladdr);
 }
 /*---------------------------------------------------------------------------*/
-int
-rpl_neighbor_is_fresh(rpl_nbr_t *nbr)
-{
+int rpl_neighbor_is_fresh(rpl_nbr_t *nbr) {
   const struct link_stats *stats = rpl_neighbor_get_link_stats(nbr);
   return link_stats_is_fresh(stats);
 }
 /*---------------------------------------------------------------------------*/
-int
-rpl_neighbor_is_reachable(rpl_nbr_t *nbr) {
+int rpl_neighbor_is_reachable(rpl_nbr_t *nbr) {
   if(nbr == NULL) {
     return 0;
   } else {
 #if UIP_ND6_SEND_NS
     uip_ds6_nbr_t *ds6_nbr = rpl_get_ds6_nbr(nbr);
     /* Exclude links to a neighbor that is not reachable at a NUD level */
-    if(ds6_nbr == NULL || ds6_nbr->state != NBR_REACHABLE) {
+    if(ds6_nbr == NULL || ds6_nbr->nbrState != NBR_REACHABLE) {
       return 0;
     }
 #endif /* UIP_ND6_SEND_NS */
@@ -296,15 +271,11 @@ rpl_neighbor_is_reachable(rpl_nbr_t *nbr) {
   }
 }
 /*---------------------------------------------------------------------------*/
-int
-rpl_neighbor_is_parent(rpl_nbr_t *nbr)
-{
+int rpl_neighbor_is_parent(rpl_nbr_t *nbr) {
   return nbr != NULL && nbr->rank < curr_instance.dag.rank;
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_neighbor_set_preferred_parent(rpl_nbr_t *nbr)
-{
+void rpl_neighbor_set_preferred_parent(rpl_nbr_t *nbr) {
   if(curr_instance.dag.preferred_parent != nbr) {
 	TRiceS("msg:parent switch: %s", uip6_printAddr(rpl_neighbor_get_ipaddr(curr_instance.dag.preferred_parent), NULL));
 	TRiceS("msg: -> %s\n", uip6_printAddr(rpl_neighbor_get_ipaddr(nbr), NULL));
@@ -328,9 +299,7 @@ rpl_neighbor_set_preferred_parent(rpl_nbr_t *nbr)
 }
 /*---------------------------------------------------------------------------*/
 /* Remove all DAG neighbors */
-void
-rpl_neighbor_remove_all(void)
-{
+void rpl_neighbor_remove_all(void) {
   rpl_nbr_t *nbr;
 
   TRice("msg:removing all neighbors\n");
@@ -348,32 +317,25 @@ rpl_neighbor_remove_all(void)
 
   /* Update needed immediately. As we have lost the preferred parent this will
    * enter poisoining and set timers accordingly. */
-  rpl_dag_update_state();
+  rpl_dag_update_state(NULL);
 }
 /*---------------------------------------------------------------------------*/
-rpl_nbr_t *
-rpl_neighbor_get_from_ipaddr(uip_ipaddr_t *addr)
-{
+rpl_nbr_t * rpl_neighbor_get_from_ipaddr(uip_ipaddr_t *addr) {
   uip_ds6_nbr_t *ds6_nbr = uip_ds6_nbr_lookup(addr);
   const uip_lladdr_t *lladdr = uip_ds6_nbr_get_ll(ds6_nbr);
   return nbr_table_get_from_lladdr(rpl_neighbors, (linkaddr_t *)lladdr);
 }
 /*---------------------------------------------------------------------------*/
-static rpl_nbr_t *
-best_parent(int fresh_only)
-{
+static rpl_nbr_t * best_parent(int fresh_only) {
   rpl_nbr_t *nbr;
   rpl_nbr_t *best = NULL;
-
   if(curr_instance.used == 0) {
     return NULL;
   }
 
   /* Search for the best parent according to the OF */
   for(nbr = nbr_table_head(rpl_neighbors); nbr != NULL; nbr = nbr_table_next(rpl_neighbors, nbr)) {
-
-    if(!acceptable_rank(rpl_neighbor_rank_via_nbr(nbr))
-      || !curr_instance.of->nbr_is_acceptable_parent(nbr)) {
+    if(!acceptable_rank(rpl_neighbor_rank_via_nbr(nbr)) || !curr_instance.of->nbr_is_acceptable_parent(nbr)) {
       /* Exclude neighbors with a rank that is not acceptable */
       continue;
     }
@@ -385,11 +347,11 @@ best_parent(int fresh_only)
 
 #if UIP_ND6_SEND_NS
     {
-    uip_ds6_nbr_t *ds6_nbr = rpl_get_ds6_nbr(nbr);
-    /* Exclude links to a neighbor that is not reachable at a NUD level */
-    if(ds6_nbr == NULL || ds6_nbr->state != NBR_REACHABLE) {
-      continue;
-    }
+      uip_ds6_nbr_t *ds6_nbr = rpl_get_ds6_nbr(nbr);
+      /* Exclude links to a neighbor that is not reachable at a NUD level */
+      if(ds6_nbr == NULL || (NBR_STALE >= ds6_nbr->nbrState)) {
+        continue;
+      }
     }
 #endif /* UIP_ND6_SEND_NS */
 
@@ -400,9 +362,7 @@ best_parent(int fresh_only)
   return best;
 }
 /*---------------------------------------------------------------------------*/
-rpl_nbr_t *
-rpl_neighbor_select_best(void)
-{
+rpl_nbr_t* rpl_neighbor_select_best(void) {
   rpl_nbr_t *best;
 
   if(rpl_dag_root_is_root()) {
@@ -463,7 +423,7 @@ rpl_neighbor_select_best(void)
 }
 /*---------------------------------------------------------------------------*/
 void rpl_neighbor_init(void) {
-  nbr_table_register("rpl neighbors", rpl_neighbors, (nbr_table_callback *)remove_neighbor);
+  nbr_table_register("rpl neighbors", rpl_neighbors, (nbr_table_callback *)remove_neighbor, LAYER_RPL);
 }
 
 /** @} */

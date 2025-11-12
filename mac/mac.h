@@ -45,6 +45,7 @@ extern "C" {
 #endif
 
 #include "../packetbuf.h"
+#include "Middlewares/Third_Party/6lowpan/evt_radio.h"
 
 /**
  *\brief The default channel for IEEE 802.15.4 networks.
@@ -66,13 +67,13 @@ struct mac_driver {
   char *name;
 
   /** Initialize the MAC driver */
-  void (* init)(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void)));
+  void (* init)(uint16_t, fRadioEvtHndl);
 
   /** Send a packet from the packetbuf  */
   void (* send)(sPacket*, mac_callback_t, void*);
 
   /** Callback for getting notified of incoming packet. */
-  void (* input)(sPacket*);
+  uint16_t (* input)(sPacket*);
 
   /** Turn the MAC layer on. */
   int (* on)(void);

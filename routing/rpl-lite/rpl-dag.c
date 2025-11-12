@@ -50,9 +50,12 @@
 #include "rpl.h"
 
 /*---------------------------------------------------------------------------*/
-extern rpl_of_t rpl_of0, rpl_mrhof;
+extern rpl_of_t rpl_mrhof;
 static rpl_of_t * const objective_functions[] = RPL_SUPPORTED_OFS;
 static int process_dio_init_dag(rpl_dio_t *dio);
+
+static uint16_t dagEvtIdOffset;
+static fRadioEvtHndl dagEvtHndl;
 
 /*---------------------------------------------------------------------------*/
 /* Allocate instance table. */
@@ -62,12 +65,10 @@ rpl_instance_t curr_instance;
 
 #ifdef RPL_VALIDATE_DIO_FUNC
 int RPL_VALIDATE_DIO_FUNC(rpl_dio_t *dio);
-#endif /* RPL_PROBING_SELECT_FUNC */
+#endif /* RPL_VALIDATE_DIO_FUNC */
 
 /*---------------------------------------------------------------------------*/
-const char *
-rpl_dag_state_to_str(enum rpl_dag_state state)
-{
+const char * rpl_dag_state_to_str(enum rpl_dag_state state) {
   switch(state) {
     case DAG_INITIALIZED:
       return "initialized";
@@ -82,9 +83,7 @@ rpl_dag_state_to_str(enum rpl_dag_state state)
   }
 }
 /*---------------------------------------------------------------------------*/
-int
-rpl_dag_get_root_ipaddr(uip_ipaddr_t *ipaddr)
-{
+int rpl_dag_get_root_ipaddr(uip_ipaddr_t *ipaddr) {
   if(curr_instance.used && ipaddr != NULL) {
     uip_ipaddr_copy(ipaddr, &curr_instance.dag.dag_id);
     return 1;
@@ -92,11 +91,9 @@ rpl_dag_get_root_ipaddr(uip_ipaddr_t *ipaddr)
   return 0;
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_dag_leave(void)
-{
-  TRiceS("msg:leaving DAG %s, ", uip6_printAddr(&curr_instance.dag.dag_id, NULL));
-  TRice("instance %u\n", curr_instance.instance_id);
+void rpl_dag_leave(void) {
+  TRiceS("info:leaving DAG %s, ", uip6_printAddr(&curr_instance.dag.dag_id, NULL));
+  TRice("info:instance %u\n", curr_instance.instance_id);
 
   /* Issue a no-path DAO */
   if(!rpl_dag_root_is_root()) {
@@ -123,24 +120,19 @@ rpl_dag_leave(void)
   curr_instance.used = 0;
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_dag_poison_and_leave(void)
-{
+void rpl_dag_poison_and_leave(void) {
+  TRice("notice:DAG expired, poison and leave (dag.state = DAG_POISONING)\n");
   curr_instance.dag.state = DAG_POISONING;
+  System_FanStatusUpdate(fan_poisoning);
   rpl_timers_schedule_state_update();
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_dag_periodic(unsigned seconds)
-{
+void rpl_dag_periodic(unsigned seconds) {
   if(curr_instance.used) {
     if(curr_instance.dag.lifetime != RPL_LIFETIME(RPL_INFINITE_LIFETIME)) {
-      curr_instance.dag.lifetime =
-        curr_instance.dag.lifetime > seconds ? curr_instance.dag.lifetime - seconds : 0;
+      curr_instance.dag.lifetime = curr_instance.dag.lifetime > seconds ? curr_instance.dag.lifetime - seconds : 0;
       if(curr_instance.dag.lifetime == 0) {
-    	  TRice("wrn:DAG expired, poison and leave\n");
-        curr_instance.dag.state = DAG_POISONING;
-        rpl_timers_schedule_state_update();
+    	rpl_dag_poison_and_leave();
       } else if(curr_instance.dag.lifetime < 300 && curr_instance.dag.preferred_parent != NULL) {
         /* Five minutes before expiring, start sending unicast DIS to get an update */
     	  TRice("wrn:DAG expiring in %u seconds, send DIS to preferred parent\n", (unsigned)curr_instance.dag.lifetime);
@@ -150,28 +142,19 @@ rpl_dag_periodic(unsigned seconds)
   }
 }
 /*---------------------------------------------------------------------------*/
-int
-rpl_is_addr_in_our_dag(const uip_ipaddr_t *addr)
-{
-  return curr_instance.used
-    && uip_ipaddr_prefixcmp(&curr_instance.dag.dag_id, addr, curr_instance.dag.prefix_info.length);
+int rpl_is_addr_in_our_dag(const uip_ipaddr_t *addr) {
+  return curr_instance.used && uip_ipaddr_prefixcmp(&curr_instance.dag.dag_id, addr, curr_instance.dag.prefix_info.length);
 }
 /*---------------------------------------------------------------------------*/
-rpl_instance_t *
-rpl_get_default_instance(void)
-{
+rpl_instance_t * rpl_get_default_instance(void) {
   return curr_instance.used ? &curr_instance : NULL;
 }
 /*---------------------------------------------------------------------------*/
-rpl_dag_t *
-rpl_get_any_dag(void)
-{
+rpl_dag_t * rpl_get_any_dag(void) {
   return curr_instance.used ? &curr_instance.dag : NULL;
 }
 /*---------------------------------------------------------------------------*/
-static rpl_of_t *
-find_objective_function(rpl_ocp_t ocp)
-{
+static rpl_of_t * find_objective_function(rpl_ocp_t ocp) {
   unsigned int i;
   for(i = 0; i < sizeof(objective_functions) / sizeof(objective_functions[0]); i++) {
     if(objective_functions[i]->ocp == ocp) {
@@ -181,32 +164,26 @@ find_objective_function(rpl_ocp_t ocp)
   return NULL;
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_refresh_routes(const char *str)
-{
+void rpl_refresh_routes(const char *str) {
   if(rpl_dag_root_is_root()) {
     /* Increment DTSN */
     RPL_LOLLIPOP_INCREMENT(curr_instance.dtsn_out);
 
-    TRice("wrn:incremented DTSN (%s), current %u\n",
-         str, curr_instance.dtsn_out);
+    TRice("wrn:incremented DTSN (%s), current %u\n", str, curr_instance.dtsn_out);
     if(1/*LOG_DBG_ENABLED*/) {
-      rpl_neighbor_print_list("Refresh routes (before)");
+      rpl_neighbor_print_list("Refresh routes");
     }
   }
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_global_repair(const char *str)
-{
+void rpl_global_repair(const char *str) {
   if(rpl_dag_root_is_root()) {
     RPL_LOLLIPOP_INCREMENT(curr_instance.dag.version);  /* New DAG version */
     curr_instance.dtsn_out = RPL_LOLLIPOP_INIT;  /* Re-initialize DTSN */
 
-    TRice("wrn:initiating global repair (%s), version %u, rank %u\n",
-         str, curr_instance.dag.version, curr_instance.dag.rank);
+    TRice("wrn:initiating global repair (%s), version %u, rank %u\n", str, curr_instance.dag.version, curr_instance.dag.rank);
     if(1/*LOG_DBG_ENABLED*/) {
-      rpl_neighbor_print_list("Global repair (before)");
+      rpl_neighbor_print_list("Global repair");
     }
 
     /* Now do a local repair to disseminate the new version */
@@ -214,31 +191,28 @@ rpl_global_repair(const char *str)
   }
 }
 /*---------------------------------------------------------------------------*/
-static void
-global_repair_non_root(rpl_dio_t *dio)
-{
+static void global_repair_non_root(rpl_dio_t *dio) {
   if(!rpl_dag_root_is_root()) {
-	  TRice("wrn:participating in global repair, version %u, rank %u\n",
-         dio->version, curr_instance.dag.rank);
+	  TRice("wrn:participating in global repair, version %u, rank %u\n", dio->version, curr_instance.dag.rank);
     if(1/*LOG_DBG_ENABLED*/) {
-      rpl_neighbor_print_list("Global repair (before)");
+      rpl_neighbor_print_list("Global repair non root (before)");
     }
     /* Re-initialize configuration from DIO */
     rpl_timers_stop_dag_timers();
     rpl_neighbor_set_preferred_parent(NULL);
     /* This will both re-init the DAG and schedule required timers */
     process_dio_init_dag(dio);
-    rpl_local_repair("Global repair");
+    rpl_local_repair("Global repair non root");
   }
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_local_repair(const char *str)
-{
+void rpl_local_repair(const char *str) {
   if(curr_instance.used) { /* Check needed because this is a public function */
-	  TRiceS("wrn:local repair (%s)\n", (char*)str);
+	TRiceS("wrn:local repair (%s)\n", (char*)str);
     if(!rpl_dag_root_is_root()) {
+      TRice("notice:Reset DAG to initialized (dag.state = DAG_INITIALIZED)\n");
       curr_instance.dag.state = DAG_INITIALIZED; /* Reset DAG state */
+      System_FanStatusUpdate(fan_initialized);
     }
     curr_instance.of->reset(); /* Reset OF */
     rpl_neighbor_remove_all(); /* Remove all neighbors */
@@ -247,20 +221,26 @@ rpl_local_repair(const char *str)
   }
 }
 /*---------------------------------------------------------------------------*/
-int
-rpl_dag_ready_to_advertise(void)
-{
+int rpl_dag_ready_to_advertise(void) {
+  uint8_t readyToAdvertise = false;
   if(curr_instance.mop == RPL_MOP_NO_DOWNWARD_ROUTES) {
-    return curr_instance.used && curr_instance.dag.state >= DAG_INITIALIZED;
+	readyToAdvertise = curr_instance.used && curr_instance.dag.state >= DAG_INITIALIZED;
+	if (false == readyToAdvertise) {
+	  TRice("msg:DAG not ready to advertise - mop is no downward routes, but (%d && %d >= %d)\n",
+			curr_instance.used, curr_instance.dag.state, DAG_INITIALIZED);
+	}
   } else {
-    return curr_instance.used && curr_instance.dag.state >= DAG_REACHABLE;
+	readyToAdvertise = curr_instance.used && curr_instance.dag.state >= DAG_REACHABLE;
+	if (false == readyToAdvertise) {
+	  TRice("msg:DAG not ready to advertise - mop (%d), but (%d && %d >= %d)\n",
+			curr_instance.mop, curr_instance.used, curr_instance.dag.state, DAG_REACHABLE);
+	}
   }
+  return readyToAdvertise;
 }
 /*---------------------------------------------------------------------------*/
 /* Updates rank and parent */
-void
-rpl_dag_update_state(void)
-{
+void rpl_dag_update_state(void* unused) {
   rpl_rank_t old_rank;
 
   if(!curr_instance.used) {
@@ -314,8 +294,7 @@ rpl_dag_update_state(void)
     if(curr_instance.dag.last_advertised_rank != RPL_INFINITE_RANK
         && curr_instance.dag.rank != RPL_INFINITE_RANK
         && ABS((int32_t)curr_instance.dag.rank - curr_instance.dag.last_advertised_rank) > RPL_SIGNIFICANT_CHANGE_THRESHOLD) {
-    	TRice("wrn:significant rank update %u->%u\n",
-          curr_instance.dag.last_advertised_rank, curr_instance.dag.rank);
+    	TRice("wrn:significant rank update %u->%u\n", curr_instance.dag.last_advertised_rank, curr_instance.dag.rank);
       /* Update already here to avoid multiple resets in a row */
       curr_instance.dag.last_advertised_rank = curr_instance.dag.rank;
       rpl_timers_dio_reset("Significant rank update");
@@ -329,7 +308,9 @@ rpl_dag_update_state(void)
         if(old_parent == NULL) {
           curr_instance.dag.state = DAG_JOINED;
           rpl_timers_dio_reset("Got parent");
-          TRiceS("wrn:found parent: %s, staying in DAG\n", uip6_printAddr(rpl_neighbor_get_ipaddr(curr_instance.dag.preferred_parent), NULL));
+          System_FanStatusUpdate(fan_joined);
+          TRiceS("notice:Joined DAG[found parent: %s] (dag.state = DAG_JOINED)\n",
+        		 uip6_printAddr(rpl_neighbor_get_ipaddr(curr_instance.dag.preferred_parent), NULL));
           rpl_timers_unschedule_leaving();
         }
         /* Schedule a DAO */
@@ -337,7 +318,8 @@ rpl_dag_update_state(void)
       } else {
         /* We have no more parent, schedule DIS to get a chance to hear updated state */
         curr_instance.dag.state = DAG_INITIALIZED;
-        TRice("wrn:no parent, scheduling periodic DIS, will leave if no parent is found\n");
+        System_FanStatusUpdate(fan_initialized);
+        TRice("notice:Reset DAG to initialized - no parent found (dag.state = DAG_INITIALIZED)\n");
         rpl_timers_dio_reset("Poison routes");
         rpl_timers_schedule_periodic_dis();
         rpl_timers_schedule_leaving();
@@ -356,9 +338,7 @@ rpl_dag_update_state(void)
   curr_instance.of->update_metric_container();
 }
 /*---------------------------------------------------------------------------*/
-static rpl_nbr_t *
-update_nbr_from_dio(uip_ipaddr_t *from, rpl_dio_t *dio)
-{
+static rpl_nbr_t * update_nbr_from_dio(uip_ipaddr_t *from, rpl_dio_t *dio) {
   rpl_nbr_t *nbr = NULL;
   const uip_lladdr_t *lladdr;
 
@@ -373,8 +353,7 @@ update_nbr_from_dio(uip_ipaddr_t *from, rpl_dio_t *dio)
     }
 
     /* Add neighbor to RPL table */
-    nbr = nbr_table_add_lladdr(rpl_neighbors, (linkaddr_t *)lladdr,
-                             NBR_TABLE_REASON_RPL_DIO, dio);
+    nbr = nbr_table_add_lladdr(rpl_neighbors, (linkaddr_t *)lladdr, NBR_TABLE_REASON_RPL_DIO, dio);
     if(nbr == NULL) {
     	TRice("err:failed to add neighbor\n");
       return NULL;
@@ -391,9 +370,7 @@ update_nbr_from_dio(uip_ipaddr_t *from, rpl_dio_t *dio)
   return nbr;
 }
 /*---------------------------------------------------------------------------*/
-static void
-process_dio_from_current_dag(uip_ipaddr_t *from, rpl_dio_t *dio)
-{
+static void process_dio_from_current_dag(uip_ipaddr_t *from, rpl_dio_t *dio) {
   rpl_nbr_t *nbr;
   uint8_t last_dtsn;
 
@@ -473,10 +450,7 @@ process_dio_from_current_dag(uip_ipaddr_t *from, rpl_dio_t *dio)
   }
 }
 /*---------------------------------------------------------------------------*/
-static int
-init_dag(uint8_t instance_id, uip_ipaddr_t *dag_id, rpl_ocp_t ocp,
-        uip_ipaddr_t *prefix, unsigned prefix_len, uint8_t prefix_flags)
-{
+static int init_dag(uint8_t instance_id, uip_ipaddr_t *dag_id, rpl_ocp_t ocp, uip_ipaddr_t *prefix, unsigned prefix_len, uint8_t prefix_flags) {
   rpl_of_t *of;
 
   memset(&curr_instance, 0, offsetof(rpl_instance_t, dag));
@@ -520,11 +494,8 @@ init_dag(uint8_t instance_id, uip_ipaddr_t *dag_id, rpl_ocp_t ocp,
   return 1;
 }
 /*---------------------------------------------------------------------------*/
-static int
-init_dag_from_dio(rpl_dio_t *dio)
-{
-  if(!init_dag(dio->instance_id, &dio->dag_id, dio->ocp,
-        &dio->prefix_info.prefix, dio->prefix_info.length, dio->prefix_info.flags)) {
+static int init_dag_from_dio(rpl_dio_t *dio) {
+  if(!init_dag(dio->instance_id, &dio->dag_id, dio->ocp, &dio->prefix_info.prefix, dio->prefix_info.length, dio->prefix_info.flags)) {
     return 0;
   }
 
@@ -539,7 +510,7 @@ init_dag_from_dio(rpl_dio_t *dio)
   curr_instance.dio_intdoubl = dio->dag_intdoubl;
   curr_instance.dio_intmin = dio->dag_intmin;
   curr_instance.dio_redundancy = dio->dag_redund;
-  curr_instance.default_lifetime = dio->default_lifetime;
+  curr_instance.rplLifetime = dio->dagLifetime;
   curr_instance.lifetime_unit = dio->lifetime_unit;
 
   /* DAG */
@@ -549,13 +520,13 @@ init_dag_from_dio(rpl_dio_t *dio)
   curr_instance.dag.version = dio->version;
   /* dio_intcurrent will be reset by rpl_timers_dio_reset() */
   curr_instance.dag.dio_intcurrent = 0;
+  System_FanStatusUpdate(fan_initialized);
+  TRice("notice:Set DAG to initialized (dag.state = DAG_INITIALIZED)\n");
 
   return 1;
 }
 /*---------------------------------------------------------------------------*/
-static int
-process_dio_init_dag(rpl_dio_t *dio)
-{
+static int process_dio_init_dag(rpl_dio_t *dio) {
 #ifdef RPL_VALIDATE_DIO_FUNC
   if(!RPL_VALIDATE_DIO_FUNC(dio)) {
 	  TRice("wrn:DIO validation failed\n");
@@ -583,10 +554,10 @@ process_dio_init_dag(rpl_dio_t *dio)
 #endif /* RPL_WITH_PROBING */
   /* Leave the network after RPL_DELAY_BEFORE_LEAVING in case we do not
   find a parent */
-  TRice("msg:initialized DAG with instance ID %u, ", curr_instance.instance_id);
-  TRiceS("msg:DAG ID %s, ", uip6_printAddr(&curr_instance.dag.dag_id, NULL));
-  TRiceS("msg:prexix %s, ", uip6_printAddr(&dio->prefix_info.prefix, NULL));
-  TRice("msg:/%u, rank %u\n", dio->prefix_info.length, curr_instance.dag.rank);
+  TRice("info:initialized DAG with instance ID %u, ", curr_instance.instance_id);
+  TRiceS("info:DAG ID %s, ", uip6_printAddr(&curr_instance.dag.dag_id, NULL));
+  TRiceS("info:prexix %s, ", uip6_printAddr(&dio->prefix_info.prefix, NULL));
+  TRice("info:/%u, rank %u\n", dio->prefix_info.length, curr_instance.dag.rank);
 
   TRice("wrn:just joined, no parent yet, setting timer for leaving\n");
   rpl_timers_schedule_leaving();
@@ -594,9 +565,7 @@ process_dio_init_dag(rpl_dio_t *dio)
   return 1;
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_process_dio(uip_ipaddr_t *from, rpl_dio_t *dio)
-{
+void rpl_process_dio(uip_ipaddr_t *from, rpl_dio_t *dio) {
   if(!curr_instance.used && !rpl_dag_root_is_root()) {
     /* Attempt to init our DAG from this DIO */
     if(!process_dio_init_dag(dio)) {
@@ -605,17 +574,13 @@ rpl_process_dio(uip_ipaddr_t *from, rpl_dio_t *dio)
     }
   }
 
-  if(curr_instance.used
-      && curr_instance.instance_id == dio->instance_id
-      && uip_ipaddr_cmp(&curr_instance.dag.dag_id, &dio->dag_id)) {
+  if(curr_instance.used && curr_instance.instance_id == dio->instance_id && uip_ipaddr_cmp(&curr_instance.dag.dag_id, &dio->dag_id)) {
     process_dio_from_current_dag(from, dio);
-    rpl_dag_update_state();
+    rpl_dag_update_state(NULL);
   }
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_process_dis(uip_ipaddr_t *from, int is_multicast)
-{
+void rpl_process_dis(uip_ipaddr_t *from, int is_multicast) {
   if(is_multicast) {
     rpl_timers_dio_reset("Multicast DIS");
   } else {
@@ -627,13 +592,11 @@ rpl_process_dis(uip_ipaddr_t *from, int is_multicast)
   }
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_process_dao(uip_ipaddr_t *from, rpl_dao_t *dao)
-{
+void rpl_process_dao(rpl_dao_t *dao) {
   if(dao->lifetime == 0) {
-    uip_sr_expire_parent(NULL, from, &dao->parent_addr);
+    uip_sr_expire_parent(NULL, &dao->prefix, &dao->parent_addr);
   } else {
-    if(!uip_sr_update_node(NULL, from, &dao->parent_addr, RPL_LIFETIME(dao->lifetime))) {
+    if(!uip_sr_update_node(NULL, &dao->prefix, &dao->parent_addr, RPL_LIFETIME(dao->lifetime))) {
       TRice("err:failed to add link on incoming DAO\n");
       return;
     }
@@ -641,15 +604,15 @@ rpl_process_dao(uip_ipaddr_t *from, rpl_dao_t *dao)
 
 #if RPL_WITH_DAO_ACK
   if(dao->flags & RPL_DAO_K_FLAG) {
-    rpl_timers_schedule_dao_ack(from, dao->sequence);
+    rpl_timers_schedule_dao_ack(&dao->prefix, dao->sequence);
+  } else {
+	TRice("msg:DAO-ACK not requested(%02x)\n", dao->flags);
   }
 #endif /* RPL_WITH_DAO_ACK */
 }
 /*---------------------------------------------------------------------------*/
 #if RPL_WITH_DAO_ACK
-void
-rpl_process_dao_ack(uint8_t sequence, uint8_t status)
-{
+void rpl_process_dao_ack(uint8_t sequence, uint8_t status) {
   /* Update dao_last_acked_seqno */
   if(rpl_lollipop_greater_than(sequence, curr_instance.dag.dao_last_acked_seqno)) {
     curr_instance.dag.dao_last_acked_seqno = sequence;
@@ -658,7 +621,9 @@ rpl_process_dao_ack(uint8_t sequence, uint8_t status)
   if(sequence == curr_instance.dag.dao_last_seqno) {
     int status_ok = status < RPL_DAO_ACK_UNABLE_TO_ACCEPT;
     if(curr_instance.dag.state == DAG_JOINED && status_ok) {
+      TRice("notice:Set DAG to reachable - DAO-ACK received (dag.state = DAG_REACHABLE)\n");
       curr_instance.dag.state = DAG_REACHABLE;
+      System_FanStatusUpdate(fan_reachable);
       rpl_timers_dio_reset("Reachable");
     }
     /* Let the rpl-timers module know that we got an ACK for the last DAO */
@@ -666,17 +631,16 @@ rpl_process_dao_ack(uint8_t sequence, uint8_t status)
 
     if(!status_ok) {
       /* We got a NACK, start poisoning and leave */
-    	TRice("wrn:DAO-NACK received with seqno %u, status %u, poison and leave\n",
-              sequence, status);
+      TRice("wrn:DAO-NACK received with seqno %u, status %u, poison and leave\n", sequence, status);
+      TRice("notice:Set DAG to poisoning (dag.state = DAG_POISONING)\n");
       curr_instance.dag.state = DAG_POISONING;
+      System_FanStatusUpdate(fan_poisoning);
     }
   }
 }
 #endif /* RPL_WITH_DAO_ACK */
 /*---------------------------------------------------------------------------*/
-int
-rpl_process_hbh(rpl_nbr_t *sender, uint16_t sender_rank, int loop_detected, int rank_error_signaled)
-{
+int rpl_process_hbh(rpl_nbr_t *sender, uint16_t sender_rank, int loop_detected, int rank_error_signaled) {
   int drop = 0;
 
   if(loop_detected) {
@@ -700,16 +664,14 @@ rpl_process_hbh(rpl_nbr_t *sender, uint16_t sender_rank, int loop_detected, int 
       sender->rank = sender_rank;
       /* Select DAG and preferred parent. In case of a parent switch,
       the new parent will be used to forward the current packet. */
-      rpl_dag_update_state();
+      rpl_dag_update_state(NULL);
     }
   }
 
   return !drop;
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_dag_init_root(uint8_t instance_id, uip_ipaddr_t *dag_id,
-            uip_ipaddr_t *prefix, unsigned prefix_len, uint8_t prefix_flags)
+void rpl_dag_init_root(uint8_t instance_id, uip_ipaddr_t *dag_id, uip_ipaddr_t *prefix, unsigned prefix_len, uint8_t prefix_flags)
 {
   uint8_t version = RPL_LOLLIPOP_INIT;
 
@@ -733,7 +695,7 @@ rpl_dag_init_root(uint8_t instance_id, uip_ipaddr_t *dag_id,
   curr_instance.dio_intdoubl = RPL_DIO_INTERVAL_DOUBLINGS;
   curr_instance.dio_intmin = RPL_DIO_INTERVAL_MIN;
   curr_instance.dio_redundancy = RPL_DIO_REDUNDANCY;
-  curr_instance.default_lifetime = RPL_DEFAULT_LIFETIME;
+  curr_instance.rplLifetime = RPL_DEFAULT_LIFETIME;
   curr_instance.lifetime_unit = RPL_DEFAULT_LIFETIME_UNIT;
 
   /* DAG */
@@ -745,16 +707,19 @@ rpl_dag_init_root(uint8_t instance_id, uip_ipaddr_t *dag_id,
   /* dio_intcurrent will be reset by rpl_timers_dio_reset() */
   curr_instance.dag.dio_intcurrent = 0;
   curr_instance.dag.state = DAG_REACHABLE;
+  System_FanStatusUpdate(fan_rootOnly);
 
   rpl_timers_dio_reset("Init root");
 
   TRiceS("msg:created DAG with DAG ID %s, ", uip6_printAddr(&curr_instance.dag.dag_id, NULL));
   TRice("msg:instance ID %u, rank %u\n", curr_instance.instance_id, curr_instance.dag.rank);
+  TRice("notice:Set DAG to reachable - we root of it. (dag.state = DAG_REACHABLE)\n");
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_dag_init(void)
+void rpl_dag_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl)
 {
+  dagEvtIdOffset = evtOffset;
+  dagEvtHndl = packedEvtHndl;
   memset(&curr_instance, 0, sizeof(curr_instance));
 }
 /*---------------------------------------------------------------------------*/

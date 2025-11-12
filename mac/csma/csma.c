@@ -46,7 +46,6 @@
 #include "../framer/framer-802154.h"
 #include "../llsec802154.h"
 #include "App/common.h"
-#include "Middlewares/Third_Party/6lowpan/evt_radio.h"
 
 /* Private defines ----------------------------------------------------------*/
 #define MAX_QUEUED_PACKETS 8
@@ -92,8 +91,9 @@ static void TransmitFromQueue(void);
 static volatile sNeighbor *neighborList = NULL;
 static sPacket ackPacket;
 static uint16_t csmaEvtIdOffset;
-void (*csmaIrq2Task)(uint16_t, void(*cbFunc)(void));
+static fRadioEvtHndl csmaEvtHndl;
 static volatile uint8_t radioDataReceived = 0;
+static uint8_t seqNr = 0;
 
 /* Private functions --------------------------------------------------------*/
 /**
@@ -129,8 +129,6 @@ static sNeighbor* GetNeighborForAddr(const linkaddr_t *addr) {
  *
  */
 static uint8_t GetSeqNr(void) {
-#warning "for now just hardcoded random random number."
-	static uint8_t seqNr = 0xA5;
 	seqNr++;
 	/* PACKETBUF_ATTR_MAC_SEQNO cannot be zero, due to a pecuilarity in framer-802154.c. */
 	if (0 == seqNr) {
@@ -157,7 +155,7 @@ static uint8_t GetQueueLenOfNeighbor(const sNeighbor *neighbor) {
 /**
  *
  */
-static void KickTranferQueue(void) {
+static void KickTranferQueue(void* unused) {
 	TransmitFromQueue();
 }
 
@@ -193,7 +191,7 @@ static void HandleTransferEnd(uint8_t transfRes, uint8_t packetPos) {
 		}
 	}
 	if (NULL != neighborList) {
-		csmaIrq2Task(csmaEvtIdOffset + radio_taskCall, KickTranferQueue);
+		csmaEvtHndl(csmaEvtIdOffset + radio_taskCall, KickTranferQueue);
 	}
 }
 
@@ -299,6 +297,13 @@ static void TransmitFromQueue(void) {
 	}
 }
 
+static void CheckStalledTx(void) {
+	if ((0 == subGHz_radio_driver.transmitting_packet()) && (NULL != neighborList)) {
+		TRice("msg: Stalled transmission detected, and restarted.\n");
+		csmaEvtHndl(csmaEvtIdOffset + radio_taskCall, KickTranferQueue);
+	}
+}
+
 /**
  *
  */
@@ -334,9 +339,11 @@ static void EnqueuePacket(sPacket *packet, mac_callback_t sent, void *ptr) {
 			  TRice("msg: have %u packets in queue.\n", GetQueueLenOfNeighbor(walker));
 			  walker = walker->next;
 		  }
+		  CheckStalledTx();
 	  } else if ((1 << packetPos) != targetNeighbor->queuedTransmits) { // targetNeighbor here is always neighborList and we already checked if no other neighbors are present
 		  /* More packets are in queue, but only for this neighbor - print some info about them */
 		  TRice("msg:\t total of %u packets are queued for this neighbor\n", GetQueueLenOfNeighbor(targetNeighbor));
+		  CheckStalledTx();
 	  } else {
 		  /* Only one packet is in queue and only for this neighbor - start transmission of it*/
 		  TransmitFromQueue();
@@ -373,8 +380,9 @@ static void send_packet(sPacket *packet, mac_callback_t sent, void *ptr) {
 /**
  *
  */
-static void input_packet(sPacket *rxPacket)
+static uint16_t input_packet(sPacket *rxPacket)
 {
+  uint16_t rxDataLen = 0;
   subGHz_radio_driver.read(rxPacket);
   if(packetbuf_datalen(rxPacket) == CSMA_ACK_LEN) {
     /* Ignore ack packets */
@@ -383,7 +391,7 @@ static void input_packet(sPacket *rxPacket)
   } else if(/*csma_security_parse_frame()*/framer_802154.parse(rxPacket) < 0) {
 	  TRice("err:failed to parse %u\n", packetbuf_datalen(rxPacket));
   } else if(!linkaddr_cmp(packetbuf_addr(rxPacket, PACKETBUF_ADDR_RECEIVER), &linkaddr_node_addr) && !packetbuf_holds_broadcast(rxPacket)) {
-	  TRice("wrn:not for us\n");
+	  TRiceS("wrn:not for us. Target(%s)\n", (char*)linkaddr_printAddr(packetbuf_addr(rxPacket, PACKETBUF_ADDR_RECEIVER)));
   } else if(linkaddr_cmp(packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER), &linkaddr_node_addr)) {
 	  TRice("wrn:frame from ourselves\n");
   } else {
@@ -410,7 +418,9 @@ static void input_packet(sPacket *rxPacket)
       subGHz_radio_driver.send(&ackPacket);
     }
 #endif /* CSMA_SEND_SOFT_ACK */
+    rxDataLen = packetbuf_datalen(rxPacket);
   }
+  return rxDataLen;
 }
 
 /**
@@ -430,10 +440,10 @@ static int off(void) {
 /**
  *
  */
-static void init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void))) {
+static void init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
   radio_value_t radio_max_payload_len;
   csmaEvtIdOffset = evtOffset;
-  csmaIrq2Task = packedEvtHndl;
+  csmaEvtHndl = packedEvtHndl;
   {
 	uint8_t node_mac[8];
 	(*(uint32_t*)node_mac) = HAL_GetUIDw1();
@@ -442,6 +452,7 @@ static void init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(voi
 	TRice("msg:MCU uid %08X %08X %08X to %08X %08X MAC.\n", HAL_GetUIDw0(), HAL_GetUIDw1(), HAL_GetUIDw2(), (*(uint32_t*)node_mac), (*(((uint32_t*)node_mac)+1)));
 	linkaddr_set_node_addr((linkaddr_t*)node_mac);
   }
+  seqNr = (uint8_t)System_Random(0xFF);
   subGHz_radio_driver.init(evtOffset, packedEvtHndl);
   /* Check that the radio can correctly report its max supported payload */
   if(subGHz_radio_driver.get_value(RADIO_CONST_MAX_PAYLOAD_LEN, &radio_max_payload_len) != radio_ok) {

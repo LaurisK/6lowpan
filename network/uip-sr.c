@@ -48,41 +48,42 @@ static int num_nodes;
 
 /* Every known node in the network */
 uip_sr_node_t *nodes = NULL;
+
+static uint16_t srEvtIdOffset;
+static fRadioEvtHndl srEvtHndl;
 /*---------------------------------------------------------------------------*/
-int
-uip_sr_num_nodes(void)
-{
+int uip_sr_num_nodes(void) {
   return num_nodes;
 }
 /*---------------------------------------------------------------------------*/
-static int
-node_matches_address(void *graph, const uip_sr_node_t *node, const uip_ipaddr_t *addr)
-{
+static int node_matches_address(void *graph, const uip_sr_node_t *node, const uip_ipaddr_t *addr) {
   if(node == NULL || addr == NULL || graph != node->graph) {
     return 0;
   } else {
     uip_ipaddr_t node_ipaddr;
     rpl_lite_driver.get_sr_node_ipaddr(&node_ipaddr, node);
+    if (uip_is_addr_linklocal(addr)) {
+    	uip_create_linklocal_prefix(&node_ipaddr);
+    }
     return uip_ipaddr_cmp(&node_ipaddr, addr);
   }
 }
 /*---------------------------------------------------------------------------*/
-uip_sr_node_t *
-uip_sr_get_node(void *graph, const uip_ipaddr_t *addr)
-{
-  uip_sr_node_t *l;
-  for(l = nodes; l != NULL; l = l->next) {
+uip_sr_node_t* uip_sr_get_node(void *graph, const uip_ipaddr_t *addr) {
+  uip_sr_node_t *walker = nodes;
+  while (NULL != walker) {
+	uip_ipaddr_t nodeAddr;
+	rpl_lite_driver.get_sr_node_ipaddr(&nodeAddr, walker);
     /* Compare prefix and node identifier */
-    if(node_matches_address(graph, l, addr)) {
-      return l;
+    if(node_matches_address(graph, walker, addr)) {
+      return walker;
     }
+    walker = walker->next;
   }
   return NULL;
 }
 /*---------------------------------------------------------------------------*/
-int
-uip_sr_is_addr_reachable(void *graph, const uip_ipaddr_t *addr)
-{
+int uip_sr_is_addr_reachable(void *graph, const uip_ipaddr_t *addr) {
   int max_depth = UIP_SR_LINK_NUM;
   uip_ipaddr_t root_ipaddr;
   uip_sr_node_t *node;
@@ -99,9 +100,7 @@ uip_sr_is_addr_reachable(void *graph, const uip_ipaddr_t *addr)
   return node != NULL && node == root_node;
 }
 /*---------------------------------------------------------------------------*/
-void
-uip_sr_expire_parent(void *graph, const uip_ipaddr_t *child, const uip_ipaddr_t *parent)
-{
+void uip_sr_expire_parent(void *graph, const uip_ipaddr_t *child, const uip_ipaddr_t *parent) {
   uip_sr_node_t *l = uip_sr_get_node(graph, child);
   /* Check if parent matches */
   if(l != NULL && node_matches_address(graph, l->parent, parent)) {
@@ -109,9 +108,7 @@ uip_sr_expire_parent(void *graph, const uip_ipaddr_t *child, const uip_ipaddr_t 
   }
 }
 /*---------------------------------------------------------------------------*/
-uip_sr_node_t *
-uip_sr_update_node(void *graph, const uip_ipaddr_t *child, const uip_ipaddr_t *parent, uint32_t lifetime)
-{
+uip_sr_node_t* uip_sr_update_node(void *graph, const uip_ipaddr_t *child, const uip_ipaddr_t *parent, uint32_t lifetime) {
   uip_sr_node_t *child_node = uip_sr_get_node(graph, child);
   uip_sr_node_t *parent_node = uip_sr_get_node(graph, parent);
   uip_sr_node_t *old_parent_node;
@@ -124,11 +121,13 @@ uip_sr_update_node(void *graph, const uip_ipaddr_t *child, const uip_ipaddr_t *p
     	  TRice("err:NS: no space left for root node!\n");
         return NULL;
       }
+      TRice("msg:creating new parent link.\n");
     }
   }
 
   /* No node for this child, add one */
   if(child_node == NULL) {
+	TRice("msg:creating new child link.\n");
     child_node = pvPortMalloc(sizeof(uip_sr_node_t));
     /* No space left, abort */
     if(child_node == NULL) {
@@ -139,6 +138,9 @@ uip_sr_update_node(void *graph, const uip_ipaddr_t *child, const uip_ipaddr_t *p
     child_node->next = nodes;
     nodes = child_node;
     num_nodes++;
+    if (NULL != parent) {
+    	srEvtHndl(srEvtIdOffset + radio_dagLinkCreated, (void*)child);
+    }
   }
 
   /* Initialize node */
@@ -146,20 +148,15 @@ uip_sr_update_node(void *graph, const uip_ipaddr_t *child, const uip_ipaddr_t *p
   child_node->lifetime = lifetime;
   memcpy(child_node->link_identifier, ((const unsigned char *)child) + 8, 8);
 
-  /* Is the node reachable before the update? */
-  if(uip_sr_is_addr_reachable(graph, child)) {
-    old_parent_node = child_node->parent;
-    /* Update node */
-    child_node->parent = parent_node;
-    /* Has the node become unreachable? May happen if we create a loop. */
-    if(!uip_sr_is_addr_reachable(graph, child)) {
-      /* The new parent makes the node unreachable, restore old parent.
-       * We will take the update next time, with chances we know more of
-       * the topology and the loop is gone. */
-      child_node->parent = old_parent_node;
-    }
-  } else {
-    child_node->parent = parent_node;
+  old_parent_node = child_node->parent;
+  /* Update node */
+  child_node->parent = parent_node;
+  /* Has the node become unreachable? May happen if we create a loop. */
+  if(!uip_sr_is_addr_reachable(graph, child)) {
+    /* The new parent makes the node unreachable, restore old parent.
+     * We will take the update next time, with chances we know more of
+     * the topology and the loop is gone. */
+    child_node->parent = old_parent_node;
   }
 
   TRiceS("msg:NS: updating link, child %s, ", uip6_printAddr(child, NULL));
@@ -169,8 +166,10 @@ uip_sr_update_node(void *graph, const uip_ipaddr_t *child, const uip_ipaddr_t *p
   return child_node;
 }
 /*---------------------------------------------------------------------------*/
-void uip_sr_init(void) {
+void uip_sr_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
   num_nodes = 0;
+  srEvtIdOffset = evtOffset;
+  srEvtHndl = packedEvtHndl;
 }
 /*---------------------------------------------------------------------------*/
 uip_sr_node_t * uip_sr_node_head(void) {
@@ -195,6 +194,11 @@ static void uip_sr_node_remove(uip_sr_node_t *itemToRemove) {
 		}
 		follower = walker;
 		walker = walker->next;
+	}
+	{
+		uip_ipaddr_t nodeAddr;
+		rpl_lite_driver.get_sr_node_ipaddr(&nodeAddr, itemToRemove);
+		srEvtHndl(srEvtIdOffset + radio_dagLinkDestroyed, &nodeAddr);
 	}
 	vPortFree(itemToRemove);
     num_nodes--;

@@ -158,7 +158,7 @@ uip_ds6_route_init(void)
 #if (UIP_MAX_ROUTES != 0)
   memb_init(&routememb);
   list_init(routelist);
-  nbr_table_register("neighbor routes", nbr_routes, (nbr_table_callback *)rm_routelist_callback);
+  nbr_table_register("neighbor routes", nbr_routes, (nbr_table_callback *)rm_routelist_callback, LAYER_RPL);
 #endif /* (UIP_MAX_ROUTES != 0) */
 
 #if UIP_DS6_NOTIFICATIONS
@@ -363,8 +363,7 @@ uip_ds6_route_add(const uip_ipaddr_t *ipaddr, uint8_t length,
        nbr_route table. If so, the neighbor already has a route entry
        list.
     */
-    routes = nbr_table_get_from_lladdr(nbr_routes,
-                                       (linkaddr_t *)nexthop_lladdr);
+    routes = nbr_table_get_from_lladdr(nbr_routes, (linkaddr_t *)nexthop_lladdr);
 
     if(routes == NULL) {
       /* If the neighbor did not have an entry in our neighbor table,
@@ -533,8 +532,7 @@ rm_routelist_callback(nbr_table_item_t *ptr)
 }
 #endif /* (UIP_MAX_ROUTES != 0) */
 /*---------------------------------------------------------------------------*/
-void
-uip_ds6_route_rm_by_nexthop(const uip_ipaddr_t *nexthop)
+void uip_ds6_route_rm_by_nexthop(const uip_ipaddr_t *nexthop)
 {
 #if (UIP_MAX_ROUTES != 0)
   /* Get routing entry list of this neighbor */
@@ -542,14 +540,12 @@ uip_ds6_route_rm_by_nexthop(const uip_ipaddr_t *nexthop)
   struct uip_ds6_route_neighbor_routes *routes;
 
   nexthop_lladdr = uip_ds6_nbr_lladdr_from_ipaddr(nexthop);
-  routes = nbr_table_get_from_lladdr(nbr_routes,
-                                     (linkaddr_t *)nexthop_lladdr);
+  routes = nbr_table_get_from_lladdr(nbr_routes, (linkaddr_t *)nexthop_lladdr);
   rm_routelist(routes);
 #endif /* (UIP_MAX_ROUTES != 0) */
 }
 /*---------------------------------------------------------------------------*/
-uip_ds6_defrt_t *
-uip_ds6_defrt_add(const uip_ipaddr_t *ipaddr, unsigned long interval)
+uip_ds6_defrt_t * uip_ds6_defrt_add(const uip_ipaddr_t *ipaddr, unsigned long interval)
 {
   uip_ds6_defrt_t *d;
 
@@ -597,8 +593,7 @@ if(1/*LOG_DBG_ENABLED*/) {
   return d;
 }
 /*---------------------------------------------------------------------------*/
-void
-uip_ds6_defrt_rm(uip_ds6_defrt_t *defrt)
+void uip_ds6_defrt_rm(uip_ds6_defrt_t *defrt)
 {
   uip_ds6_defrt_t *d;
 
@@ -664,7 +659,7 @@ const uip_ipaddr_t * uip_ds6_defrt_choose(void)
   for(d = dfltRouterListHead; d != NULL; d = d->next) {
     TRiceS("msg:Default route, IP address %s\n", uip6_printAddr(&d->ipaddr, NULL));
     bestnbr = uip_ds6_nbr_lookup(&d->ipaddr);
-    if(bestnbr != NULL && bestnbr->state != NBR_INCOMPLETE) {
+    if(bestnbr != NULL && bestnbr->nbrState != NBR_INCOMPLETE) {
       TRiceS("msg:Default route found, IP address %s\n", uip6_printAddr(&d->ipaddr, NULL));
       return &d->ipaddr;
     } else {

@@ -42,10 +42,8 @@
  *
  */
 
-//#include "net/routing/rpl-lite/rpl.h"
-//#include "net/nbr-table.h"
 #include "rpl.h"
-#include "rpl-icmp6.h"
+#include "rpl-nbr-policy.h"
 #include "rpl-neighbor.h"
 
 /*
@@ -65,9 +63,7 @@ static const linkaddr_t *worst_rank_nbr_lladdr; /* lladdr of the the neighbor wi
 static rpl_rank_t worst_rank;
 
 /*---------------------------------------------------------------------------*/
-static void
-update_state(void)
-{
+static void update_state(void) {
   uip_ds6_nbr_t *ds6_nbr;
   rpl_nbr_t *rpl_nbr;
   rpl_rank_t nbr_rank;
@@ -89,8 +85,7 @@ update_state(void)
 
     nbr_rank = rpl_neighbor_rank_via_nbr(rpl_nbr);
     /* Select worst-rank neighbor */
-    if(rpl_nbr != curr_instance.dag.preferred_parent
-       && nbr_rank > worst_rank) {
+    if(rpl_nbr != curr_instance.dag.preferred_parent && nbr_rank > worst_rank) {
       /* This is the worst-rank neighbor - this is a good candidate for removal */
       worst_rank = nbr_rank;
       worst_rank_nbr_lladdr = nbr_lladdr;
@@ -105,16 +100,12 @@ update_state(void)
   TRice("dbg:nbr-policy: free: %d, parents: %d\n", num_free, num_parents);
 }
 /*---------------------------------------------------------------------------*/
-static const linkaddr_t *
-find_worst_rank_nbr_lladdr(void)
-{
+static const linkaddr_t * find_worst_rank_nbr_lladdr(void) {
   update_state();
   return worst_rank_nbr_lladdr;
 }
 /*---------------------------------------------------------------------------*/
-static const linkaddr_t *
-find_removable_dio(uip_ipaddr_t *from, rpl_dio_t *dio)
-{
+static const linkaddr_t * find_removable_dio(/*uip_ipaddr_t *from, */rpl_dio_t *dio) {
   update_state();
 
   if(!curr_instance.used || curr_instance.instance_id != dio->instance_id) {
@@ -125,23 +116,20 @@ find_removable_dio(uip_ipaddr_t *from, rpl_dio_t *dio)
   /* Add the new neighbor only if it is better than the current worst. */
   if(dio->rank + curr_instance.min_hoprankinc < worst_rank - curr_instance.min_hoprankinc / 2) {
     /* Found *great* neighbor - add! */
-	  TRice("dbg:nbr-policy: DIO rank %u, worst_rank %u -- add to cache\n",
-           dio->rank, worst_rank);
+	  TRice("dbg:nbr-policy: DIO rank %u, worst_rank %u -- add to cache\n", dio->rank, worst_rank);
     return worst_rank_nbr_lladdr;
   }
 
-  TRice("dbg:nbr-policy: DIO rank %u, worst_rank %u -- do not add to cache\n",
-         dio->rank, worst_rank);
+  TRice("dbg:nbr-policy: DIO rank %u, worst_rank %u -- do not add to cache\n", dio->rank, worst_rank);
   return NULL;
 }
 /*---------------------------------------------------------------------------*/
-const linkaddr_t * rpl_nbr_policy_find_removable(nbr_table_reason_t reason, void *data)
-{
+const linkaddr_t * rpl_nbr_policy_find_removable(nbr_table_reason_t reason, void *data) {
   /* When we get the DIO/DAO/DIS we know that UIP contains the
      incoming packet */
   switch(reason) {
     case NBR_TABLE_REASON_RPL_DIO:
-      return find_removable_dio(&UIP_IP_BUF->srcipaddr, data);
+      return find_removable_dio(/*&UIP_IP_BUF->srcipaddr, */data);
     case NBR_TABLE_REASON_RPL_DIS:
       return find_worst_rank_nbr_lladdr();
     case NBR_TABLE_REASON_IPV6_ND_AUTOFILL:

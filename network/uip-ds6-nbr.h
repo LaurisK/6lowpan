@@ -59,11 +59,11 @@
 
 /*--------------------------------------------------*/
 /** \brief Possible states for the nbr cache entries */
-#define  NBR_INCOMPLETE 0
-#define  NBR_REACHABLE 1
+#define  NBR_INCOMPLETE 1
 #define  NBR_STALE 2
 #define  NBR_DELAY 3
 #define  NBR_PROBE 4
+#define  NBR_REACHABLE 5
 
 /** \brief Set non-zero (1) to enable multiple IPv6 addresses to be
  * associated with a link-layer address */
@@ -107,9 +107,9 @@ typedef struct uip_ds6_nbr {
 #endif /* UIP_DS6_NBR_MULTI_IPV6_ADDRS */
   uip_ipaddr_t ipaddr;
   uint8_t isrouter;
-  uint8_t state;
+  uint8_t nbrState;
 #if UIP_ND6_SEND_NS || UIP_ND6_SEND_RA
-  sTimeTimer reachable;
+  sTimeTimer reachTmo;
   sTimeTimer sendns;
   uint8_t nscount;
 #endif /* UIP_ND6_SEND_NS || UIP_ND6_SEND_RA */

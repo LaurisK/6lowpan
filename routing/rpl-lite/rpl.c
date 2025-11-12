@@ -58,13 +58,10 @@
 #warning "deglobalize uip_ds6_if"
 extern uip_ds6_netif_t uip_ds6_if;
 
-uip_ipaddr_t rpl_multicast_addr;
 static uint8_t rpl_leaf_only = RPL_DEFAULT_LEAF_ONLY;
 
 /*---------------------------------------------------------------------------*/
-int
-rpl_lollipop_greater_than(int a, int b)
-{
+int rpl_lollipop_greater_than(int a, int b) {
   /* Check if we are comparing an initial value with an old value */
   if(a > RPL_LOLLIPOP_CIRCULAR_REGION && b <= RPL_LOLLIPOP_CIRCULAR_REGION) {
     return (RPL_LOLLIPOP_MAX_VALUE + 1 + b - a) > RPL_LOLLIPOP_SEQUENCE_WINDOWS;
@@ -76,9 +73,7 @@ rpl_lollipop_greater_than(int a, int b)
 			 RPL_LOLLIPOP_SEQUENCE_WINDOWS));
 }
 /*---------------------------------------------------------------------------*/
-const uip_ipaddr_t *
-rpl_get_global_address(void)
-{
+const uip_ipaddr_t * rpl_get_global_address(void) {
   int i;
   uint8_t state;
   uip_ipaddr_t *ipaddr = NULL;
@@ -100,9 +95,7 @@ rpl_get_global_address(void)
   return ipaddr;
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_link_callback(const linkaddr_t *addr, int status, int numtx)
-{
+void rpl_link_callback(const linkaddr_t *addr, int status, int numtx) {
   if(curr_instance.used == 1 ) {
     rpl_nbr_t *nbr = rpl_neighbor_get_from_lladdr((uip_lladdr_t *)addr);
     if(nbr != NULL) {
@@ -110,6 +103,7 @@ rpl_link_callback(const linkaddr_t *addr, int status, int numtx)
       probing as done */
 #if RPL_WITH_PROBING
       if(curr_instance.dag.urgent_probing_target == nbr) {
+        TRice("msg:Urgent target was probed.\n");
         curr_instance.dag.urgent_probing_target = NULL;
       }
 #endif
@@ -122,29 +116,21 @@ rpl_link_callback(const linkaddr_t *addr, int status, int numtx)
   }
 }
 /*---------------------------------------------------------------------------*/
-int
-rpl_has_joined(void)
-{
+int rpl_has_joined(void) {
   return curr_instance.used && curr_instance.dag.state >= DAG_JOINED;
 }
 /*---------------------------------------------------------------------------*/
-int
-rpl_is_reachable(void)
-{
+int rpl_is_reachable(void) {
   return curr_instance.used && curr_instance.dag.state == DAG_REACHABLE;
 }
 /*---------------------------------------------------------------------------*/
-static void
-set_ip_from_prefix(uip_ipaddr_t *ipaddr, rpl_prefix_t *prefix)
-{
+static void set_ip_from_prefix(uip_ipaddr_t *ipaddr, rpl_prefix_t *prefix) {
   memset(ipaddr, 0, sizeof(uip_ipaddr_t));
   memcpy(ipaddr, &prefix->prefix, (prefix->length + 7) / 8);
   Addr_SetInterfId(ipaddr, &uip_lladdr);
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_reset_prefix(rpl_prefix_t *last_prefix)
-{
+void rpl_reset_prefix(rpl_prefix_t *last_prefix) {
   uip_ipaddr_t ipaddr;
   uip_ds6_addr_t *rep;
   set_ip_from_prefix(&ipaddr, last_prefix);
@@ -156,9 +142,7 @@ rpl_reset_prefix(rpl_prefix_t *last_prefix)
   curr_instance.dag.prefix_info.length = 0;
 }
 /*---------------------------------------------------------------------------*/
-int
-rpl_set_prefix_from_addr(uip_ipaddr_t *addr, unsigned len, uint8_t flags)
-{
+int rpl_set_prefix_from_addr(uip_ipaddr_t *addr, unsigned len, uint8_t flags) {
   uip_ipaddr_t ipaddr;
 
   if(addr == NULL || len == 0 || len > 128 || !(flags & UIP_ND6_RA_FLAG_AUTONOMOUS)) {
@@ -182,9 +166,7 @@ rpl_set_prefix_from_addr(uip_ipaddr_t *addr, unsigned len, uint8_t flags)
   return 1;
 }
 /*---------------------------------------------------------------------------*/
-int
-rpl_set_prefix(rpl_prefix_t *prefix)
-{
+int rpl_set_prefix(rpl_prefix_t *prefix) {
   if(prefix != NULL && rpl_set_prefix_from_addr(&prefix->prefix, prefix->length, prefix->flags)) {
     curr_instance.dag.prefix_info.lifetime = prefix->lifetime;
     return 1;
@@ -192,24 +174,18 @@ rpl_set_prefix(rpl_prefix_t *prefix)
   return 0;
 }
 /*---------------------------------------------------------------------------*/
-static void init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void))) {
+static void init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
 	TRice("msg:initializing\n");
 
-  /* Initialize multicast address and register it */
-  uip_create_linklocal_rplnodes_mcast(&rpl_multicast_addr);
-  uip_ds6_maddr_add(&rpl_multicast_addr);
-
-  rpl_dag_init();
+  rpl_dag_init(evtOffset, packedEvtHndl);
   rpl_neighbor_init();
   rpl_timers_init(evtOffset, packedEvtHndl);
   rpl_icmp6_init();
 
-  uip_sr_init();
+  uip_sr_init(evtOffset, packedEvtHndl);
 }
 /*---------------------------------------------------------------------------*/
-static int
-get_sr_node_ipaddr(uip_ipaddr_t *addr, const uip_sr_node_t *node)
-{
+static int get_sr_node_ipaddr(uip_ipaddr_t *addr, const uip_sr_node_t *node) {
   if(addr != NULL && node != NULL) {
     memcpy(addr, &curr_instance.dag.dag_id, 8);
     memcpy(((unsigned char *)addr) + 8, &node->link_identifier, 8);
@@ -227,15 +203,11 @@ static void drop_route(uip_ds6_route_t *route) {
   /* Do nothing. RPL-lite only supports non-storing mode, i.e. no routes */
 }
 /*---------------------------------------------------------------------------*/
-void
-rpl_set_leaf_only(uint8_t value)
-{
+void rpl_set_leaf_only(uint8_t value) {
   rpl_leaf_only = value;
 }
 /*---------------------------------------------------------------------------*/
-uint8_t
-rpl_get_leaf_only(void)
-{
+uint8_t rpl_get_leaf_only(void) {
   return rpl_leaf_only;
 }
 /*---------------------------------------------------------------------------*/

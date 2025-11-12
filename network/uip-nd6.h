@@ -340,7 +340,7 @@ typedef struct uip_nd6_opt_redirected_hdr {
  *   a SLLAO option, otherwise no.
  */
 void
-uip_nd6_ns_output(uip_ipaddr_t *src, uip_ipaddr_t *dest, uip_ipaddr_t *tgt);
+uip_nd6_ns_output(sUipBuff *nsBuff, uip_ipaddr_t *src, uip_ipaddr_t *dest, uip_ipaddr_t *tgt);
 
 #if UIP_CONF_ROUTER
 #if UIP_ND6_SEND_RA
@@ -352,19 +352,6 @@ uip_nd6_ns_output(uip_ipaddr_t *src, uip_ipaddr_t *dest, uip_ipaddr_t *tgt);
 void uip_nd6_ra_output(sUipBuff *dsPeriodicBuff, uip_ipaddr_t *dest);
 #endif /* UIP_ND6_SEND_RA */
 #endif /*UIP_CONF_ROUTER*/
-
-/**
- * \brief Send a Router Solicitation
- *
- * src is chosen through the uip_netif_select_src function. If src is
- * unspecified  (i.e. we do not have a preferred address yet), then we do not
- * put a SLLAO option (MUST NOT in RFC 4861). Otherwise we do.
- *
- * RS message format,
- * possible option is SLLAO, MUST NOT be included if source = unspecified
- * SHOULD be included otherwise
- */
-void uip_nd6_rs_output(void);
 
 /**
  * \brief Initialise the uIP ND core

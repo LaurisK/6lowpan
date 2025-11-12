@@ -49,7 +49,6 @@
 #include "sicslowpan.h"
 #include "uipopt.h"
 #include "cmsis_os.h"
-#include "../evt_radio.h"
 #include "App/common.h"
 #include "../mac/framer/frame802154.h"
 
@@ -83,7 +82,7 @@ static TimerHandle_t periodicTim;
 #endif
 
 static uint16_t tcpipEvtIdOffset;
-void (*tcpipIrq2Task)(uint16_t, void(*cbFunc)(void));
+static fRadioEvtHndl tcpipEvtHndl;
 static sUipBuff rxBuff;
 /*---------------------------------------------------------------------------*/
 
@@ -155,7 +154,7 @@ static uint16_t packet_input(sUipBuff *rxPacket) {
     }
 #endif /* UIP_TAG_TC_WITH_VARIABLE_RETRANSMISSIONS */
 
-    uip_process(rxPacket, UIP_DATA);
+    uip_process(NULL, rxPacket, UIP_DATA);
     if(rxPacket->len > 0) {
       tcpip_ipv6_output(rxPacket);
     }
@@ -226,42 +225,6 @@ tcp_listen(uint16_t port)
 //}
 #endif /* UIP_TCP */
 /*---------------------------------------------------------------------------*/
-#if UIP_UDP
-//void
-//udp_attach(struct uip_udp_conn *conn, void *appstate)
-//{
-//  //init_appstate(&conn->appstate, appstate);
-//}
-///*---------------------------------------------------------------------------*/
-struct uip_udp_conn *
-udp_new(const uip_ipaddr_t *ripaddr, uint16_t port, void *appstate)
-{
-  struct uip_udp_conn *c = uip_udp_new(ripaddr, port);
-
-  if(c == NULL) {
-    return NULL;
-  }
-
-  //init_appstate(&c->appstate, appstate);
-
-  return c;
-}
-/*---------------------------------------------------------------------------*/
-struct uip_udp_conn *udp_broadcast_new(uint16_t port, void *appstate)
-{
-  uip_ipaddr_t addr;
-  struct uip_udp_conn *conn;
-
-  uip_create_linklocal_allnodes_mcast(&addr);
-
-  conn = udp_new(&addr, port, appstate);
-  if(conn != NULL) {
-    udp_bind(conn, port);
-  }
-  return conn;
-}
-#endif /* UIP_UDP */
-/*---------------------------------------------------------------------------*/
 #if UIP_CONF_ICMP6
 uint8_t icmp6_new(void *appstate) {
   if(uip_icmp6_conns.appstate.p == PROCESS_NONE) {
@@ -283,22 +246,18 @@ tcpip_icmp6_call(uint8_t type)
 }
 #endif /* UIP_CONF_ICMP6 */
 /*---------------------------------------------------------------------------*/
-uint16_t tcpip_input(uint8_t **rxData)
+void tcpip_input(void)
 {
-	if (sicslowpan_driver.input(&rxBuff)) {
+  if (sicslowpan_driver.input(&rxBuff)) {
 #warning "netstack.c/h is for packet filtering, firewall or other functionality which is not needed for now"
-  if(1/*netstack_process_ip_callback(NETSTACK_IP_INPUT, NULL) == NETSTACK_IP_PROCESS*/) {
-	  uint16_t rxLen = packet_input(&rxBuff);
-	    return rxLen;
-  } /* else - do nothing and drop */
+    if(1/*netstack_process_ip_callback(NETSTACK_IP_INPUT, NULL) == NETSTACK_IP_PROCESS*/) {
+	  packet_input(&rxBuff);
+    } /* else - do nothing and drop */
   //uipbuf_clear(); do not care - we clear it at start of reception. and now use different buffers for RX/TX and stuff.
-	}
-	return 0;
+  }
 }
 /*---------------------------------------------------------------------------*/
-static void
-output_fallback(sUipBuff *uipBuff)
-{
+static void output_fallback(sUipBuff *uipBuff) {
 #ifdef UIP_FALLBACK_INTERFACE
   uip_last_proto = *(uipBuff->buff.u8 + UIP_IPH_LEN);
   TRice("msg:fallback: removing ext hdrs & setting proto %d %d\n", uip_ext_len, uip_last_proto);
@@ -318,9 +277,7 @@ output_fallback(sUipBuff *uipBuff)
 #endif /* !UIP_FALLBACK_INTERFACE */
 }
 /*---------------------------------------------------------------------------*/
-static void
-annotate_transmission(const uip_ipaddr_t *nexthop)
-{
+static void annotate_transmission(const uip_ipaddr_t *nexthop) {
 #if TCPIP_CONF_ANNOTATE_TRANSMISSIONS
   static uint8_t annotate_last;
   static uint8_t annotate_has_last = 0;
@@ -425,9 +382,7 @@ send_queued(uip_ds6_nbr_t *nbr)
 #endif /*UIP_CONF_IPV6_QUEUE_PKT*/
 }
 /*---------------------------------------------------------------------------*/
-static int
-send_nd6_ns(sUipBuff *uipBuff, const uip_ipaddr_t *nexthop)
-{
+static int send_nd6_ns(sUipBuff *uipBuff, const uip_ipaddr_t *nexthop) {
   int err = 1;
 
 #if UIP_ND6_SEND_NS
@@ -443,9 +398,9 @@ send_nd6_ns(sUipBuff *uipBuff, const uip_ipaddr_t *nexthop)
    * solicitation.  Otherwise, any one of the addresses assigned to the
    * interface should be used."*/
    if(uip_ds6_is_my_addr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr)){
-      uip_nd6_ns_output(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL, &nbr->ipaddr);
+      uip_nd6_ns_output(uipBuff, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL, &nbr->ipaddr);
     } else {
-      uip_nd6_ns_output(NULL, NULL, &nbr->ipaddr);
+      uip_nd6_ns_output(uipBuff, NULL, NULL, &nbr->ipaddr);
     }
 
    Time_TimerSet(&nbr->sendns, Ds6_GetRetransmitTmoInMs() / 1000);
@@ -471,12 +426,12 @@ void tcpip_ipv6_output(sUipBuff *uipBuff)
   }
 
   if(uipBuff->len > UIP_LINK_MTU) {
-	  TRice("err:output: Packet too big");
+	  TRice("err:output: Packet too big\n");
     goto exit;
   }
 
   if(uip_is_addr_unspecified(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr)){
-	  TRice("err:output: Destination address unspecified");
+	  TRice("err:output: Destination address unspecified\n");
     goto exit;
   }
 
@@ -496,13 +451,14 @@ void tcpip_ipv6_output(sUipBuff *uipBuff)
   /* We first check if the destination address is one of ours. There is no
    * loopback interface -- instead, process this directly as incoming. */
   if(uip_ds6_is_my_addr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr)) {
-	  TRice("msg:output: sending to ourself\n");
+	TRice("msg:output: sending to ourself\n");
     packet_input(uipBuff);
     return;
   }
 
   /* Look for a next hop */
-  if((nexthop = get_nexthop(uipBuff, &ipaddr)) == NULL) {
+  nexthop = get_nexthop(uipBuff, &ipaddr);
+  if(NULL == nexthop) {
     goto exit;
   }
   annotate_transmission(nexthop);
@@ -516,7 +472,9 @@ void tcpip_ipv6_output(sUipBuff *uipBuff)
     neighbor cache out of the way in cases ND is not used */
     uip_lladdr_t lladdr;
     Addr_GetInterfId(&lladdr, nexthop);
-    if((nbr = uip_ds6_nbr_add(nexthop, &lladdr, 0, NBR_REACHABLE, NBR_TABLE_REASON_IPV6_ND_AUTOFILL, NULL)) == NULL) {
+    TRice("msg:output: link-layer address %s lookup.\n", (char*)linkaddr_printAddr((linkaddr_t*)&lladdr));
+    nbr = uip_ds6_nbr_add(nexthop, &lladdr, 0, NBR_REACHABLE, NBR_TABLE_REASON_IPV6_ND_AUTOFILL, NULL);
+    if(NULL == nbr) {
       TRiceS("err:output: failed to autofill neighbor cache for host %s", uip6_printAddr(nexthop, NULL));
       TRiceS("err:, link-layer addr  %s\n", (char*)linkaddr_printAddr((linkaddr_t*)&lladdr));
       goto exit;
@@ -526,7 +484,7 @@ void tcpip_ipv6_output(sUipBuff *uipBuff)
 
   if(nbr == NULL) {
     if(send_nd6_ns(uipBuff, nexthop)) {
-    	TRice("err:output: failed to add neighbor to cache\n");
+      TRice("err:output: failed to add neighbor to cache.\n");
       goto exit;
     } else {
       /* We're sending NS here instead of original packet */
@@ -535,18 +493,18 @@ void tcpip_ipv6_output(sUipBuff *uipBuff)
   }
 
 #if UIP_ND6_SEND_NS
-  if(nbr->state == NBR_INCOMPLETE) {
-	  TRice("err:output: nbr cache entry incomplete\n");
+  if(nbr->nbrState == NBR_INCOMPLETE) {
+	TRice("err:output: nbr cache entry incomplete\n");
     queue_packet(nbr);
     goto exit;
   }
   /* Send in parallel if we are running NUD (nbc state is either STALE,
      DELAY, or PROBE). See RFC 4861, section 7.3.3 on node behavior. */
-  if(nbr->state == NBR_STALE) {
-    nbr->state = NBR_DELAY;
-    Time_TimerSet(&nbr->reachable, UIP_ND6_DELAY_FIRST_PROBE_TIME);
+  if(nbr->nbrState == NBR_STALE) {
+    nbr->nbrState = NBR_DELAY;
+    Time_TimerSet(&nbr->reachTmo, UIP_ND6_DELAY_FIRST_PROBE_TIME);
     nbr->nscount = 0;
-    TRice("msg:output: nbr cache entry stale moving to delay\n");
+    TRice("info:output: nbr cache entry stale moving to NBR_STALE\n");
   }
 #endif /* UIP_ND6_SEND_NS */
 
@@ -572,25 +530,24 @@ exit:
 sUipBuff uipPollBuff;
 /*---------------------------------------------------------------------------*/
 #if UIP_UDP
-static struct uip_udp_conn *pollUdpConn = NULL;
-static void PollUdp(void) {
-    if(NULL != pollUdpConn) {
-      uip_udp_conn = pollUdpConn;
-      uip_process(&uipPollBuff, UIP_UDP_TIMER);
+static sSocket *pollingSocket = NULL;
+static void PollUdp(void* unused) {
+    if(NULL != pollingSocket) {
+      uip_process(pollingSocket, &uipPollBuff, UIP_UDP_TIMER);
       tcpip_ipv6_output(&uipPollBuff);
     }
-    pollUdpConn = NULL;
+    pollingSocket = NULL;
 }
 
-void tcpip_poll_udp(struct uip_udp_conn *conn) {
-	pollUdpConn = conn;
-	tcpipIrq2Task(tcpipEvtIdOffset + radio_taskCall, PollUdp);
+void tcpip_poll_udp(sSocket *socket) {
+	pollingSocket = socket;
+	tcpipEvtHndl(tcpipEvtIdOffset + radio_taskCall, PollUdp);
 }
 #endif /* UIP_UDP */
 /*---------------------------------------------------------------------------*/
 #if UIP_TCP
 static struct uip_conn *pollTcpConn = NULL;
-static void PollTcp(void) {
+static void PollTcp(void* unused) {
     if(NULL != pollTcpConn) {
       uip_conn = pollTcpConn;
       uip_process(&uipPollBuff, UIP_POLL_REQUEST);
@@ -603,13 +560,11 @@ static void PollTcp(void) {
 
 void tcpip_poll_tcp(struct uip_conn *conn) {
 	pollTcpConn = conn;
-	tcpipIrq2Task(tcpipEvtIdOffset + radio_taskCall, PollTcp);
+	tcpipEvtHndl(tcpipEvtIdOffset + radio_taskCall, PollTcp);
 }
 #endif /* UIP_TCP */
 /*---------------------------------------------------------------------------*/
-void
-tcpip_uipcall(void)
-{
+void tcpip_uipcall(void) {
 //  uip_udp_appstate_t *ts;
 //
 //#if UIP_UDP
@@ -672,9 +627,11 @@ static void HandleTcpipPeriodicTimer(TimerHandle_t periodicTim) {
 }
 #endif
 
-void tcpip_init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void))) {
+void tcpip_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
 	linkaddr_t linkAddr;
 	uip_ds6_addr_t *localLinkInfo;
+	tcpipEvtIdOffset = evtOffset;
+	tcpipEvtHndl = packedEvtHndl;
 #if UIP_TCP
 	  periodicTim = xTimerCreate("tcpipPeriodicTimer", pdMS_TO_TICKS(500), pdTRUE, 0, HandleTcpipPeriodicTimer);
 	  xTimerStart(periodicTim, 0);
@@ -688,11 +645,8 @@ void tcpip_init(uint16_t evtOffset, void (*packedEvtHndl)(uint16_t, void(*)(void
 #endif
   sicslowpan_driver.init(evtOffset, packedEvtHndl);
   /* Initialize routing protocol */
-  uip_init();
+  uip_init(evtOffset, packedEvtHndl);
   rpl_lite_driver.init(evtOffset, packedEvtHndl);
-
-#warning "mesh root is started here manualy - this should be under some logic done automaticaly"
-  rpl_lite_driver.root_start();
 
   linkaddr_get_node_addr(&linkAddr);
   localLinkInfo = uip_ds6_get_link_local(-1);
@@ -709,6 +663,7 @@ void tcpip_deinit() {
          connections. */
 
 //    p = (struct process *)data;
+	uip_deinit();
 #if UIP_TCP
     l = s.listenports;
     for(i = 0; i < UIP_LISTENPORTS; ++i) {
@@ -731,17 +686,15 @@ void tcpip_deinit() {
       }
     }
 #endif /* UIP_TCP */
-#if UIP_UDP
-    {
-      struct uip_udp_conn *cptr;
+}
 
-      for(cptr = &uip_udp_conns[0];
-          cptr < &uip_udp_conns[UIP_UDP_CONNS]; ++cptr) {
-//        if(cptr->appstate.p == p) {
-//          cptr->lport = 0;
-//        }
-      }
-    }
-#endif /* UIP_UDP */
+void tcpip_StartDag(void) {
+  if (0 == rpl_lite_driver.node_is_root()) {
+	rpl_lite_driver.root_start();
+  }
+}
+
+uint8_t tcpip_IAmGadRoot(void) {
+	return ((0 == rpl_lite_driver.node_is_root()) ? false : true);
 }
 /*---------------------------------------------------------------------------*/

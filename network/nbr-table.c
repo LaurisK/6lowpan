@@ -36,24 +36,17 @@
 #include <string.h>
 #include "nbr-table.h"
 
-#define NBR_DEBUG 1
+#define NBR_DEBUG 0
 #if NBR_DEBUG
 #include "App/Time/time.h"
 #include "cmsis_os.h"
+#include "../routing/rpl-lite/rpl-nbr-policy.h"
 
 static uint8_t initialized = 0;
 static TimerHandle_t dbgTimer;
 #else
 #define PRINTF(...)
 #endif
-
-/* This is the callback function that will be called when there is a
- *  nbr-policy active
- **/
-#ifdef NBR_TABLE_FIND_REMOVABLE
-const linkaddr_t *NBR_TABLE_FIND_REMOVABLE(nbr_table_reason_t reason, void *data);
-#endif /* NBR_TABLE_FIND_REMOVABLE */
-
 
 /* List of link-layer addresses of the neighbors, used as key in the tables */
 typedef struct nbr_table_key {
@@ -79,23 +72,17 @@ static nbr_table_key_t *keyListHead = NULL, *keyListTail = NULL;
 
 /*---------------------------------------------------------------------------*/
 /* Get a key from a neighbor index */
-static nbr_table_key_t *
-key_from_index(int index)
-{
+static nbr_table_key_t* key_from_index(int index) {
   return (index != -1) ? &neighborAddr[index] : NULL;
 }
 /*---------------------------------------------------------------------------*/
 /* Get an item from its neighbor index */
-static nbr_table_item_t *
-item_from_index(nbr_table_t *table, int index)
-{
+static nbr_table_item_t * item_from_index(nbr_table_t *table, int index) {
   return table != NULL && index != -1 ? (char *)table->data + index * table->item_size : NULL;
 }
 /*---------------------------------------------------------------------------*/
 /* Get the neighbor index of an item */
-static int
-index_from_key(nbr_table_key_t *key)
-{
+static int index_from_key(nbr_table_key_t *key) {
   return (key != NULL) ? (key - neighborAddr) : -1;
 }
 /*---------------------------------------------------------------------------*/
@@ -107,23 +94,17 @@ index_from_item(nbr_table_t *table, const nbr_table_item_t *item)
 }
 /*---------------------------------------------------------------------------*/
 /* Get an item from its key */
-static nbr_table_item_t *
-item_from_key(nbr_table_t *table, nbr_table_key_t *key)
-{
+static nbr_table_item_t* item_from_key(nbr_table_t *table, nbr_table_key_t *key) {
   return item_from_index(table, index_from_key(key));
 }
 /*---------------------------------------------------------------------------*/
 /* Get the key af an item */
-static nbr_table_key_t *
-key_from_item(nbr_table_t *table, const nbr_table_item_t *item)
-{
+static nbr_table_key_t* key_from_item(nbr_table_t *table, const nbr_table_item_t *item) {
   return key_from_index(index_from_item(table, item));
 }
 /*---------------------------------------------------------------------------*/
 /* Get the index of a neighbor from its link-layer address */
-static int
-index_from_lladdr(const linkaddr_t *lladdr)
-{
+static int index_from_lladdr(const linkaddr_t *lladdr) {
   nbr_table_key_t *key;
   /* Allow lladdr-free insertion, useful e.g. for IPv6 ND.
    * Only one such entry is possible at a time, indexed by linkaddr_null. */
@@ -154,9 +135,7 @@ nbr_get_bit(uint8_t *bitmap, nbr_table_t *table, nbr_table_item_t *item)
 }
 /*---------------------------------------------------------------------------*/
 /* Set bit in "used" or "locked" bitmap */
-static int
-nbr_set_bit(uint8_t *bitmap, nbr_table_t *table, nbr_table_item_t *item, int value)
-{
+static int nbr_set_bit(uint8_t *bitmap, nbr_table_t *table, nbr_table_item_t *item, int value) {
   int item_index = index_from_item(table, item);
 
   if(table != NULL && item_index != -1) {
@@ -202,9 +181,7 @@ static void remove_key(nbr_table_key_t *least_used_key) {
   }
 }
 /*---------------------------------------------------------------------------*/
-static nbr_table_key_t *
-nbr_table_allocate(nbr_table_reason_t reason, void *data)
-{
+static nbr_table_key_t * nbr_table_allocate(nbr_table_reason_t reason, void *data) {
   static uint8_t unusedKeyPos = 0;
   nbr_table_key_t *key;
   int least_used_count = 0;
@@ -217,11 +194,10 @@ nbr_table_allocate(nbr_table_reason_t reason, void *data)
   } else {
 #ifdef NBR_TABLE_FIND_REMOVABLE
     const linkaddr_t *lladdr;
-    lladdr = NBR_TABLE_FIND_REMOVABLE(reason, data);
+    lladdr = rpl_nbr_policy_find_removable(reason, data);
     if(lladdr == NULL) {
       /* Nothing found that can be deleted - return NULL to indicate failure */
-      PRINTF("*** Not removing entry to allocate new\n");
-      return NULL;
+      //return NULL;
     } else {
       /* used least_used_key to indicate what is the least useful entry */
       int index;
@@ -232,7 +208,6 @@ nbr_table_allocate(nbr_table_reason_t reason, void *data)
       }
       /* Allow delete of locked item? */
       if(least_used_key != NULL && locked) {
-        PRINTF("Deleting locked item!\n");
         locked_map[index] = 0;
       }
     }
@@ -259,10 +234,10 @@ nbr_table_allocate(nbr_table_reason_t reason, void *data)
             if((used & 1) == 1) {
               used_count++;
             }
-          used >>= 1;
+            used >>= 1;
           }
           /* Find least used item */
-          if(least_used_key == NULL || used_count < least_used_count) {
+          if((least_used_key == NULL) || (used_count < least_used_count)) {
             least_used_key = key;
             least_used_count = used_count;
             if(used_count == 0) { /* We won't find any least used item */
@@ -312,7 +287,7 @@ static void printNbrTable(TimerHandle_t periodicTim)
 /*---------------------------------------------------------------------------*/
 /* Register a new neighbor table. To be used at initialization by modules
  * using a neighbor table */
-int nbr_table_register(const char *tblName, nbr_table_t *table, nbr_table_callback *callback) {
+int nbr_table_register(const char *tblName, nbr_table_t *table, nbr_table_callback *callback, uint8_t layer) {
 #if NBR_DEBUG
   if(!initialized) {
     initialized = 1;
@@ -337,6 +312,7 @@ int nbr_table_register(const char *tblName, nbr_table_t *table, nbr_table_callba
     table->callback = callback;
     all_tables[table->index] = table;
     table->tableName = tblName;
+    table->layer = layer;
 #if NBR_DEBUG
     TRiceS("msg:Neighbor register '%s' table", (char*)tblName);
     TRice("msg: at idx(%d)\n", table->index);
@@ -404,8 +380,8 @@ nbr_table_item_t * nbr_table_add_lladdr(nbr_table_t *table, const linkaddr_t *ll
   if(lladdr == NULL) {
     lladdr = &linkaddr_null;
   }
-
-  if((index = index_from_lladdr(lladdr)) == -1) {
+  index = index_from_lladdr(lladdr);
+  if(-1 == index) {
      /* Neighbor not yet in table, let's try to allocate one */
     key = nbr_table_allocate(reason, data);
 
@@ -429,9 +405,11 @@ nbr_table_item_t * nbr_table_add_lladdr(nbr_table_t *table, const linkaddr_t *ll
     /* Get index from newly allocated neighbor */
     index = index_from_key(key);
 
-    /* Set link-layer address */
-    linkaddr_copy(&key->lladdr, lladdr);
+  } else {
+	key = key_from_index(index);
   }
+  /* Set link-layer address */
+  linkaddr_copy(&key->lladdr, lladdr);
 
   /* Get item in the current table */
   item = item_from_index(table, index);
@@ -456,11 +434,25 @@ void *nbr_table_get_from_lladdr(nbr_table_t *table, const linkaddr_t *lladdr) {
 /* Removes a neighbor from the current table (unset "used" bit) */
 int nbr_table_remove(nbr_table_t *table, void *item) {
   int ret = nbr_set_bit(used_map, table, item, 0);
+  int index = index_from_item(table, item);
+  uint8_t tbl = num_tables;
 #if NBR_DEBUG
-  int i = index_from_item(table, item);
-  TRice("msg:Neighbor remove %d\n", i);
+  TRice("msg:Neighbor remove %d\n", index);
 #endif
   nbr_set_bit(locked_map, table, item, 0);
+  memset(item, 0, table->item_size);
+  while (tbl) {
+	tbl--;
+	if ((NULL != all_tables[tbl]) && (all_tables[tbl]->layer > table->layer) && ((-1) < index) && (used_map[index] & (1 << all_tables[tbl]->index))) {
+	  if (NULL != all_tables[tbl]->callback) {
+		all_tables[tbl]->callback(item_from_index(all_tables[tbl], index));
+	  } else {
+		used_map[index] &= ~(1 << all_tables[tbl]->index);
+		locked_map[index] &= ~(1 << all_tables[tbl]->index);
+		memset(item_from_index(all_tables[tbl], index), 0, all_tables[tbl]->item_size);
+	  }
+	}
+  }
   return ret;
 }
 /*---------------------------------------------------------------------------*/

@@ -42,8 +42,13 @@
 #ifdef NBR_TABLE_CONF_MAX_NEIGHBORS
 #define NBR_TABLE_MAX_NEIGHBORS NBR_TABLE_CONF_MAX_NEIGHBORS
 #else /* NBR_TABLE_CONF_MAX_NEIGHBORS */
-#define NBR_TABLE_MAX_NEIGHBORS 8
+#define NBR_TABLE_MAX_NEIGHBORS 16
 #endif /* NBR_TABLE_CONF_MAX_NEIGHBORS */
+
+#define LAYER_DRV 0
+#define LAYER_MAC 1
+#define LAYER_NET 2
+#define LAYER_RPL 3
 
 /* An item in a neighbor table */
 typedef void nbr_table_item_t;
@@ -58,6 +63,7 @@ typedef struct nbr_table {
   nbr_table_callback *callback;
   nbr_table_item_t *data;
   const char *tableName;
+  uint8_t layer;
 } nbr_table_t;
 
 /** \brief A static neighbor table. To be initialized through nbr_table_register(name) */
@@ -88,7 +94,7 @@ typedef enum {
 
 /** \name Neighbor tables: register and loop through table elements */
 /** @{ */
-int nbr_table_register(const char *tblName, nbr_table_t *table, nbr_table_callback *callback);
+int nbr_table_register(const char *tblName, nbr_table_t *table, nbr_table_callback *callback, uint8_t layer);
 int nbr_table_is_registered(nbr_table_t *table);
 nbr_table_item_t *nbr_table_head(nbr_table_t *table);
 nbr_table_item_t *nbr_table_next(nbr_table_t *table, nbr_table_item_t *item);

@@ -45,9 +45,6 @@
  *  Simon Duquennoy <simon.duquennoy@inria.fr>
  */
 
-//#include "net/routing/rpl-lite/rpl.h"
-//#include "net/nbr-table.h"
-//#include "net/link-stats.h"
 #include "rpl.h"
 #include "rpl-neighbor.h"
 
@@ -77,7 +74,7 @@
 #ifdef RPL_MRHOF_CONF_MAX_LINK_METRIC
 #define MAX_LINK_METRIC     RPL_MRHOF_CONF_MAX_LINK_METRIC
 #else /* RPL_MRHOF_CONF_MAX_LINK_METRIC */
-#define MAX_LINK_METRIC     512 /* Eq ETX of 4 */
+#define MAX_LINK_METRIC     1024 /* Eq ETX of 4 */
 #endif /* RPL_MRHOF_CONF_MAX_LINK_METRIC */
 
 /* Reject parents that have a higher path cost than the following. */
@@ -101,22 +98,16 @@
 #define TIME_THRESHOLD (10 * SECONDS_IN_MINUTE)
 
 /*---------------------------------------------------------------------------*/
-static void
-reset(void)
-{
+static void reset(void) {
 	 TRice("msg:reset MRHOF\n");
 }
 /*---------------------------------------------------------------------------*/
-static uint16_t
-nbr_link_metric(rpl_nbr_t *nbr)
-{
+static uint16_t nbr_link_metric(rpl_nbr_t *nbr) {
   const struct link_stats *stats = rpl_neighbor_get_link_stats(nbr);
   return stats != NULL ? stats->etx : 0xffff;
 }
 /*---------------------------------------------------------------------------*/
-static uint16_t
-link_metric_to_rank(uint16_t etx)
-{
+static uint16_t link_metric_to_rank(uint16_t etx) {
 #if RPL_MRHOF_SQUARED_ETX
   uint32_t squared_etx = ((uint32_t)etx * etx) / LINK_STATS_ETX_DIVISOR;
   return (uint16_t)MIN(squared_etx, 0xffff);
@@ -125,9 +116,7 @@ link_metric_to_rank(uint16_t etx)
 #endif /* RPL_MRHOF_SQUARED_ETX */
 }
 /*---------------------------------------------------------------------------*/
-static uint16_t
-nbr_path_cost(rpl_nbr_t *nbr)
-{
+static uint16_t nbr_path_cost(rpl_nbr_t *nbr) {
   uint16_t base;
 
   if(nbr == NULL) {
@@ -155,9 +144,7 @@ nbr_path_cost(rpl_nbr_t *nbr)
   return MIN((uint32_t)base + link_metric_to_rank(nbr_link_metric(nbr)), 0xffff);
 }
 /*---------------------------------------------------------------------------*/
-static rpl_rank_t
-rank_via_nbr(rpl_nbr_t *nbr)
-{
+static rpl_rank_t rank_via_nbr(rpl_nbr_t *nbr) {
   uint16_t min_hoprankinc;
   uint16_t path_cost;
 
@@ -172,25 +159,19 @@ rank_via_nbr(rpl_nbr_t *nbr)
   return MAX(MIN((uint32_t)nbr->rank + min_hoprankinc, RPL_INFINITE_RANK), path_cost);
 }
 /*---------------------------------------------------------------------------*/
-static int
-nbr_has_usable_link(rpl_nbr_t *nbr)
-{
+static int nbr_has_usable_link(rpl_nbr_t *nbr) {
   uint16_t link_metric = nbr_link_metric(nbr);
   /* Exclude links with too high link metrics  */
   return link_metric <= MAX_LINK_METRIC;
 }
 /*---------------------------------------------------------------------------*/
-static int
-nbr_is_acceptable_parent(rpl_nbr_t *nbr)
-{
+static int nbr_is_acceptable_parent(rpl_nbr_t *nbr) {
   uint16_t path_cost = nbr_path_cost(nbr);
   /* Exclude links with too high link metrics or path cost (RFC6719, 3.2.2) */
   return nbr_has_usable_link(nbr) && path_cost <= MAX_PATH_COST;
 }
 /*---------------------------------------------------------------------------*/
-static int
-within_hysteresis(rpl_nbr_t *nbr)
-{
+static int within_hysteresis(rpl_nbr_t *nbr) {
   uint16_t path_cost = nbr_path_cost(nbr);
   uint16_t parent_path_cost = nbr_path_cost(curr_instance.dag.preferred_parent);
 

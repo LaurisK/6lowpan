@@ -152,10 +152,10 @@ uint8_t uip_flags;
 /* uip_conn always points to the current connection (set to NULL for UDP). */
 struct uip_conn *uip_conn;
 
-#if UIP_ACTIVE_OPEN || UIP_UDP
+#if UIP_ACTIVE_OPEN && UIP_TCP
 /* Keeps track of the last port used for a new connection. */
 static uint16_t lastport;
-#endif /* UIP_ACTIVE_OPEN || UIP_UDP */
+#endif /* UIP_ACTIVE_OPEN && UIP_TCP */
 /** @} */
 
 /*---------------------------------------------------------------------------*/
@@ -208,8 +208,9 @@ uint8_t uip_acc32[4];
  */
 /*---------------------------------------------------------------------------*/
 #if UIP_UDP
-struct uip_udp_conn *uip_udp_conn;
-struct uip_udp_conn uip_udp_conns[UIP_UDP_CONNS];
+struct uip_udp_conn *servicingUdpConn;
+static sSocket socketsList[UIP_UDP_CONNS] = {0};
+
 #endif /* UIP_UDP */
 /** @} */
 
@@ -313,8 +314,8 @@ upper_layer_chksum(sUipBuff *uipBuff, uint8_t proto)
 
   upper_layer_len = uip6_uipHdrGetLen(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)) - uipBuff->extLen;
 
-  TRice("msg:Upper layer checksum len: %d from: %d\n", upper_layer_len,
-         (int)((uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen) - uipBuff->buff.u8));
+//  TRice("msg:Upper layer checksum len: %d from: %d\n", upper_layer_len,
+//         (int)((uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen) - uipBuff->buff.u8));
 
   /* First sum pseudoheader. */
   /* IP protocol and length fields. This addition cannot carry. */
@@ -346,13 +347,13 @@ uint16_t uip_udpchksum(sUipBuff *uipBuff) {
 #endif /* UIP_UDP && UIP_UDP_CHECKSUMS */
 #endif /* UIP_ARCH_CHKSUM */
 /*---------------------------------------------------------------------------*/
-void
-uip_init(void)
-{
+void uip_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
+#if UIP_TCP
   int c;
+#endif /* UIP_TCP */
   linkaddr_get_node_addr((linkaddr_t *)&uip_lladdr);
   uipbuf_init();
-  uip_ds6_init();
+  uip_ds6_init(evtOffset, packedEvtHndl);
   uip_icmp6_init();
   uip_nd6_init();
 
@@ -365,15 +366,9 @@ uip_init(void)
   }
 #endif /* UIP_TCP */
 
-#if UIP_ACTIVE_OPEN || UIP_UDP
+#if UIP_ACTIVE_OPEN && UIP_TCP
   lastport = 1024;
-#endif /* UIP_ACTIVE_OPEN || UIP_UDP */
-
-#if UIP_UDP
-  for(c = 0; c < UIP_UDP_CONNS; ++c) {
-    uip_udp_conns[c].lport = 0;
-  }
-#endif /* UIP_UDP */
+#endif /* UIP_ACTIVE_OPEN && UIP_TCP */
 
 #if UIP_IPV6_MULTICAST
   UIP_MCAST6.init();
@@ -382,6 +377,14 @@ uip_init(void)
 #if UIP_CONF_IPV6_REASSEMBLY
 	reassemblyTmo = xTimerCreate("uIP6 reassembly", pdMS_TO_TICKS(1000 * UIP_REASS_MAXAGE), pdFALSE, 0, HandleReassemblyTmo);
 #endif /*UIP_CONF_IPV6_REASSEMBLY*/
+}
+/*---------------------------------------------------------------------------*/
+void uip_deinit(void) {
+#if UIP_UDP
+    {
+#warning "uip cennections deinig not present - not sure if needed."
+    }
+#endif /* UIP_UDP */
 }
 /*---------------------------------------------------------------------------*/
 #if UIP_TCP && UIP_ACTIVE_OPEN
@@ -473,7 +476,7 @@ bool uip_remove_ext_hdr(sUipBuff *uipBuff)
     memmove((uipBuff->buff.u8 + UIP_IPH_LEN), (uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen), (uipBuff->len - UIP_IPH_LEN - uipBuff->extLen));
 
     /* Update the IP length. */
-    if(uipbuf_add_ext_hdr(uipBuff, (-1 * uipBuff->extLen) == false)) {
+    if(uipbuf_add_ext_hdr(uipBuff, (-1 * uipBuff->extLen)) == false) {
       return false;
     }
     uip6_uipHdrSetLen(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8), uipBuff->len - UIP_IPH_LEN);
@@ -482,49 +485,77 @@ bool uip_remove_ext_hdr(sUipBuff *uipBuff)
 }
 /*---------------------------------------------------------------------------*/
 #if UIP_UDP
-struct uip_udp_conn *
-uip_udp_new(const uip_ipaddr_t *ripaddr, uint16_t rport)
-{
-  int c;
-  register struct uip_udp_conn *conn;
-
-  /* Find an unused local port. */
-  again:
-  ++lastport;
-
-  if(lastport >= 32000) {
-    lastport = 4096;
+sSocket *SocketUdp(uint16_t preferedPort, void (*portCb)(const uint8_t*, const uint16_t, const uip_ipaddr_t*, const uint16_t)) {
+  uint8_t  i = UIP_UDP_CONNS;
+  while (i) {
+	i--;
+	if (uip_is_addr_unspecified(&socketsList[i].dstAddr)) {
+		uint16_t freePort = (0 == preferedPort) ? 1024 : preferedPort;
+		uint8_t  j = UIP_UDP_CONNS;
+		while (j) {
+			j--;
+			if (!uip_is_addr_unspecified(&socketsList[j].dstAddr) && (socketsList[j].srcPort == freePort)) {
+				j = UIP_UDP_CONNS;
+				freePort++;
+				if (0 == freePort) {
+					freePort = 1;
+				}
+			}
+		}
+		socketsList[i].protoNr = UIP_PROTO_UDP;
+		socketsList[i].dstAddr.u8[15] = 0x01; //make it loopback in order to break unspecified pattern marking empty socket spot.
+		socketsList[i].ttl = Ds6_GetHopLimit();
+		socketsList[i].proto.udp.rxCb = portCb;
+		return (&socketsList[i]);
+	}
   }
-
-  for(c = 0; c < UIP_UDP_CONNS; ++c) {
-    if(uip_udp_conns[c].lport == __REVSH(lastport)) {
-      goto again;
-    }
-  }
-
-  conn = 0;
-  for(c = 0; c < UIP_UDP_CONNS; ++c) {
-    if(uip_udp_conns[c].lport == 0) {
-      conn = &uip_udp_conns[c];
-      break;
-    }
-  }
-
-  if(conn == 0) {
-    return 0;
-  }
-
-  conn->lport = __REVSH(lastport);
-  conn->rport = rport;
-  if(ripaddr == NULL) {
-    memset(&conn->ripaddr, 0, sizeof(uip_ipaddr_t));
-  } else {
-    uip_ipaddr_copy(&conn->ripaddr, ripaddr);
-  }
-  conn->ttl = Ds6_GetHopLimit();
-
-  return conn;
+  return NULL;
 }
+
+void BindUdp(sSocket *) {
+	//now we do nothing here ???
+}
+//struct uip_udp_conn * uip_udp_new(const uip_ipaddr_t *ripaddr, uint16_t rport, void (*portCb)(uint8_t*, uint16_t)) {
+//  int c;
+//  register struct uip_udp_conn *conn;
+//
+//  /* Find an unused local port. */
+//  again:
+//  ++lastport;
+//
+//  if(lastport >= 32000) {
+//    lastport = 4096;
+//  }
+//
+//  for(c = 0; c < UIP_UDP_CONNS; ++c) {
+//    if(uipUdpConns[c].lport == __REVSH(lastport)) {
+//      goto again;
+//    }
+//  }
+//
+//  conn = NULL;
+//  for(c = 0; c < UIP_UDP_CONNS; ++c) {
+//    if(uipUdpConns[c].lport == 0) {
+//      conn = &uipUdpConns[c];
+//      break;
+//    }
+//  }
+//
+//  if(NULL == conn) {
+//    return NULL;
+//  }
+//
+//  conn->lport = __REVSH(lastport);
+//  conn->rport = rport;
+//  if(ripaddr == NULL) {
+//    memset(&conn->ripaddr, 0, sizeof(uip_ipaddr_t));
+//  } else {
+//    uip_ipaddr_copy(&conn->ripaddr, ripaddr);
+//  }
+//  conn->ttl = Ds6_GetHopLimit();
+//  conn->portRxCb = portCb;
+//  return conn;
+//}
 #endif /* UIP_UDP */
 /*---------------------------------------------------------------------------*/
 #if UIP_TCP
@@ -901,7 +932,7 @@ static bool uip_update_ttl(sUipBuff *uipBuff)
   }
 }
 /*---------------------------------------------------------------------------*/
-void uip_process(sUipBuff *uipBuff, uint8_t flag)
+void uip_process(sSocket *socket, sUipBuff *uipBuff, uint8_t flag)
 {
   uint8_t *last_header;
   uint8_t protocol;
@@ -1055,7 +1086,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
   }
 #if UIP_UDP
   if(flag == UIP_UDP_TIMER) {
-    if(uip_udp_conn->lport != 0) {
+    if(socket->dstPort != 0) {
       uip_conn = NULL;
       uip_sappdata = uip_appdata = &uipBuff->buff.u8[UIP_IPUDPH_LEN];
       uipBuff->len = 0;
@@ -1145,7 +1176,14 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
   /* Refresh neighbor state after receiving a unicast message */
 #if UIP_ND6_SEND_NS
   if(!uip_is_addr_mcast(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr)) {
-    uip_ds6_nbr_refresh_reachable_state(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr);
+	if (uip_is_addr_linklocal(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr)) {
+      uip_ds6_nbr_refresh_reachable_state(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr);
+	} else {
+	  uip_ipaddr_t localizedAddr;
+	  memcpy(&localizedAddr, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, sizeof(uip_ipaddr_t));
+	  uip_create_linklocal_prefix(&localizedAddr);
+	  uip_ds6_nbr_refresh_reachable_state(&localizedAddr);
+	}
   }
 #endif /* UIP_ND6_SEND_NS */
 
@@ -1304,7 +1342,7 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
        * to the routing type
        */
 
-      TRice("dbg:Processing Routing header\n");
+      TRice("msg:Processing Routing header\n");
       if(((struct uip_routing_hdr *)ext_ptr)->seg_left > 0) {
         /* Process source routing header */
         if(rpl_lite_driver.ext_header_srh_update(uipBuff)) {
@@ -1389,51 +1427,96 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
   /* End of headers processing */
 
   icmp6_input:
-  /* This is IPv6 ICMPv6 processing code. */
-  TRice("msg:icmpv6 input length %d type: %d \n", uipBuff->len, ((struct uip_icmp_hdr*)(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen))->type);
+  {
+	uint8_t icmpType = ((struct uip_icmp_hdr*)(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen))->type;
+	uint8_t icmpCode = ((struct uip_icmp_hdr*)(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen))->icode;
+	/* This is IPv6 ICMPv6 processing code. */
+	switch(icmpType) {
+	case ICMP6_ECHO_REQUEST:
+		TRice("msg:icmpv6 {ICMP6_ECHO_REQUEST - Echo request} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_ECHO_REPLY:
+		TRice("msg:icmpv6 {ICMP6_ECHO_REPLY - Echo reply} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_RS:
+		TRice("msg:icmpv6 {ICMP6_RS - Router Solicitation} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_RA:
+		TRice("msg:icmpv6 {ICMP6_RA - Router Advertisement} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_NS:
+		TRice("msg:icmpv6 {ICMP6_NS - Neighbor Solicitation} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_NA:
+		TRice("msg:icmpv6 {ICMP6_NA - Neighbor advertisement} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_REDIRECT:
+		TRice("msg:icmpv6 {ICMP6_REDIRECT - Redirect} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_RPL:
+		TRice("msg:icmpv6 {ICMP6_RPL - RPL} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_MPL:
+		TRice("msg:icmpv6 {ICMP6_MPL - MPL} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_PRIV_EXP_100:
+		TRice("msg:icmpv6 {ICMP6_PRIV_EXP_100 - Private Experimentation} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_PRIV_EXP_101:
+		TRice("msg:icmpv6 {ICMP6_PRIV_EXP_101 - Private Experimentation} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_ROLL_TM:
+		TRice("msg:icmpv6 {ICMP6_ROLL_TM - ROLL Trickle Multicast} input length %d.\n", uipBuff->len);
+		break;
+	case ICMP6_ESMRF:
+		TRice("msg:icmpv6 {ICMP6_ESMRF - ESMRF Multicast} input length %d.\n", uipBuff->len);
+		break;
+	default:
+	  TRice("msg:icmpv6 input length %d type: %d \n", uipBuff->len, icmpType);
+	}
 
 #if UIP_CONF_IPV6_CHECKS
-  /* Compute and check the ICMP header checksum */
-  if(uip_icmp6chksum(uipBuff) != 0xffff) {
-    UIP_STAT(++uip_stat.icmp.drop);
-    UIP_STAT(++uip_stat.icmp.chkerr);
-    TRice("err:icmpv6 bad checksum\n");
-    goto drop;
-  }
+	/* Compute and check the ICMP header checksum */
+	if(uip_icmp6chksum(uipBuff) != 0xffff) {
+      UIP_STAT(++uip_stat.icmp.drop);
+      UIP_STAT(++uip_stat.icmp.chkerr);
+      TRice("err:icmpv6 bad checksum\n");
+      goto drop;
+	}
 #endif /*UIP_CONF_IPV6_CHECKS*/
 
-  UIP_STAT(++uip_stat.icmp.recv);
-  /*
-   * Here we process incoming ICMPv6 packets
-   * For echo request, we send echo reply
-   * For ND pkts, we call the appropriate function in uip-nd6.c
-   * We do not treat Error messages for now
-   * If no pkt is to be sent as an answer to the incoming one, we
-   * "goto drop". Else we just break; then at the after the "switch"
-   * we "goto send"
-   */
+	UIP_STAT(++uip_stat.icmp.recv);
+	/*
+	 * Here we process incoming ICMPv6 packets
+	 * For echo request, we send echo reply
+	 * For ND pkts, we call the appropriate function in uip-nd6.c
+	 * We do not treat Error messages for now
+	 * If no pkt is to be sent as an answer to the incoming one, we
+	 * "goto drop". Else we just break; then at the after the "switch"
+	 * we "goto send"
+	 */
 #if UIP_CONF_ICMP6
-  UIP_ICMP6_APPCALL(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->type);
+	UIP_ICMP6_APPCALL(IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->type);
 #endif /*UIP_CONF_ICMP6*/
 
-  /*
-   * Search generic input handlers.
-   * The handler is in charge of setting uip_len to 0
-   */
-  if(uip_icmp6_input(uipBuff, ((struct uip_icmp_hdr*)(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen))->type, ((struct uip_icmp_hdr*)(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen))->icode) == UIP_ICMP6_INPUT_ERROR) {
-	TRice("err:Unknown ICMPv6 message type/code %d\n", ((struct uip_icmp_hdr*)(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen))->type);
-    UIP_STAT(++uip_stat.icmp.drop);
-    UIP_STAT(++uip_stat.icmp.typeerr);
-    uipbuf_clear(uipBuff);
-  }
+	/*
+	 * Search generic input handlers.
+	 * The handler is in charge of setting uip_len to 0
+	 */
+	if(uip_icmp6_input(uipBuff, icmpType, icmpCode) == UIP_ICMP6_INPUT_ERROR) {
+	TRice("err:Unknown ICMPv6 message type(%d)/code(%d)\n", icmpType, icmpCode);
+	UIP_STAT(++uip_stat.icmp.drop);
+	UIP_STAT(++uip_stat.icmp.typeerr);
+	uipbuf_clear(uipBuff);
+	}
 
-  if(uipBuff->len > 0) {
-    goto send;
-  } else {
-    goto drop;
+	if(uipBuff->len > 0) {
+	goto send;
+	} else {
+	goto drop;
+	}
+	/* End of IPv6 ICMP processing. */
   }
-  /* End of IPv6 ICMP processing. */
-
 
 #if UIP_UDP
   /* UDP input processing. */
@@ -1466,40 +1549,67 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
 	  TRice("err:udp: zero port.\n");
     goto drop;
   }
-
-  /* Demultiplex this UDP packet between the UDP "connections". */
-  for(uip_udp_conn = &uip_udp_conns[0]; uip_udp_conn < &uip_udp_conns[UIP_UDP_CONNS]; ++uip_udp_conn) {
-    /* If the local UDP port is non-zero, the connection is considered
-       to be used. If so, the local port number is checked against the
-       destination port number in the received packet. If the two port
-       numbers match, the remote port number is checked if the
-       connection is bound to a remote port. Finally, if the
-       connection is bound to a remote IP address, the source IP
-       address of the packet is checked. */
-    if(uip_udp_conn->lport != 0 &&
-    		UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->destport == uip_udp_conn->lport &&
-       (uip_udp_conn->rport == 0 || UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->srcport == uip_udp_conn->rport) &&
-       (uip_is_addr_unspecified(&uip_udp_conn->ripaddr) || uip_ipaddr_cmp(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, &uip_udp_conn->ripaddr))) {
-      goto udp_found;
+  {
+	uint8_t i = UIP_UDP_CONNS;
+    /* Demultiplex this UDP packet between the UDP "connections". */
+	while (i) {
+   // for(udpConnWalker = &uipUdpConns[0]; udpConnWalker < &uipUdpConns[UIP_UDP_CONNS]; ++udpConnWalker) {
+      /* If the local UDP port is non-zero, the connection is considered
+         to be used. If so, the local port number is checked against the
+         destination port number in the received packet. If the two port
+         numbers match, the remote port number is checked if the
+         connection is bound to a remote port. Finally, if the
+         connection is bound to a remote IP address, the source IP
+         address of the packet is checked. */
+	  uint8_t isAMatch = true;
+	  i--;
+      if (socketsList[i].proto.udp.options.acceptLlBcast && (uip_is_addr_linklocal_allnodes_mcast(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr))) {
+          TRice("msg:Connection(%d) for port(%d)", i, socketsList[i].dstPort);
+          TRiceS("msg: targeting IP:%s,", uip6_printAddr(&socketsList[i].dstAddr, NULL));
+          TRice("msg: is a match accepting link-local broadcasts(FF02::01)\n");
+      } else if (socketsList[i].proto.udp.options.acceptLlRtrMcast && (uip_is_addr_linklocal_allrouters_mcast(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr))) {
+          TRice("msg:Connection(%d) for port(%d)", i, socketsList[i].dstPort);
+          TRiceS("msg: targeting IP:%s,", uip6_printAddr(&socketsList[i].dstAddr, NULL));
+          TRice("msg: is a match accepting link-local routers multicast(FF02::01)\n");
+      } else if (socketsList[i].proto.udp.options.acceptUnicast && (0 == memcmp(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, &socketsList[i].dstAddr, sizeof(uip_ip6addr_t)))) {
+          TRice("msg:Connection(%d) for port(%d)", i, socketsList[i].dstPort);
+          TRiceS("msg: targeting IP:%s,", uip6_printAddr(&socketsList[i].dstAddr, NULL));
+          TRiceS("msg: is a match accepting unicast(%s)\n", uip6_printAddr(&socketsList[i].dstAddr, NULL));
+      } else if (socketsList[i].proto.udp.options.acceptAll) {
+          TRice("msg:Connection(%d) for port(%d)", i, socketsList[i].dstPort);
+          TRiceS("msg: targeting IP:%s,", uip6_printAddr(&socketsList[i].dstAddr, NULL));
+          TRice("msg: is a match accepting all sources\n");
+      } else {
+    	  TRice("msg: did not match.\n");
+    	  isAMatch = false;
+      }
+      if ((isAMatch) && (socketsList[i].dstPort == UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->destport)) {
+    	  goto udp_found;
+#if 1/*for tracing only*/
+      } else if (isAMatch) {
+    	  TRice("msg:Destination port(%d) did not match listening port(%d)\n", UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->destport, socketsList[i].dstPort);
+#endif
+      }
     }
+    TRice("err:udp: no matching connection found\n");
+    UIP_STAT(++uip_stat.udp.drop);
+
+    uip_icmp6_error_output(uipBuff, ICMP6_DST_UNREACH, ICMP6_DST_UNREACH_NOPORT, 0);
+    goto send;
+
+    udp_found:
+    TRice("dbg:In udp_found\n");
+    UIP_STAT(++uip_stat.udp.recv);
+
+    uipBuff->len = uipBuff->len - UIP_IPUDPH_LEN;
+    uip_appdata = &uipBuff->buff.u8[UIP_IPUDPH_LEN];
+    uip_conn = NULL;
+    uip_flags = UIP_NEWDATA;
+    uip_sappdata = uip_appdata = &uipBuff->buff.u8[UIP_IPUDPH_LEN];
+    uipBuff->sLen = 0;
+    socketsList[i].proto.udp.rxCb(&uipBuff->buff.u8[UIP_IPUDPH_LEN], uipBuff->len, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->srcport);
+//    tcpip_uipcall();
   }
-  TRice("err:udp: no matching connection found\n");
-  UIP_STAT(++uip_stat.udp.drop);
-
-  uip_icmp6_error_output(uipBuff, ICMP6_DST_UNREACH, ICMP6_DST_UNREACH_NOPORT, 0);
-  goto send;
-
-  udp_found:
-  TRice("dbg:In udp_found\n");
-  UIP_STAT(++uip_stat.udp.recv);
-
-  uipBuff->len = uipBuff->len - UIP_IPUDPH_LEN;
-  uip_appdata = &uipBuff->buff.u8[UIP_IPUDPH_LEN];
-  uip_conn = NULL;
-  uip_flags = UIP_NEWDATA;
-  uip_sappdata = uip_appdata = &uipBuff->buff.u8[UIP_IPUDPH_LEN];
-  uipBuff->sLen = 0;
-  tcpip_uipcall();
 
   udp_send:
   TRice("dbg:In udp_send\n");
@@ -1515,16 +1625,16 @@ void uip_process(sUipBuff *uipBuff, uint8_t flag)
 
   IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->vtc = 0x60;
   IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->tcflow = 0x00;
-  IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->ttl = uip_udp_conn->ttl;
+  IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->ttl = socket->ttl;
   IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->proto = UIP_PROTO_UDP;
 
   UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->udplen = __REVSH(uipBuff->sLen + UIP_UDPH_LEN);
   UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->udpchksum = 0;
 
-  UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->srcport  = uip_udp_conn->lport;
-  UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->destport = uip_udp_conn->rport;
+  UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->srcport  = socket->srcPort;
+  UDP_HDR_CAST_TO_BUFF(uipBuff->buff.u8 + UIP_IPH_LEN + uipBuff->extLen)->destport = socket->dstPort;
 
-  uip_ipaddr_copy(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, &uip_udp_conn->ripaddr);
+  uip_ipaddr_copy(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr, &socket->dstAddr);
   uip_ds6_select_src(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, &IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->destipaddr);
 
   uip_appdata = &uipBuff->buff.u8[UIP_IPTCPH_LEN];
@@ -2310,11 +2420,11 @@ char *uip6_printAddr(const uip_ipaddr_t *addr, int16_t *len)
 
   if(addr == NULL) {
 	stringLen = snprintf(printAddrBuff, IP_STRING_LEN, "[NULL IP addr]");
-  } else if(0 == memcmp(addr, &loopbackIPv6, DEFINED_IPV6_ADDR_MASK)) {
+  } else if (0 == memcmp(addr, &loopbackIPv6, DEFINED_IPV6_ADDR_MASK)) {
 	stringLen = snprintf(printAddrBuff, IP_STRING_LEN, "::1 [Loopback Address]");
-  } else if(0 == memcmp(addr, &unspecifiedIPv6, DEFINED_IPV6_ADDR_MASK)) {
+  } else if (0 == memcmp(addr, &unspecifiedIPv6, DEFINED_IPV6_ADDR_MASK)) {
 	stringLen = snprintf(printAddrBuff, IP_STRING_LEN, ":: [Unspecified Address]");
-  } else if(0 == memcmp(addr, &IPv4MappedIPv6, IPV4_MAPPED_IPV6_MASK)) {
+  } else if (0 == memcmp(addr, &IPv4MappedIPv6, IPV4_MAPPED_IPV6_MASK)) {
     /*
      * Printing IPv4-mapped addresses is done according to RFC 4291 [1]
      *

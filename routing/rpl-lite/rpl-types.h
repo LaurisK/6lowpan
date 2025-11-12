@@ -51,27 +51,6 @@
 #include "rpl-conf.h"
  /********** Macros **********/
 
-/* Multicast address: create and compare */
-
-/** \brief Set IP address addr to the link-local, all-rpl-nodes
-   multicast address. */
-#define uip_create_linklocal_rplnodes_mcast(addr)	\
-  uip_ip6addr((addr), 0xff02, 0, 0, 0, 0, 0, 0, 0x001a)
-
-/** \brief Is IPv6 address addr the link-local, all-RPL-nodes
-   multicast address? */
-#define uip_is_addr_linklocal_rplnodes_mcast(addr)	    \
-  ((addr)->u8[0] == 0xff) &&				    \
-  ((addr)->u8[1] == 0x02) &&				    \
-  ((addr)->u16[1] == 0) &&				    \
-  ((addr)->u16[2] == 0) &&				    \
-  ((addr)->u16[3] == 0) &&				    \
-  ((addr)->u16[4] == 0) &&				    \
-  ((addr)->u16[5] == 0) &&				    \
-  ((addr)->u16[6] == 0) &&				    \
-  ((addr)->u8[14] == 0) &&				    \
-  ((addr)->u8[15] == 0x1a))
-
 /** \brief Compute lifetime, accounting for the lifetime unit */
 #define RPL_LIFETIME(lifetime) \
          (((lifetime) == RPL_INFINITE_LIFETIME) ? \
@@ -209,6 +188,7 @@ struct rpl_dag {
   rpl_nbr_t *unicast_dio_target;
 #if RPL_WITH_PROBING
   TimerHandle_t probing_timer;
+  TimerHandle_t urgProbeTmo;
   rpl_nbr_t *urgent_probing_target;
 #endif /* RPL_WITH_PROBING */
 #if RPL_WITH_DAO_ACK
@@ -232,8 +212,8 @@ struct rpl_instance {
   uint8_t dio_redundancy;
   rpl_rank_t max_rankinc;
   rpl_rank_t min_hoprankinc;
-  uint8_t default_lifetime;
-  uint16_t lifetime_unit; /* lifetime in seconds = lifetime_unit * default_lifetime */
+  uint8_t rplLifetime;
+  uint16_t lifetime_unit; /* lifetime in seconds = lifetime_unit * rplLifetime */
   rpl_dag_t dag; /* We support only one dag */
 };
 typedef struct rpl_instance rpl_instance_t;

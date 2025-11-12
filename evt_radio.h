@@ -16,9 +16,13 @@ typedef enum {
 	radio_incomingData,
 	radio_irqToTaskCall,
 	radio_taskCall, //typically to break nesting
+	radio_dagLinkCreated,
+	radio_dagLinkDestroyed,
 	radio_pollUdp,
 	radio_lastEvt
 } eRadioEvent;
+
+typedef void (*fRadioEvtHndl)(uint16_t, void*);
 
 #ifdef __cplusplus
 }

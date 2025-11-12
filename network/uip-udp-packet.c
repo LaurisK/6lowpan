@@ -41,22 +41,21 @@
 #include "tcpip.h"
 
 #include <string.h>
+static sUipBuff txUipBuff;
 
 /*---------------------------------------------------------------------------*/
-void uip_udp_packet_send(struct uip_udp_conn *c, const void *data, int len)
+void uip_udp_packet_send(sSocket *c, const void *data, int len)
 {
 #if UIP_UDP
   if(data != NULL && len <= (UIP_BUFSIZE - UIP_IPUDPH_LEN)) {
-	sUipBuff txUipBuff;
-    uip_udp_conn = c;
     txUipBuff.sLen = len;
     //memmove(&uip_buf[UIP_IPUDPH_LEN], data, len);
     memcpy(&txUipBuff.buff.u8[UIP_IPUDPH_LEN], data, len);
-    uip_process(&txUipBuff, UIP_UDP_SEND_CONN);
+    uip_process(c, &txUipBuff, UIP_UDP_SEND_CONN);
 
 #if UIP_IPV6_MULTICAST
   /* Let the multicast engine process the datagram before we send it */
-  if(uip_is_addr_mcast_routable(&uip_udp_conn->ripaddr)) {
+  if(uip_is_addr_mcast_routable(&servicingUdpConn->ripaddr)) {
     UIP_MCAST6.out();
   }
 #endif /* UIP_IPV6_MULTICAST */
@@ -72,7 +71,7 @@ void uip_udp_packet_send(struct uip_udp_conn *c, const void *data, int len)
 #endif /* UIP_UDP */
 }
 /*---------------------------------------------------------------------------*/
-void uip_udp_packet_sendto(struct uip_udp_conn *c, const void *data, int len,
+void uip_udp_packet_sendto(sSocket *c, const void *data, int len,
 		      const uip_ipaddr_t *toaddr, uint16_t toport)
 {
   uip_ipaddr_t curaddr;
@@ -80,18 +79,18 @@ void uip_udp_packet_sendto(struct uip_udp_conn *c, const void *data, int len,
 
   if(toaddr != NULL) {
     /* Save current IP addr/port. */
-    uip_ipaddr_copy(&curaddr, &c->ripaddr);
-    curport = c->rport;
+    uip_ipaddr_copy(&curaddr, &c->dstAddr);
+    curport = c->dstPort;
 
     /* Load new IP addr/port */
-    uip_ipaddr_copy(&c->ripaddr, toaddr);
-    c->rport = toport;
+    uip_ipaddr_copy(&c->dstAddr, toaddr);
+    c->dstPort = toport;
 
     uip_udp_packet_send(c, data, len);
 
     /* Restore old IP addr/port */
-    uip_ipaddr_copy(&c->ripaddr, &curaddr);
-    c->rport = curport;
+    uip_ipaddr_copy(&c->dstAddr, &curaddr);
+    c->dstPort = curport;
   }
 }
 /*---------------------------------------------------------------------------*/
