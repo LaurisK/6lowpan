@@ -88,8 +88,8 @@ extern "C" {
 #define POWER_DBM                   12.0
 #define POWER_INDEX                 7
 
-#define RSSI_RX_THRESHOLD          -118.0   /* dBm */
-#define RSSI_TX_THRESHOLD          -90.0   /* dBm */
+#define RSSI_RX_THRESHOLD          -85.0   /* dBm */
+#define RSSI_TX_THRESHOLD          -80.0   /* dBm */
 
 /*  Packet configuration parameters  */
 #if RADIO_LONG_PREAMBLE

@@ -265,8 +265,10 @@ static void TransmitFromQueue(void) {
 			            } else {
 			              /* Not an ack or ack not for us: collision */
 			          	  res = MAC_TX_COLLISION;
+			          	  TRice("msg:[CSMA] - not an ACK.\n");
 			            }
 		        	} else {
+		        		TRice("msg:[CSMA] - no ACK.\n");
 		        		res = MAC_TX_NOACK;
 		        	}
 		          radioDataReceived = 0;

@@ -114,19 +114,30 @@ static int16_t Radio_read_from_fifo(sPacket *packet) {
 	rx_bytes = S2LP_FIFO_ReadNumberBytesRxFifo();
 
 	if (rx_bytes <= packetbuf_remaininglen(packet)) {
+		int32_t rssiRunArr;
+		int8_t *rssiRun = &rssiRunArr;
+		uint8_t pqiSqi[2];
 		S2LP_ReadFIFO(rx_bytes, (uint8_t*)packetbuf_hdrptr(packet));
 		packetbuf_set_datalen(packet, rx_bytes);
 		retval = rx_bytes;
 		last_packet_timestamp = HAL_GetTick(); //@TODO: validate
 		last_packet_rssi = (uint16_t) S2LP_RADIO_QI_GetRssidBm();
 		//last_packet_lqi  = (uint16_t) S2LP_RADIO_QI_GetLqi();
+		S2LPSpiReadRegisters(LINK_QUALIF2_ADDR, 2, pqiSqi);
+		rssiRunArr = S2LP_RADIO_QI_GetRssidBmRun();
+		rssiRun[0] -= 146;
+		rssiRun[1] -= 146;
+		rssiRun[2] -= 146;
+		rssiRun[3] -= 146;
+		TRice("msg:[RADIO] RX(%d) stats: RSSI(%d), noise(%d %d %d %d), PQI(%d), CS(%d), SQI(%d).\n",
+				rx_bytes, (int16_t)last_packet_rssi, rssiRun[0], rssiRun[1], rssiRun[2], rssiRun[3], pqiSqi[0], (0x80 & pqiSqi[1]) ? 1 : 0, (0x7F & pqiSqi[1]));
 		packetbuf_set_attr(packet, PACKETBUF_ATTR_RSSI, last_packet_rssi);
 		packetbuf_set_attr(packet, PACKETBUF_ATTR_LINK_QUALITY, last_packet_lqi);
 	} else {
 		TRice("msg:Buf too small (%d bytes to hold %d bytes)\n", packetbuf_remaininglen(packet), rx_bytes);
 	}
 //	if (polling_mode) {
-		S2LP_CMD_StrobeFlushRxFifo();
+	S2LP_CMD_StrobeCommand(CMD_FLUSHRXFIFO);
 //	}
 
 	return retval;
@@ -559,8 +570,8 @@ static eTransmitRes Radio_transmit(uint16_t payloadLen) {
 	S2LP_CMD_StrobeTx();
 	/* wait for TX done */
 		/*To be on the safe side we put a timeout. */
-	osDelay(10);
-		BUSYWAIT_UNTIL(xTxDoneFlag, 10* RADIO_WAIT_TIMEOUT);
+	osDelay(1);
+	BUSYWAIT_UNTIL(xTxDoneFlag, 10 * RADIO_WAIT_TIMEOUT);
 	if (transmitting_packet) {
 		S2LP_CMD_StrobeSabort();
 		if (xTxDoneFlag == RESET) {
@@ -593,6 +604,7 @@ static eTransmitRes Radio_transmit(uint16_t payloadLen) {
   S2LP_GPIO_IrqConfig(RX_DATA_READY,S_ENABLE);
 #endif /*RADIO_SNIFF_MODE*/
 
+	S2LP_CMD_StrobeCommand(CMD_FLUSHRXFIFO);
 	S2LP_CMD_StrobeRx();
 	BUSYWAIT_UNTIL(radio_refresh_status() == MC_STATE_RX
 #if RADIO_SNIFF_MODE
@@ -622,7 +634,9 @@ static eTransmitRes Radio_send(sPacket *packet) {
     S2LP_TIM_FastRxTermTimer(S_ENABLE);
     S2LP_GPIO_IrqConfig(RX_DATA_READY,S_ENABLE);
 #endif /*RADIO_SNIFF_MODE*/
-		S2LP_CMD_StrobeRx(); TRice("msg:PREPARE FAILED\n");
+		S2LP_CMD_StrobeCommand(CMD_FLUSHRXFIFO);
+		S2LP_CMD_StrobeRx();
+		TRice("msg:PREPARE FAILED\n");
 		return tx_err;
 	}
 	return Radio_transmit(packetbuf_totlen(packet));
@@ -926,7 +940,7 @@ void Radio_process_irq_cb(void) {
 		TRice("dbg:IRQ_RX_DATA_DISC\r\n");
 		/* RX command - to ensure the device will be ready for the next reception */
 		if (x_irq_status.IRQ_RX_TIMEOUT) {
-			S2LP_CMD_StrobeFlushRxFifo();
+			S2LP_CMD_StrobeCommand(CMD_FLUSHRXFIFO);
 			S2LP_CMD_StrobeRx();
 		}
 	}
