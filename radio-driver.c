@@ -116,7 +116,7 @@ static int16_t Radio_read_from_fifo(sPacket *packet) {
 	if (rx_bytes <= packetbuf_remaininglen(packet)) {
 		int32_t rssiRunArr;
 		int8_t *rssiRun = &rssiRunArr;
-		uint8_t pqiSqi[2];
+		uint8_t pqiSqi[3];
 		S2LP_ReadFIFO(rx_bytes, (uint8_t*)packetbuf_hdrptr(packet));
 		packetbuf_set_datalen(packet, rx_bytes);
 		retval = rx_bytes;
@@ -124,13 +124,14 @@ static int16_t Radio_read_from_fifo(sPacket *packet) {
 		last_packet_rssi = (uint16_t) S2LP_RADIO_QI_GetRssidBm();
 		//last_packet_lqi  = (uint16_t) S2LP_RADIO_QI_GetLqi();
 		S2LPSpiReadRegisters(LINK_QUALIF2_ADDR, 2, pqiSqi);
+		S2LPSpiReadRegisters(AFC_CORR_ADDR, 1, &pqiSqi[2]);
 		rssiRunArr = S2LP_RADIO_QI_GetRssidBmRun();
 		rssiRun[0] -= 146;
 		rssiRun[1] -= 146;
 		rssiRun[2] -= 146;
 		rssiRun[3] -= 146;
-		TRice("msg:[RADIO] RX(%d) stats: RSSI(%d), noise(%d %d %d %d), PQI(%d), CS(%d), SQI(%d).\n",
-				rx_bytes, (int16_t)last_packet_rssi, rssiRun[0], rssiRun[1], rssiRun[2], rssiRun[3], pqiSqi[0], (0x80 & pqiSqi[1]) ? 1 : 0, (0x7F & pqiSqi[1]));
+		TRice("msg:[RADIO] RX(%d) stats: RSSI(%d), noise(%d %d %d %d), PQI(%d), CS(%d), SQI(%d), AFC(%d).\n",
+				rx_bytes, (int16_t)last_packet_rssi, rssiRun[0], rssiRun[1], rssiRun[2], rssiRun[3], pqiSqi[0], (0x80 & pqiSqi[1]) ? 1 : 0, (0x7F & pqiSqi[1]), (int8_t)pqiSqi[2]);
 		packetbuf_set_attr(packet, PACKETBUF_ATTR_RSSI, last_packet_rssi);
 		packetbuf_set_attr(packet, PACKETBUF_ATTR_LINK_QUALITY, last_packet_lqi);
 	} else {
@@ -403,6 +404,10 @@ static int8_t Radio_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
 
 	/* Configures the Radio packet handler part*/
 	S2LP_PCKT_BASIC_Init(&xBasicInit);
+	{
+		SAfcInit afc = {S_ENABLE, S_DISABLE, AFC_MODE_LOOP_CLOSED_ON_2ND_CONV_STAGE, 255, 2, 4};
+		S2LP_RADIO_AfcInit(&afc);
+	}
 
 #if RADIO_ADDRESS_FILTERING
 	S2LP_PCKT_HNDL_SetAutoPcktFilter(S_ENABLE);

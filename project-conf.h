@@ -38,7 +38,7 @@ extern "C" {
 #define RADIO_ADDRESS_FILTERING 1
 #define MCU_LOW_POWER 0
 #define RADIO_LOW_POWER 0
-#define RADIO_LONG_PREAMBLE 0
+#define RADIO_LONG_PREAMBLE 1
 
 /*Set PANID if needed */
 //#undef IEEE802154_CONF_PANID
