@@ -40,7 +40,7 @@ typedef enum {
 static sRadioInfo radioInfo = {.operatingChannel = CHANNEL_NUMBER};
 /* The buffer which holds incoming data. */
 static uint16_t rx_num_bytes = 0;
-//static uint8_t radio_rxbuf[MAX_PACKET_LEN];
+static uint8_t txBuf[MAX_PACKET_LEN]; //this is needed since current SPI write destroys buffer - this will need to be fixed.
 
 static volatile eRadioStatus radio_status = radio_off;
 static volatile uint8_t receiving_packet = 0;
@@ -115,9 +115,12 @@ static int16_t Radio_read_from_fifo(sPacket *packet) {
 
 	if (rx_bytes <= packetbuf_remaininglen(packet)) {
 		int32_t rssiRunArr;
+		uint32_t packetCrc;
+		uint16_t fsc = 0;
 		int8_t *rssiRun = &rssiRunArr;
 		uint8_t pqiSqi[3];
-		S2LP_ReadFIFO(rx_bytes, (uint8_t*)packetbuf_hdrptr(packet));
+		uint8_t *rxBuff = (uint8_t*)packetbuf_hdrptr(packet);
+		S2LP_ReadFIFO(rx_bytes, rxBuff);
 		packetbuf_set_datalen(packet, rx_bytes);
 		retval = rx_bytes;
 		last_packet_timestamp = HAL_GetTick(); //@TODO: validate
@@ -125,13 +128,21 @@ static int16_t Radio_read_from_fifo(sPacket *packet) {
 		//last_packet_lqi  = (uint16_t) S2LP_RADIO_QI_GetLqi();
 		S2LPSpiReadRegisters(LINK_QUALIF2_ADDR, 2, pqiSqi);
 		S2LPSpiReadRegisters(AFC_CORR_ADDR, 1, &pqiSqi[2]);
+		S2LPSpiReadRegisters(CRC_FIELD3_ADDR, 4, &packetCrc);
 		rssiRunArr = S2LP_RADIO_QI_GetRssidBmRun();
 		rssiRun[0] -= 146;
 		rssiRun[1] -= 146;
 		rssiRun[2] -= 146;
 		rssiRun[3] -= 146;
-		TRice("msg:[RADIO] RX(%d) stats: RSSI(%d), noise(%d %d %d %d), PQI(%d), CS(%d), SQI(%d), AFC(%d).\n",
-				rx_bytes, (int16_t)last_packet_rssi, rssiRun[0], rssiRun[1], rssiRun[2], rssiRun[3], pqiSqi[0], (0x80 & pqiSqi[1]) ? 1 : 0, (0x7F & pqiSqi[1]), (int8_t)pqiSqi[2]);
+		TRice("msg:[RADIO] RX(%d) stats: RSSI(%d), noise(%d %d %d %d), PQI(%d), CS(%d), SQI(%d), AFC(%d),\n",
+			  rx_bytes, (int16_t)last_packet_rssi, rssiRun[0], rssiRun[1], rssiRun[2], rssiRun[3], pqiSqi[0], (0x80 & pqiSqi[1]) ? 1 : 0, (0x7F & pqiSqi[1]), (int8_t)pqiSqi[2]);
+		pqiSqi[2] = rxBuff[2];
+		while (rx_bytes) {
+			rx_bytes--;
+			fsc += *rxBuff;
+			rxBuff++;
+		}
+		TRice("msg: \t packet info: seqNr(%d - ?), payloadCrc(0x%08X), fsc - %04X.\n", pqiSqi[2], packetCrc, fsc);
 		packetbuf_set_attr(packet, PACKETBUF_ATTR_RSSI, last_packet_rssi);
 		packetbuf_set_attr(packet, PACKETBUF_ATTR_LINK_QUALITY, last_packet_lqi);
 	} else {
@@ -535,15 +546,13 @@ static eTransmitRes Radio_prepare(sPacket *packet) {
 	S2LP_CMD_StrobeCommand(CMD_FLUSHTXFIFO);
 
 	S2LP_PCKT_BASIC_SetPayloadLength(packetbuf_totlen(packet));
-	//@TODO change IO implementation to avoid the copy here
-	//memcpy(tmpbuff, packetbuf_hdrptr(packet), packetbuf_totlen(packet));
 
 	/* Currently does no happen since S2LP_RX_FIFO_SIZE == MAX_PACKET_LEN also note that S2LP_RX_FIFO_SIZE == S2LP_TX_FIFO_SIZE */
 	if (packetbuf_totlen(packet) > S2LP_TX_FIFO_SIZE) {
 		TRice("msg:Payload bigger than FIFO size.'n");
 	} else {
-		S2LP_WriteFIFO(packetbuf_totlen(packet), (uint8_t*)packetbuf_hdrptr(packet));
-//    S2LP_WriteFIFO(payload_len, (uint8_t *)payload);
+	    memcpy(txBuf, packetbuf_hdrptr(packet), packetbuf_totlen(packet));
+		S2LP_WriteFIFO(packetbuf_totlen(packet), txBuf);
 		packet_is_prepared = 1;
 	}
 
@@ -950,7 +959,8 @@ void Radio_process_irq_cb(void) {
 
 #if !RADIO_SNIFF_MODE
 	if (x_irq_status.IRQ_RX_DATA_DISC && !transmitting_packet) {
-		TRice("dbg:IRQ_RX_DATA_DISC\r\n");
+		uint32_t irqReg = *(uint32_t*)&x_irq_status;
+		TRice("dbg:IRQ_RX_DATA_DISC(%d)[0x%08X]\n", S2LP_FIFO_ReadNumberBytesRxFifo(), irqReg);
 		/* RX command - to ensure the device will be ready for the next reception */
 		if (x_irq_status.IRQ_RX_TIMEOUT) {
 			S2LP_CMD_StrobeCommand(CMD_FLUSHRXFIFO);

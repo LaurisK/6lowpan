@@ -248,13 +248,15 @@ static void TransmitFromQueue(void) {
 		  packetPos--;
 		  if (0 != ((1 << packetPos) & neighborList->queuedTransmits)) {
 			  packet = neighborList->transmit[packetPos].packet;
+//	TRice("dbg:packetTrace >>> queuePacket from %d.\n", packetPos);
+//  	TRice8B("dbg:%02X\n", (uint8_t*)packetbuf_hdrptr(packet), packetbuf_totlen(packet));
 			  break;
 		  }
 		}
 		if (NULL != packet) {
 			uint8_t res = MAC_TX_ERR_FATAL;
 			uint8_t isBroadcast = packetbuf_holds_broadcast(packet);
-			uint8_t tempDly;
+			uint8_t tempDly = HAL_GetTick();
 			switch (subGHz_radio_driver.send(packet)) {
 			case tx_ok:
 		        if(isBroadcast) {
@@ -263,7 +265,19 @@ static void TransmitFromQueue(void) {
 		          /* Check for ack */
 		        	radioDataReceived = 0;
 		        	RadioOverrideRxCb(MarkDataReceived);
-		        	TRice("msg:[CSMA] - tx(%d) seqNr - %d.\n", packetbuf_totlen(packet), packetbuf_attr(packet, PACKETBUF_ATTR_MAC_SEQNO));
+/*		        	{
+		        		uint16_t fsc = 0;
+		        		uint8_t len = packetbuf_totlen(packet);
+		        		uint8_t *buff = (uint8_t*)packetbuf_hdrptr(packet);
+		        		while (len) {
+		        			len--;
+		        			fsc += *buff;
+		        			buff++;
+		        		}
+		        	TRice("msg:[CSMA] - tx(%d) seqNr - %d (sending time - %d), @0x%08X, fsc - %04X.\n",
+		        		  packetbuf_totlen(packet), packetbuf_attr(packet, PACKETBUF_ATTR_MAC_SEQNO), (HAL_GetTick() - tempDly), (uint32_t)packet, fsc);
+		          	TRice8B("dbg:%02X\n", (uint8_t*)packetbuf_hdrptr(packet), packetbuf_totlen(packet));
+		        	}*/
 		          /* Wait for max CSMA_ACK_WAIT_TIME */
 		        	tempDly = CSMA_ACK_WAIT_TIME;
 		        	while ((tempDly) && (0 == subGHz_radio_driver.pending_packet())) {
@@ -335,6 +349,8 @@ static void EnqueuePacket(sPacket *packet, mac_callback_t sent, void *ptr) {
 		  packetPos--;
 		  if (0 == ((1 << packetPos) & targetNeighbor->queuedTransmits)) {
 			  targetNeighbor->queuedTransmits |= (1 << packetPos);
+//	TRice("dbg:packetTrace >>> slotPacket in %d.\n", packetPos);
+//  	TRice8B("dbg:%02X\n", (uint8_t*)packetbuf_hdrptr(packet), packetbuf_totlen(packet));
 			  break;
 		  }
 	  }
@@ -345,6 +361,18 @@ static void EnqueuePacket(sPacket *packet, mac_callback_t sent, void *ptr) {
 	  }
 	  targetNeighbor->transmit[packetPos].sentCb = sent;
 	  targetNeighbor->transmit[packetPos].cptr = ptr;
+/*	    {
+			uint16_t fsc = 0;
+			uint8_t len = packetbuf_totlen(packet);
+			uint8_t *buff = (uint8_t*)packetbuf_hdrptr(packet);
+			while (len) {
+				len--;
+				fsc += *buff;
+				buff++;
+			}
+	    	TRice("dbg:packetTrace >>> slotPacket(@0x%08X, fsc - %04X).\n", (uint32_t)packet, fsc);
+	      	TRice8B("dbg:%02X\n", (uint8_t*)packetbuf_hdrptr(packet), packetbuf_totlen(packet));
+	    }*/
 	  targetNeighbor->transmit[packetPos].packet = packet;
 	  if ((NULL != neighborList) && (NULL != neighborList->next)) {
 		  /* More neighbors are being processed - print some info about them */

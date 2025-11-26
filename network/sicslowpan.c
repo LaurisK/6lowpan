@@ -1484,6 +1484,18 @@ static void packet_sent(void *ptr, int status, int transmissions, sPacket *packe
 
   /* DS6 callback, used for UIP_DS6_LL_NUD */
   uip_ds6_link_callback(status, transmissions);
+/*  {
+		uint16_t fsc = 0;
+		uint8_t len = packetbuf_totlen(packet);
+		uint8_t *buff = (uint8_t*)packetbuf_hdrptr(packet);
+		while (len) {
+			len--;
+			fsc += *buff;
+			buff++;
+		}
+  	TRice("dbg:packetTrace >>> send_packet(@0x%08X, fsc - %04X).\n", (uint32_t)packet, fsc);
+  	TRice8B("dbg:%02X\n", (uint8_t*)packetbuf_hdrptr(packet), packetbuf_totlen(packet));
+  }*/
   vPortFree(packet);
 }
 /*--------------------------------------------------------------------*/
@@ -1772,6 +1784,18 @@ static uint8_t output(sUipBuff *txBuff, const linkaddr_t *localdest) {
 
     memcpy(packetbuf_ptr + packetbuf_hdr_len, &txBuff->buff.u8[uncomp_hdr_len], txBuff->len - uncomp_hdr_len);
     packetbuf_set_datalen(txPacket, (txBuff->len - uncomp_hdr_len + packetbuf_hdr_len));
+/*    {
+		uint16_t fsc = 0;
+		uint8_t len = packetbuf_totlen(txPacket);
+		uint8_t *buff = (uint8_t*)packetbuf_hdrptr(txPacket);
+		while (len) {
+			len--;
+			fsc += *buff;
+			buff++;
+		}
+    	TRice("dbg:packetTrace >>> send_packet(@0x%08X, fsc - %04X).\n", (uint32_t)txPacket, fsc);
+      	TRice8B("dbg:%02X\n", (uint8_t*)packetbuf_hdrptr(txPacket), packetbuf_totlen(txPacket));
+    }*/
     send_packet(txPacket, &dest);
   }
   return 1;
