@@ -430,18 +430,6 @@ static uint16_t input_packet(sPacket *rxPacket)
 	  TRice("wrn:frame from ourselves\n");
   } else {
     int duplicate = 0;
-
-    /* Check for duplicate packet. */
-    duplicate = mac_sequence_is_duplicate(packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
-    if(duplicate) {
-      /* Drop the packet. */
-    	packetbuf_clear(rxPacket);
-    	TRiceS("wrn:drop duplicate link layer packet from %s,", (char*)packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER));
-    	TRice("wrn: seqno %u\n", packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
-    } else {
-      mac_sequence_register_seqno(packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
-    }
-
 #if CSMA_SEND_SOFT_ACK
     if(packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_ACK)) {
       uint8_t *buff = (uint8_t*)packetbuf_hdrptr(&ackPacket);
@@ -453,6 +441,16 @@ static uint16_t input_packet(sPacket *rxPacket)
       subGHz_radio_driver.send(&ackPacket);
     }
 #endif /* CSMA_SEND_SOFT_ACK */
+    /* Check for duplicate packet. */
+    duplicate = mac_sequence_is_duplicate(packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
+    if(duplicate) {
+      /* Drop the packet. */
+    	TRiceS("wrn:drop duplicate link layer packet from %s,", (char*)packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER));
+    	TRice("wrn: seqno %u\n", packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
+    	packetbuf_clear(rxPacket);
+    } else {
+      mac_sequence_register_seqno(packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
+    }
     rxDataLen = packetbuf_datalen(rxPacket);
   }
   return rxDataLen;
