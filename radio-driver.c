@@ -415,6 +415,10 @@ static int8_t Radio_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
 
 	/* Configures the Radio packet handler part*/
 	S2LP_PCKT_BASIC_Init(&xBasicInit);
+	{
+		SAfcInit afc = {S_ENABLE, S_DISABLE, AFC_MODE_LOOP_CLOSED_ON_2ND_CONV_STAGE, 255, 2, 4};
+		S2LP_RADIO_AfcInit(&afc);
+	}
 
 #if RADIO_ADDRESS_FILTERING
 	S2LP_PCKT_HNDL_SetAutoPcktFilter(S_ENABLE);
