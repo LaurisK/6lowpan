@@ -40,7 +40,7 @@ typedef enum {
 static sRadioInfo radioInfo = {.operatingChannel = CHANNEL_NUMBER};
 /* The buffer which holds incoming data. */
 static uint16_t rx_num_bytes = 0;
-//static uint8_t radio_rxbuf[MAX_PACKET_LEN];
+static uint8_t txBuf[MAX_PACKET_LEN]; //this is needed since current SPI write destroys buffer - this will need to be fixed.
 
 static volatile eRadioStatus radio_status = radio_off;
 static volatile uint8_t receiving_packet = 0;
@@ -511,15 +511,13 @@ static eTransmitRes Radio_prepare(sPacket *packet) {
 	S2LP_CMD_StrobeCommand(CMD_FLUSHTXFIFO);
 
 	S2LP_PCKT_BASIC_SetPayloadLength(packetbuf_totlen(packet));
-	//@TODO change IO implementation to avoid the copy here
-	//memcpy(tmpbuff, packetbuf_hdrptr(packet), packetbuf_totlen(packet));
 
 	/* Currently does no happen since S2LP_RX_FIFO_SIZE == MAX_PACKET_LEN also note that S2LP_RX_FIFO_SIZE == S2LP_TX_FIFO_SIZE */
 	if (packetbuf_totlen(packet) > S2LP_TX_FIFO_SIZE) {
 		TRice("msg:Payload bigger than FIFO size.'n");
 	} else {
-		S2LP_WriteFIFO(packetbuf_totlen(packet), (uint8_t*)packetbuf_hdrptr(packet));
-//    S2LP_WriteFIFO(payload_len, (uint8_t *)payload);
+	    memcpy(txBuf, packetbuf_hdrptr(packet), packetbuf_totlen(packet));
+		S2LP_WriteFIFO(packetbuf_totlen(packet), txBuf);
 		packet_is_prepared = 1;
 	}
 
