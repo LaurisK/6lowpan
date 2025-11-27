@@ -120,8 +120,18 @@ static sNeighbor* GetNeighborForAddr(const linkaddr_t *addr) {
   if (NULL == walker) {
 	  walker = CreateNeighbor();
 	  linkaddr_copy(&walker->addr, addr);
-	  walker->next = (sNeighbor *)neighborList;
-	  neighborList = walker;
+	  walker->next = NULL;
+	  if (NULL == neighborList) {
+	    neighborList = walker;
+	  } else {
+	    sNeighbor *neighborLast = (sNeighbor *)neighborList;
+	    taskENTER_CRITICAL();
+	    while (NULL != neighborLast->next) {
+	  	  neighborLast = neighborLast->next;
+	    }
+	    neighborLast->next = walker;
+	    taskEXIT_CRITICAL();
+	  }
   }
   return walker;
 }
@@ -176,6 +186,7 @@ static void HandleTransferEnd(uint8_t transfRes, uint8_t packetPos) {
 		//remove packet from queue
 		neighborList->queuedTransmits &= ~(1 << packetPos);
 		neighborList->transfAttempt = 0;
+		taskENTER_CRITICAL();
 		if (0 == neighborList->queuedTransmits) {
 			sNeighbor *completedNeighbor = (sNeighbor *)neighborList;
 			neighborList = neighborList->next;
@@ -192,6 +203,7 @@ static void HandleTransferEnd(uint8_t transfRes, uint8_t packetPos) {
 			walker->next->next = NULL;
 			TRiceS("msg:[CSMA] - neighbor partly serviced. Next neighbor to be serviced - %s\n", (NULL != neighborList) ? (char*)linkaddr_printAddr((const linkaddr_t *)&neighborList->addr) : "<NULL>");
 		}
+		taskEXIT_CRITICAL();
 	}
 	if (NULL != neighborList) {
 		csmaEvtHndl(csmaEvtIdOffset + radio_taskCall, KickTranferQueue);
