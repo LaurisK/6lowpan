@@ -14,6 +14,7 @@ extern "C" {
 
 typedef enum {
 	radio_incomingData,
+	radio_receivedData, //same as radio_incomingData, just comes from task run scope
 	radio_irqToTaskCall,
 	radio_taskCall, //typically to break nesting
 	radio_dagLinkCreated,

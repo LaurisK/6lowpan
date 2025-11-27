@@ -90,6 +90,7 @@ static void TransmitFromQueue(void);
 /* Pseudo global variables --------------------------------------------------*/
 static volatile sNeighbor *neighborList = NULL;
 static sPacket ackPacket;
+static sPacket tempPacket;
 static uint16_t csmaEvtIdOffset;
 static fRadioEvtHndl csmaEvtHndl;
 static volatile uint8_t radioDataReceived = 0;
@@ -217,6 +218,47 @@ static uint8_t FormPayload(sPacket *packet) {
 static void MarkDataReceived(void) {
 	radioDataReceived = 1;
 }
+
+static uint16_t HandleIncoming(sPacket *incomingPacket) {
+	  uint16_t rxDataLen = 0;
+	  if(packetbuf_datalen(incomingPacket) == CSMA_ACK_LEN) {
+	    /* Ignore ack packets */
+		  TRice("msg:ignored ack\n");
+	#warning "for now csma security is disabled - will need to be ported/implemented also..."
+	  } else if(/*csma_security_parse_frame()*/framer_802154.parse(incomingPacket) < 0) {
+		  TRice("err:failed to parse %u\n", packetbuf_datalen(incomingPacket));
+	  } else if(!linkaddr_cmp(packetbuf_addr(incomingPacket, PACKETBUF_ADDR_RECEIVER), &linkaddr_node_addr) && !packetbuf_holds_broadcast(incomingPacket)) {
+		  TRiceS("wrn:not for us. Target(%s)\n", (char*)linkaddr_printAddr(packetbuf_addr(incomingPacket, PACKETBUF_ADDR_RECEIVER)));
+	  } else if(linkaddr_cmp(packetbuf_addr(incomingPacket, PACKETBUF_ADDR_SENDER), &linkaddr_node_addr)) {
+		  TRice("wrn:frame from ourselves\n");
+	  } else {
+	    int duplicate = 0;
+	#if CSMA_SEND_SOFT_ACK
+	    if(packetbuf_attr(incomingPacket, PACKETBUF_ATTR_MAC_ACK)) {
+	      uint8_t *buff = (uint8_t*)packetbuf_hdrptr(&ackPacket);
+	      packetbuf_clear(&ackPacket);
+	      buff[0] = FRAME802154_ACKFRAME;
+	      buff[1] = 0;
+	      buff[2] = packetbuf_attr(incomingPacket, PACKETBUF_ATTR_MAC_SEQNO);
+	      packetbuf_set_datalen(&ackPacket, CSMA_ACK_LEN);
+	      subGHz_radio_driver.send(&ackPacket);
+	    }
+	#endif /* CSMA_SEND_SOFT_ACK */
+	    /* Check for duplicate packet. */
+	    duplicate = mac_sequence_is_duplicate(packetbuf_addr(incomingPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(incomingPacket, PACKETBUF_ATTR_MAC_SEQNO));
+	    if(duplicate) {
+	      /* Drop the packet. */
+	    	TRiceS("wrn:drop duplicate link layer packet from %s,", (char*)packetbuf_addr(incomingPacket, PACKETBUF_ADDR_SENDER));
+	    	TRice("wrn: seqno %u\n", packetbuf_attr(incomingPacket, PACKETBUF_ATTR_MAC_SEQNO));
+	    	packetbuf_clear(incomingPacket);
+	    } else {
+	      mac_sequence_register_seqno(packetbuf_addr(incomingPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(incomingPacket, PACKETBUF_ATTR_MAC_SEQNO));
+	    }
+	    rxDataLen = packetbuf_datalen(incomingPacket);
+	  }
+	  return rxDataLen;
+}
+
 /**
  *
  */
@@ -285,6 +327,10 @@ static void TransmitFromQueue(void) {
 				              /* Not an ack or ack not for us: collision */
 				          	  res = MAC_TX_COLLISION;
 				          	  TRice("msg:[CSMA] - not an ACK(len(%d) or seqNr(%d)).\n", len, ackbuf[2]);
+				          	  memcpy(&tempPacket, &ackPacket, sizeof(sPacket));
+				          	  if (0 != HandleIncoming(&tempPacket)) {
+				          		csmaEvtHndl(csmaEvtIdOffset + radio_receivedData, NULL);
+				          	  }
 				          	  //@todo - we could pass this payload further for some handling.
 				            }
 			        	}
@@ -420,44 +466,13 @@ static void send_packet(sPacket *packet, mac_callback_t sent, void *ptr) {
  */
 static uint16_t input_packet(sPacket *rxPacket)
 {
-  uint16_t rxDataLen = 0;
-  subGHz_radio_driver.read(rxPacket);
-  if(packetbuf_datalen(rxPacket) == CSMA_ACK_LEN) {
-    /* Ignore ack packets */
-	  TRice("msg:ignored ack\n");
-#warning "for now csma security is disabled - will need to be ported/implemented also..."
-  } else if(/*csma_security_parse_frame()*/framer_802154.parse(rxPacket) < 0) {
-	  TRice("err:failed to parse %u\n", packetbuf_datalen(rxPacket));
-  } else if(!linkaddr_cmp(packetbuf_addr(rxPacket, PACKETBUF_ADDR_RECEIVER), &linkaddr_node_addr) && !packetbuf_holds_broadcast(rxPacket)) {
-	  TRiceS("wrn:not for us. Target(%s)\n", (char*)linkaddr_printAddr(packetbuf_addr(rxPacket, PACKETBUF_ADDR_RECEIVER)));
-  } else if(linkaddr_cmp(packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER), &linkaddr_node_addr)) {
-	  TRice("wrn:frame from ourselves\n");
+  if (0 == packetbuf_datalen(&tempPacket)) {
+    subGHz_radio_driver.read(rxPacket);
   } else {
-    int duplicate = 0;
-#if CSMA_SEND_SOFT_ACK
-    if(packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_ACK)) {
-      uint8_t *buff = (uint8_t*)packetbuf_hdrptr(&ackPacket);
-      packetbuf_clear(&ackPacket);
-      buff[0] = FRAME802154_ACKFRAME;
-      buff[1] = 0;
-      buff[2] = packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO);
-      packetbuf_set_datalen(&ackPacket, CSMA_ACK_LEN);
-      subGHz_radio_driver.send(&ackPacket);
-    }
-#endif /* CSMA_SEND_SOFT_ACK */
-    /* Check for duplicate packet. */
-    duplicate = mac_sequence_is_duplicate(packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
-    if(duplicate) {
-      /* Drop the packet. */
-    	TRiceS("wrn:drop duplicate link layer packet from %s,", (char*)packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER));
-    	TRice("wrn: seqno %u\n", packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
-    	packetbuf_clear(rxPacket);
-    } else {
-      mac_sequence_register_seqno(packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
-    }
-    rxDataLen = packetbuf_datalen(rxPacket);
+	memcpy(rxPacket, &tempPacket, sizeof(sPacket));
+	packetbuf_clear(&tempPacket);
   }
-  return rxDataLen;
+  return HandleIncoming(rxPacket);
 }
 
 /**
