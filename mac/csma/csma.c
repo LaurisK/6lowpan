@@ -273,19 +273,23 @@ static void TransmitFromQueue(void) {
 		        	while ((tempDly) && (0 == subGHz_radio_driver.pending_packet())) {
 		        		tempDly--;
 		        		osDelay(1);
+			        	if (subGHz_radio_driver.pending_packet()) {
+				            int16_t len = subGHz_radio_driver.read(&ackPacket);
+				            uint8_t *ackbuf = packetbuf_dataptr(&ackPacket);
+				            if((len == CSMA_ACK_LEN) && (ackbuf[2] == packetbuf_attr(packet, PACKETBUF_ATTR_MAC_SEQNO))) {
+				              /* Ack received */
+				            	TRice("msg:[CSMA] - ACK(came in %d ticks).\n", (CSMA_ACK_WAIT_TIME - tempDly));
+				          	  res = MAC_TX_OK;
+				          	  break;
+				            } else {
+				              /* Not an ack or ack not for us: collision */
+				          	  res = MAC_TX_COLLISION;
+				          	  TRice("msg:[CSMA] - not an ACK(len(%d) or seqNr(%d)).\n", len, ackbuf[2]);
+				          	  //@todo - we could pass this payload further for some handling.
+				            }
+			        	}
 		        	}
-		        	if (subGHz_radio_driver.pending_packet()) {
-			            int16_t len = subGHz_radio_driver.read(&ackPacket);
-			            uint8_t *ackbuf = packetbuf_dataptr(&ackPacket);
-			            if((len == CSMA_ACK_LEN) && (ackbuf[2] == packetbuf_attr(packet, PACKETBUF_ATTR_MAC_SEQNO))) {
-			              /* Ack received */
-			          	  res = MAC_TX_OK;
-			            } else {
-			              /* Not an ack or ack not for us: collision */
-			          	  res = MAC_TX_COLLISION;
-			          	  TRice("msg:[CSMA] - not an ACK(len(%d) or seqNr(%d)).\n", len, ackbuf[2]);
-			            }
-		        	} else {
+		        	if (MAC_TX_ERR_FATAL == res) {
 		        		TRice("msg:[CSMA] - no ACK(%d).\n", packetbuf_attr(packet, PACKETBUF_ATTR_MAC_SEQNO));
 		        		res = MAC_TX_NOACK;
 		        	}
