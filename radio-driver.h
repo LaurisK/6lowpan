@@ -102,7 +102,7 @@ extern "C" {
 #define SYNC_WORD                   0x88888888
 #define VARIABLE_LENGTH             S_ENABLE
 #define EXTENDED_LENGTH_FIELD       S_DISABLE
-#define CRC_MODE                    PKT_CRC_MODE_8BITS
+#define CRC_MODE                    PKT_CRC_MODE_32BITS
 #define EN_FEC                      S_DISABLE
 #define EN_WHITENING                S_ENABLE
 
