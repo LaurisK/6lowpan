@@ -383,6 +383,15 @@ static int8_t Radio_off(void) {
 	return 0;
 }
 
+static uint8_t linkaddr2devaddr(linkaddr_t *linkaddr) {
+	uint16_t sum = linkaddr->u16[0] + linkaddr->u16[1] + linkaddr->u16[2] + linkaddr->u16[3];
+	sum = ((sum & 0xFF) ^ (sum >> 8));
+	if ((MULTICAST_ADDRESS == sum) || (BROADCAST_ADDRESS == sum)) {
+		sum ^= 0xa5;
+	}
+	return sum;
+}
+
 static int8_t Radio_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
 	TRice("msg:RADIO INIT IN\n");
 	radioEvtIdOffset = evtOffset;
@@ -423,7 +432,7 @@ static int8_t Radio_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
 #if RADIO_ADDRESS_FILTERING
 	S2LP_PCKT_HNDL_SetAutoPcktFilter(S_ENABLE);
 	S2LP_PCKT_HNDL_SelectSecondarySync(S_DISABLE);
-	xAddressInit.cMyAddress = linkaddr_node_addr.u8[LINKADDR_SIZE - 1];
+	xAddressInit.cMyAddress = linkaddr2devaddr(&linkaddr_node_addr);
 	S2LP_PCKT_BASIC_AddressesInit(&xAddressInit); TRice("msg:Node Source address %2X\n", xAddressInit.cMyAddress);
 #endif /*RADIO_ADDRESS_FILTERING*/
 
@@ -524,13 +533,11 @@ static eTransmitRes Radio_prepare(sPacket *packet) {
 	}
 
 #if RADIO_ADDRESS_FILTERING
-	const linkaddr_t *addr;
 	if (auto_pkt_filter) {
 		if ((packetbuf_totlen(packet) == ACK_LEN) || packetbuf_holds_broadcast(packet)) {
 			S2LP_PCKT_HNDL_SetRxSourceReferenceAddress(BROADCAST_ADDRESS);
 		} else {
-			addr = packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER);
-			S2LP_PCKT_HNDL_SetRxSourceReferenceAddress(addr->u8[LINKADDR_SIZE-1]);
+			S2LP_PCKT_HNDL_SetRxSourceReferenceAddress(linkaddr2devaddr((linkaddr_t*)packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER)));
 		}
 	}
 #endif /*RADIO_ADDRESS_FILTERING*/
