@@ -16,6 +16,11 @@
 #endif /*RADIO_ADDRESS_FILTERING*/
 
 #define RADIO_WAIT_TIMEOUT (100)
+#define RX_RSSI_OFFSET      5	// signal from which RX is being started. According to AI some guidance:
+								// * Weak signal priority: +3 to +5 dB (risk: false triggers)
+								// * Balanced: +5 to +8 dB (recommended for most cases)
+								// * Strong signal only: +8 to +12 dB (miss weak signals)
+#define TX_CSMA_RSSI_OFFSET 8	// signal above which channel is considered to be busy. According to AI some guidance:
 
 #if RADIO_HW_CSMA
 #define PERSISTENT_MODE_EN              S_DISABLE
@@ -89,6 +94,7 @@ SCsmaInit xCsmaInit = { PERSISTENT_MODE_EN, CS_PERIOD, CS_TIMEOUT, MAX_NB, BU_CO
 SRssiInit xSRssiInit = { .cRssiFlt = 14, .xRssiMode = RSSI_STATIC_MODE, .cRssiThreshdBm = RSSI_TX_THRESHOLD };
 #endif /*RADIO_HW_CSMA*/
 
+static int8_t backgroundNoise = (-127);
 static uint16_t radioEvtIdOffset;
 static fRadioEvtHndl radioEvtHndl;
 void (*overridenRxCb)(void);
@@ -134,8 +140,18 @@ static int16_t Radio_read_from_fifo(sPacket *packet) {
 		rssiRun[1] -= 146;
 		rssiRun[2] -= 146;
 		rssiRun[3] -= 146;
-		TRice("msg:[RADIO] RX(%d) stats: RSSI(%d), noise(%d %d %d %d), PQI(%d), CS(%d), SQI(%d), AFC(%d),\n",
-			  rx_bytes, (int16_t)last_packet_rssi, rssiRun[0], rssiRun[1], rssiRun[2], rssiRun[3], pqiSqi[0], (0x80 & pqiSqi[1]) ? 1 : 0, (0x7F & pqiSqi[1]), (int8_t)pqiSqi[2]);
+		{
+			int16_t localAvg = rssiRun[0] + rssiRun[1] + rssiRun[2] + rssiRun[3];
+			if ((-127) != backgroundNoise) {
+				localAvg += (backgroundNoise * 36);
+				backgroundNoise = localAvg / 40;
+				csma_tx_threshold = (backgroundNoise + TX_CSMA_RSSI_OFFSET);
+			} else {
+				backgroundNoise = localAvg / 4;
+			}
+		}
+		TRice("msg:[RADIO] RX(%d) stats: RSSI(%d), noise(%d %d %d %d - avg(%d)), PQI(%d), CS(%d), SQI(%d), AFC(%d),\n",
+			  rx_bytes, (int16_t)last_packet_rssi, rssiRun[0], rssiRun[1], rssiRun[2], rssiRun[3], backgroundNoise, pqiSqi[0], (0x80 & pqiSqi[1]) ? 1 : 0, (0x7F & pqiSqi[1]), (int8_t)pqiSqi[2]);
 		pqiSqi[2] = rxBuff[2];
 		while (rx_bytes) {
 			rx_bytes--;
@@ -582,7 +598,7 @@ static eTransmitRes Radio_transmit(uint16_t payloadLen) {
 #if RADIO_HW_CSMA
 	if (csma_enabled) { //@TODO: add an API to enable/disable CSMA
 		S2LP_CSMA_Enable(S_ENABLE);
-		S2LP_RADIO_QI_SetRssiThreshdBm(RSSI_TX_THRESHOLD);
+		S2LP_RADIO_QI_SetRssiThreshdBm(csma_tx_threshold);
 		retval = tx_collision;
 	}
 #endif  /*RADIO_HW_CSMA*/
@@ -610,7 +626,7 @@ static eTransmitRes Radio_transmit(uint16_t payloadLen) {
 	if (csma_enabled) {
 		S2LP_CSMA_Enable(S_DISABLE);
 #if !RADIO_SNIFF_MODE
-		S2LP_RADIO_QI_SetRssiThreshdBm(RSSI_RX_THRESHOLD);
+		S2LP_RADIO_QI_SetRssiThreshdBm(backgroundNoise + RX_RSSI_OFFSET);
 #endif /*!RADIO_SNIFF_MODE*/
 	}
 #endif /*RADIO_HW_CSMA*/
@@ -687,7 +703,7 @@ static int8_t Radio_channel_clear(void) {
 		Radio_on();
 	}
 	rssi_value = S2LP_RADIO_QI_GetRssidBmRun();
-	int ret = (rssi_value < RSSI_TX_THRESHOLD) ? 1 : 0;
+	int ret = (rssi_value < csma_tx_threshold) ? 1 : 0;
 
 	/* Puts the S2LP in its previous state */
 	if (radio_off == radio_state) {
@@ -846,7 +862,6 @@ static eRadioRes Radio_set_value(radio_param_t parameter, radio_value_t input_va
 			set_value_result = radio_invalidArgument;
 		}
 	} else if (parameter == RADIO_PARAM_CCA_THRESHOLD) {
-		//TODO: this value is not currently taken into account, only RSSI_TX_THRESHOLD macro is used
 		csma_tx_threshold = input_value;
 		set_value_result = radio_ok;
 	} else if (RADIO_PARAM_MAX_BACKOFF_NR == parameter) {
