@@ -550,7 +550,7 @@ static eTransmitRes Radio_prepare(sPacket *packet) {
 
 #if RADIO_ADDRESS_FILTERING
 	if (auto_pkt_filter) {
-		if ((packetbuf_totlen(packet) == ACK_LEN) || packetbuf_holds_broadcast(packet)) {
+		if (packetbuf_holds_broadcast(packet)) {
 			S2LP_PCKT_HNDL_SetRxSourceReferenceAddress(BROADCAST_ADDRESS);
 		} else {
 			S2LP_PCKT_HNDL_SetRxSourceReferenceAddress(linkaddr2devaddr((linkaddr_t*)packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER)));
