@@ -64,7 +64,7 @@ extern "C" {
 #ifdef CSMA_CONF_ACK_WAIT_TIME
 #define CSMA_ACK_WAIT_TIME CSMA_CONF_ACK_WAIT_TIME
 #else /* CSMA_CONF_ACK_WAIT_TIME */
-#define CSMA_ACK_WAIT_TIME                      20
+#define CSMA_ACK_WAIT_TIME                      50
 #endif /* CSMA_CONF_ACK_WAIT_TIME */
 
 #define CSMA_ACK_LEN 3

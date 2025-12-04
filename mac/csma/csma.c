@@ -179,6 +179,7 @@ static void HandleTransferEnd(uint8_t transfRes, uint8_t packetPos) {
 			sNeighbor *completedNeighbor = (sNeighbor *)neighborList;
 			neighborList = neighborList->next;
 			vPortFree(completedNeighbor);
+			TRiceS("msg:[CSMA] - neighbor serviced. Next neighbor to be serviced - %s\n", (NULL != neighborList) ? (char*)linkaddr_printAddr((const linkaddr_t *)&neighborList->addr) : "<NULL>");
 		} else if (NULL != neighborList->next) {
 			//this neighbor is served and others are in list pending - so this one need to be moved to end of a list
 			sNeighbor *walker = (sNeighbor *)neighborList;
@@ -188,6 +189,7 @@ static void HandleTransferEnd(uint8_t transfRes, uint8_t packetPos) {
 			walker->next = (sNeighbor *)neighborList;
 			neighborList = neighborList->next;
 			walker->next->next = NULL;
+			TRiceS("msg:[CSMA] - neighbor partly serviced. Next neighbor to be serviced - %s\n", (NULL != neighborList) ? (char*)linkaddr_printAddr((const linkaddr_t *)&neighborList->addr) : "<NULL>");
 		}
 	}
 	if (NULL != neighborList) {
@@ -234,14 +236,15 @@ static void TransmitFromQueue(void) {
 		  packetPos--;
 		  if (0 != ((1 << packetPos) & neighborList->queuedTransmits)) {
 			  packet = neighborList->transmit[packetPos].packet;
+//	TRice("dbg:packetTrace >>> queuePacket from %d.\n", packetPos);
+//  	TRice8B("dbg:%02X\n", (uint8_t*)packetbuf_hdrptr(packet), packetbuf_totlen(packet));
 			  break;
 		  }
 		}
 		if (NULL != packet) {
 			uint8_t res = MAC_TX_ERR_FATAL;
 			uint8_t isBroadcast = packetbuf_holds_broadcast(packet);
-			uint8_t dsn = ((uint8_t *)packetbuf_hdrptr(packet))[2] & 0xff;
-			uint8_t tempDly;
+			uint32_t tempDly = HAL_GetTick();
 			switch (subGHz_radio_driver.send(packet)) {
 			case tx_ok:
 		        if(isBroadcast) {
@@ -250,6 +253,21 @@ static void TransmitFromQueue(void) {
 		          /* Check for ack */
 		        	radioDataReceived = 0;
 		        	RadioOverrideRxCb(MarkDataReceived);
+		        	{
+/*		        		uint16_t fsc = 0;
+		        		uint8_t len = packetbuf_totlen(packet);
+		        		uint8_t *buff = (uint8_t*)packetbuf_hdrptr(packet);
+		        		while (len) {
+		        			len--;
+		        			fsc += *buff;
+		        			buff++;
+		        		}*/
+			        	TRice("msg:[CSMA] - tx(%d) seqNr - %d (sending time - %d).\n",
+			        		  packetbuf_totlen(packet), packetbuf_attr(packet, PACKETBUF_ATTR_MAC_SEQNO), (HAL_GetTick() - tempDly));
+//		        	TRice("msg:[CSMA] - tx(%d) seqNr - %d (sending time - %d), @0x%08X, fsc - %04X.\n",
+//		        		  packetbuf_totlen(packet), packetbuf_attr(packet, PACKETBUF_ATTR_MAC_SEQNO), (HAL_GetTick() - tempDly), (uint32_t)packet, fsc);
+//		          	TRice8B("dbg:%02X\n", (uint8_t*)packetbuf_hdrptr(packet), packetbuf_totlen(packet));
+		        	}
 		          /* Wait for max CSMA_ACK_WAIT_TIME */
 		        	tempDly = CSMA_ACK_WAIT_TIME;
 		        	while ((tempDly) && (0 == subGHz_radio_driver.pending_packet())) {
@@ -259,14 +277,16 @@ static void TransmitFromQueue(void) {
 		        	if (subGHz_radio_driver.pending_packet()) {
 			            int16_t len = subGHz_radio_driver.read(&ackPacket);
 			            uint8_t *ackbuf = packetbuf_dataptr(&ackPacket);
-			            if((len == CSMA_ACK_LEN) && (ackbuf[2] == dsn)) {
+			            if((len == CSMA_ACK_LEN) && (ackbuf[2] == packetbuf_attr(packet, PACKETBUF_ATTR_MAC_SEQNO))) {
 			              /* Ack received */
 			          	  res = MAC_TX_OK;
 			            } else {
 			              /* Not an ack or ack not for us: collision */
 			          	  res = MAC_TX_COLLISION;
+			          	  TRice("msg:[CSMA] - not an ACK(len(%d) or seqNr(%d)).\n", len, ackbuf[2]);
 			            }
 		        	} else {
+		        		TRice("msg:[CSMA] - no ACK(%d).\n", packetbuf_attr(packet, PACKETBUF_ATTR_MAC_SEQNO));
 		        		res = MAC_TX_NOACK;
 		        	}
 		          radioDataReceived = 0;
@@ -319,6 +339,8 @@ static void EnqueuePacket(sPacket *packet, mac_callback_t sent, void *ptr) {
 		  packetPos--;
 		  if (0 == ((1 << packetPos) & targetNeighbor->queuedTransmits)) {
 			  targetNeighbor->queuedTransmits |= (1 << packetPos);
+//	TRice("dbg:packetTrace >>> slotPacket in %d.\n", packetPos);
+//  	TRice8B("dbg:%02X\n", (uint8_t*)packetbuf_hdrptr(packet), packetbuf_totlen(packet));
 			  break;
 		  }
 	  }
@@ -329,6 +351,18 @@ static void EnqueuePacket(sPacket *packet, mac_callback_t sent, void *ptr) {
 	  }
 	  targetNeighbor->transmit[packetPos].sentCb = sent;
 	  targetNeighbor->transmit[packetPos].cptr = ptr;
+/*	    {
+			uint16_t fsc = 0;
+			uint8_t len = packetbuf_totlen(packet);
+			uint8_t *buff = (uint8_t*)packetbuf_hdrptr(packet);
+			while (len) {
+				len--;
+				fsc += *buff;
+				buff++;
+			}
+	    	TRice("dbg:packetTrace >>> slotPacket(@0x%08X, fsc - %04X).\n", (uint32_t)packet, fsc);
+	      	TRice8B("dbg:%02X\n", (uint8_t*)packetbuf_hdrptr(packet), packetbuf_totlen(packet));
+	    }*/
 	  targetNeighbor->transmit[packetPos].packet = packet;
 	  if ((NULL != neighborList) && (NULL != neighborList->next)) {
 		  /* More neighbors are being processed - print some info about them */
@@ -351,7 +385,7 @@ static void EnqueuePacket(sPacket *packet, mac_callback_t sent, void *ptr) {
 	  return;
   } else {
 	  /* Failed to allocate space for headers */
-	  TRice("wrn:could form payload for neighbor, dropping packet\n");
+	  TRice("wrn:could form payload for neighbor, dropping packet(%d)\n", packetbuf_attr(packet, PACKETBUF_ATTR_MAC_SEQNO));
   }
   // this is failure catching
   mac_call_sent_callback(sent, ptr, MAC_TX_ERR, 1, packet);
@@ -402,7 +436,8 @@ static uint16_t input_packet(sPacket *rxPacket)
     if(duplicate) {
       /* Drop the packet. */
     	packetbuf_clear(rxPacket);
-    	TRice("wrn:drop duplicate link layer packet from %02X, seqno %u\n", packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
+    	TRiceS("wrn:drop duplicate link layer packet from %s,", (char*)packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER));
+    	TRice("wrn: seqno %u\n", packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
     } else {
       mac_sequence_register_seqno(packetbuf_addr(rxPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO));
     }
@@ -413,7 +448,7 @@ static uint16_t input_packet(sPacket *rxPacket)
       packetbuf_clear(&ackPacket);
       buff[0] = FRAME802154_ACKFRAME;
       buff[1] = 0;
-      buff[2] = ((uint8_t *)packetbuf_hdrptr(rxPacket))[2];
+      buff[2] = packetbuf_attr(rxPacket, PACKETBUF_ATTR_MAC_SEQNO);
       packetbuf_set_datalen(&ackPacket, CSMA_ACK_LEN);
       subGHz_radio_driver.send(&ackPacket);
     }

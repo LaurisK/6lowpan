@@ -472,7 +472,7 @@ void tcpip_ipv6_output(sUipBuff *uipBuff)
     neighbor cache out of the way in cases ND is not used */
     uip_lladdr_t lladdr;
     Addr_GetInterfId(&lladdr, nexthop);
-    TRice("msg:output: link-layer address %s lookup.\n", (char*)linkaddr_printAddr((linkaddr_t*)&lladdr));
+    TRiceS("msg:output: link-layer address %s lookup.\n", (char*)linkaddr_printAddr((linkaddr_t*)&lladdr));
     nbr = uip_ds6_nbr_add(nexthop, &lladdr, 0, NBR_REACHABLE, NBR_TABLE_REASON_IPV6_ND_AUTOFILL, NULL);
     if(NULL == nbr) {
       TRiceS("err:output: failed to autofill neighbor cache for host %s", uip6_printAddr(nexthop, NULL));
