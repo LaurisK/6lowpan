@@ -13,6 +13,9 @@ extern "C" {
 #endif
 
 typedef enum {
+	radio_txFifoErr,
+	radio_rxFifoErr,
+	radio_rxDiscarded,
 	radio_incomingData,
 	radio_receivedData, //same as radio_incomingData, just comes from task run scope
 	radio_irqToTaskCall,

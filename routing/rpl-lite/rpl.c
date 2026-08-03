@@ -112,6 +112,8 @@ void rpl_link_callback(const linkaddr_t *addr, int status, int numtx) {
       TRiceS("msg:packet sent to %s, ", (char*)linkaddr_printAddr(addr));
       TRice("status %u, tx %u, new link metric %u\n", status, numtx, rpl_neighbor_get_link_metric(nbr));
       rpl_timers_schedule_state_update();
+    } else {
+        TRiceS("wrn:no neighbor %s found fore statistics.\n", (char*)linkaddr_printAddr(addr));
     }
   }
 }

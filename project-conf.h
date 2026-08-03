@@ -39,6 +39,11 @@ extern "C" {
 #define MCU_LOW_POWER 0
 #define RADIO_LOW_POWER 0
 #define RADIO_LONG_PREAMBLE 0
+#define RADIO_USE_TCXO 1   /* 1=TCXO (current HW), 0=Xtal */
+
+/* Radio environment profile: select ONE */
+#define RADIO_ENV_INDOOR
+// #define RADIO_ENV_OUTDOOR
 
 /*Set PANID if needed */
 //#undef IEEE802154_CONF_PANID

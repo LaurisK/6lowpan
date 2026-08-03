@@ -7,6 +7,7 @@
 #include "s2lp_management.h"
 #include "S2LP_Types.h"
 #include "S2LP_PktBasic.h"
+#include "S2LP_General.h"
 #include "App/common.h"
 #include "cmsis_os.h"
 
@@ -16,10 +17,9 @@
 #endif /*RADIO_ADDRESS_FILTERING*/
 
 #define RADIO_WAIT_TIMEOUT (100)
-#define RX_RSSI_OFFSET      5	// signal from which RX is being started. According to AI some guidance:
-								// * Weak signal priority: +3 to +5 dB (risk: false triggers)
-								// * Balanced: +5 to +8 dB (recommended for most cases)
-								// * Strong signal only: +8 to +12 dB (miss weak signals)
+/* The receive threshold is not derived from the measured noise floor: RSSI_THR also gates
+ * when AFC starts tracking, so it stays at the sensitivity-derived RSSI_RX_THRESHOLD.
+ * Only the CSMA busy level tracks the noise floor. */
 #define TX_CSMA_RSSI_OFFSET 8	// signal above which channel is considered to be busy. According to AI some guidance:
 
 #if RADIO_HW_CSMA
@@ -29,7 +29,22 @@
 #define MAX_NB                          5
 #define BU_COUNTER_SEED                 0xFA21
 #define CU_PRESCALER                    32
-#endif /*RADIO_ADDRESS_FILTERING*/
+/* How many times a single send may re-arm the CSMA engine after it reported the channel
+ * still busy. Bounds what used to be an open-ended strobe loop; once spent, the transmit
+ * is left to time out and report tx_collision to the MAC, which owns the real backoff. */
+#define CSMA_MAX_TX_RESTARTS            3
+#endif /*RADIO_HW_CSMA*/
+
+/* S2-LP SMPS frequency switching for TX/RX (Change 8, per ST bring-up guide p.22) */
+static void smps_set_tx(void) {
+	uint8_t regs[2] = {0x9B, 0xF4}; /* PM_CONF3, PM_CONF2 for TX (50MHz osc) */
+	S2LPSpiWriteRegisters(PM_CONF3_ADDR, 2, regs);
+}
+
+static void smps_set_rx(void) {
+	uint8_t regs[2] = {0x8F, 0xF9}; /* PM_CONF3, PM_CONF2 for RX (50MHz osc) */
+	S2LPSpiWriteRegisters(PM_CONF3_ADDR, 2, regs);
+}
 
 /* Private types ------------------------------------------------------------*/
 typedef struct {
@@ -51,13 +66,18 @@ static volatile eRadioStatus radio_status = radio_off;
 static volatile uint8_t receiving_packet = 0;
 static volatile uint8_t transmitting_packet = 0;
 static volatile uint8_t pending_packet = 0;
-static volatile uint8_t packet_is_prepared = 0;
 static uint16_t last_packet_rssi = 0;
 static uint16_t last_packet_lqi = 0;
 
 static volatile uint32_t last_packet_timestamp = 0;
 
-static int csma_tx_threshold = RSSI_TX_THRESHOLD;
+static int      csma_tx_threshold = RSSI_TX_THRESHOLD;
+#if RADIO_HW_CSMA
+/* Re-arms spent on the in-flight send. Reset by Radio_transmit(), counted up in the
+ * MAX_BO_CCA_REACH handler. */
+static volatile uint8_t csma_tx_restarts = 0;
+#endif /*RADIO_HW_CSMA*/
+static uint8_t  operation_mode = 0;
 
 /* Poll mode disabled by default */
 /*static*///uint8_t polling_mode = 0;
@@ -158,14 +178,14 @@ static int16_t Radio_read_from_fifo(sPacket *packet) {
 			fsc += *rxBuff;
 			rxBuff++;
 		}
-		TRice("msg: \t packet info: seqNr(%d - ?), payloadCrc(0x%08X), fsc - %04X.\n", pqiSqi[2], packetCrc, fsc);
+		TRice("msg: \t packet info: seqNr(%d), payloadCrc(0x%08X), fsc - %04X.\n \t my addr - %d\n", pqiSqi[2], packetCrc, fsc, xAddressInit.cMyAddress);
 		packetbuf_set_attr(packet, PACKETBUF_ATTR_RSSI, last_packet_rssi);
 		packetbuf_set_attr(packet, PACKETBUF_ATTR_LINK_QUALITY, last_packet_lqi);
 	} else {
 		TRice("msg:Buf too small (%d bytes to hold %d bytes)\n", packetbuf_remaininglen(packet), rx_bytes);
 	}
 //	if (polling_mode) {
-	S2LP_CMD_StrobeCommand(CMD_FLUSHRXFIFO);
+	S2LP_CMD_StrobeFlushRxFifo();
 //	}
 
 	return retval;
@@ -194,8 +214,7 @@ static int16_t Radio_read_from_fifo(sPacket *packet) {
 /**
  * @brief  radio_print_status prints to the UART the status of the radio
  */
-static void radio_print_status(void) {
-	S2LPState s = radio_refresh_status();
+static void radio_print_status(S2LPState s) {
 	if (s == MC_STATE_STANDBY) {
 		TRice("radio-driver: MC_STATE_STANDBY\n");
 	} else if (s == MC_STATE_SLEEP) {
@@ -235,7 +254,7 @@ void radio_set_ready_state(void) {
 	}
 	BUSYWAIT_UNTIL(radio_refresh_status() == MC_STATE_READY, RADIO_WAIT_TIMEOUT);
 
-	S2LP_CMD_StrobeCommand(CMD_FLUSHRXFIFO);
+	S2LP_CMD_StrobeFlushRxFifo();
 	receiving_packet = 0;
 	pending_packet = 0;
 	rx_num_bytes = 0;
@@ -337,6 +356,50 @@ static uint32_t radio_get_packet_timestamp(void) {
 	return last_packet_timestamp;
 }
 
+static uint8_t linkaddr2devaddr(linkaddr_t *linkaddr) {
+	uint16_t sum = linkaddr->u16[0] + linkaddr->u16[1] + linkaddr->u16[2] + linkaddr->u16[3];
+	sum = ((sum & 0xFF) ^ (sum >> 8));
+	if ((MULTICAST_ADDRESS == sum) || (BROADCAST_ADDRESS == sum)) {
+		sum ^= 0xa5;
+	}
+	return sum;
+}
+
+/**
+ * @brief Re-arms the receiver.
+ *        The RX FIFO is flushed first, as ST's bring-up guide p.47 shows for every Rx
+ *        command: whatever the previous reception left behind - a partial frame from an
+ *        aborted RX, bytes belonging to a discarded packet - would otherwise sit at the
+ *        head of the FIFO and be read back as the start of the next packet. Every caller
+ *        reaches here with the part out of RX (after a Sabort, a Ready strobe or a
+ *        completed TX), so nothing in flight is discarded by the flush.
+ */
+static void RadioSwitchToRx(void) {
+	smps_set_rx();
+	S2LP_CMD_StrobeFlushRxFifo();
+	S2LP_CMD_StrobeRx();
+}
+
+static void HandleTxFifoError(void) {
+	if (0 == transmitting_packet) {
+		S2LP_CMD_StrobeFlushTxFifo();
+		RadioSwitchToRx();
+	}
+}
+
+static void HandleRxFifoError(void) {
+	if (0 == transmitting_packet) {
+		S2LP_CMD_StrobeSabort();
+		RadioSwitchToRx();
+	}
+}
+
+static void HandleRxError(void) {
+	if ((MC_STATE_RX != radio_refresh_status()) && (0 == transmitting_packet)) {
+		RadioSwitchToRx();
+	}
+}
+
 /* API Realization ----------------------------------------------------------*/
 static int8_t Radio_on(void) {
 	TRice("msg:Radio: on\n");
@@ -348,7 +411,7 @@ static int8_t Radio_on(void) {
 #endif /*RADIO_SNIFF_MODE*/
 		radio_set_ready_state();
 		S2LP_FIFO_MuxRxFifoIrqEnable(S_ENABLE);
-		S2LP_CMD_StrobeRx();
+		RadioSwitchToRx();
 		radio_status = radio_on;
 		RADIO_IRQ_ENABLE(); //--> Coming from OFF, IRQ ARE DISABLED.
 	}
@@ -364,7 +427,7 @@ static int8_t Radio_off(void) {
     S2LP_TIM_LdcrMode(S_DISABLE);
     S2LP_TIM_FastRxTermTimer(S_DISABLE);
     S2LP_CMD_StrobeReady();
-    S2LP_CMD_StrobeRx();
+    RadioSwitchToRx();
 #endif /*RADIO_SNIFF_MODE*/
 
 		/* first stop rx/tx */
@@ -399,25 +462,44 @@ static int8_t Radio_off(void) {
 	return 0;
 }
 
-static uint8_t linkaddr2devaddr(linkaddr_t *linkaddr) {
-	uint16_t sum = linkaddr->u16[0] + linkaddr->u16[1] + linkaddr->u16[2] + linkaddr->u16[3];
-	sum = ((sum & 0xFF) ^ (sum >> 8));
-	if ((MULTICAST_ADDRESS == sum) || (BROADCAST_ADDRESS == sum)) {
-		sum ^= 0xa5;
-	}
-	return sum;
-}
-
 static int8_t Radio_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
 	TRice("msg:RADIO INIT IN\n");
 	radioEvtIdOffset = evtOffset;
 	radioEvtHndl = packedEvtHndl;
 	S2LPInterfaceInit();
 
-	/* Configures the Radio library */
-	S2LP_RADIO_SetXtalFrequency(XTAL_FREQUENCY);
+	/* The reference frequency is already established by S2LPInterfaceInit(): read from the
+	 * RF module EEPROM, or measured by S2LP_ManagementComputeXtalFrequency(), with the
+	 * library's own 50MHz default standing in when neither is available. Forcing
+	 * XTAL_FREQUENCY over the top of that discarded the detected value, and every setting
+	 * derived from the reference - datarate, deviation, channel filter, SMPS divider, timer
+	 * scaling - would then be computed against the wrong number on any module not fitted
+	 * with a 50MHz part. */
+	TRice("msg:Radio reference %u Hz\n", S2LP_RADIO_GetXtalFrequency());
 
 	S2LP_CMD_StrobeSres();
+
+	/* SRES restarts the digital core: every register access below is only valid once the
+	 * part has reached READY again. ST bring-up guide p.7 makes polling MC_STATE mandatory
+	 * here - the 2ms Treset delay alone is explicitly called out as not sufficient. Without
+	 * this the EXT_REF write and the whole S2LP_RADIO_Init() sequence can land while the
+	 * part is still in reset and be silently lost. */
+	BUSYWAIT_UNTIL(MC_STATE_READY == radio_refresh_status(), RADIO_WAIT_TIMEOUT);
+	if (MC_STATE_READY != radio_refresh_status()) {
+		TRice("err:[RADIO DRV] - not READY after SRES.\n");
+		radio_print_status(radio_refresh_status());
+	}
+
+	/* Change 9: Configure oscillator type after SRES (which resets all registers) */
+#if RADIO_USE_TCXO
+	S2LPGeneralSetExtRef(MODE_EXT_XIN); /* Set EXT_REF=1 for TCXO */
+	/* The part is now clocked from the external reference. READY only reports that the
+	 * digital core is up, it says nothing about the TCXO having settled, so hold here
+	 * before anything asks the synthesiser to lock (ST bring-up guide p.14). */
+	HAL_Delay(RADIO_TCXO_STARTUP_MS);
+#else
+	S2LPGeneralSetExtRef(MODE_EXT_XO);  /* Ensure EXT_REF=0 for crystal */
+#endif
 
 	/* S2LP Radio config */
 	S2LP_RADIO_Init(&xRadioInit);
@@ -441,15 +523,44 @@ static int8_t Radio_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
 	/* Configures the Radio packet handler part*/
 	S2LP_PCKT_BASIC_Init(&xBasicInit);
 	{
-		SAfcInit afc = {S_ENABLE, S_DISABLE, AFC_MODE_LOOP_CLOSED_ON_2ND_CONV_STAGE, 255, 2, 4};
+		SAfcInit afc = {S_ENABLE, S_ENABLE, AFC_MODE_LOOP_CLOSED_ON_SLICER,
+		                AFC_FAST_PERIOD, AFC_FAST_GAIN, AFC_SLOW_GAIN};
 		S2LP_RADIO_AfcInit(&afc);
+	}
+
+	/* --- S2-LP Good Practices (per ST bring-up guide v1.0) --- */
+
+	/* Change 1: Clock recovery - "update strongly required" per PDF p.26 */
+	{
+		uint8_t clockrec[2] = {CLOCKREC1_VALUE, CLOCKREC0_VALUE};
+		S2LPSpiWriteRegisters(CLOCKREC1_ADDR, 2, clockrec);
+	}
+
+	/* Change 4: Disable CS_Blanking per PDF p.24 - avoids 0x64 state issue */
+	{
+		uint8_t tmp;
+		S2LPSpiReadRegisters(ANT_SELECT_CONF_ADDR, 1, &tmp);
+		tmp &= (uint8_t)(~CS_BLANKING_REGMASK);
+		S2LPSpiWriteRegisters(ANT_SELECT_CONF_ADDR, 1, &tmp);
+	}
+
+	/* Change 5: Enable Sleep mode B for CSMA (retain Tx FIFO) per PDF p.24 */
+	{
+		uint8_t tmp;
+		S2LPSpiReadRegisters(PM_CONF0_ADDR, 1, &tmp);
+		tmp |= 0x01; /* Set SLEEP_MODE_SEL = 1 */
+		S2LPSpiWriteRegisters(PM_CONF0_ADDR, 1, &tmp);
+	}
+	if (S2LP_OK != S2LPManagementRcoCalibration()) {
+		TRice("err:[RADIO DRV] - RCO calibration failed.\n");
 	}
 
 #if RADIO_ADDRESS_FILTERING
 	S2LP_PCKT_HNDL_SetAutoPcktFilter(S_ENABLE);
 	S2LP_PCKT_HNDL_SelectSecondarySync(S_DISABLE);
 	xAddressInit.cMyAddress = linkaddr2devaddr(&linkaddr_node_addr);
-	S2LP_PCKT_BASIC_AddressesInit(&xAddressInit); TRice("msg:Node Source address %2X\n", xAddressInit.cMyAddress);
+	S2LP_PCKT_BASIC_AddressesInit(&xAddressInit);
+	TRice("msg:Node Source address %2X\n", xAddressInit.cMyAddress);
 #endif /*RADIO_ADDRESS_FILTERING*/
 
 #if RADIO_HW_CSMA
@@ -478,6 +589,10 @@ static int8_t Radio_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
 #else /*!RADIO_HW_CSMA*/
   S2LP_GPIO_IrqConfig(MAX_BO_CCA_REACH , S_DISABLE);
 #endif /*RADIO_HW_CSMA*/
+
+	/* Change 6: Enable FIFO error IRQs for better error recovery per PDF p.48 */
+	S2LP_GPIO_IrqConfig(TX_FIFO_ERROR, S_ENABLE);
+	S2LP_GPIO_IrqConfig(RX_FIFO_ERROR, S_ENABLE);
 
 #if RADIO_SNIFF_MODE
   SRssiInit xSRssiInit = {
@@ -510,10 +625,8 @@ static int8_t Radio_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
 	/* Configure the radio to route the IRQ signal to its GPIO 3 */
 	S2LP_GPIO_Init(&xGpioIRQ);
 
-//	radio_set_polling_mode(polling_mode);
+	RadioSwitchToRx();
 
-	/* This is ok for normal or SNIFF (RX command triggers the LDC in fast RX termination mode) */
-	S2LP_CMD_StrobeRx();
 	radio_status = radio_on;
 
 	TRice("msg:Radio init done\n");
@@ -521,8 +634,9 @@ static int8_t Radio_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
 }
 
 static eTransmitRes Radio_prepare(sPacket *packet) {
-	packet_is_prepared = 0;
-
+	if (0 != operation_mode) {
+		return tx_err;
+	}
 	/* Checks if the payload length is supported: actually this can't happen, by system design, but it is safer to have this for sanity check. */
 	if (PACKETBUF_SIZE < packetbuf_totlen(packet)) {
 		TRice("msg:Payload len too big (> %d), error.\n", PACKETBUF_SIZE);
@@ -535,14 +649,14 @@ static eTransmitRes Radio_prepare(sPacket *packet) {
 	radio_set_ready_state();
 	if (radio_refresh_status() != MC_STATE_READY) {
 		TRice("Set Ready State failed.\n");
-		radio_print_status();
+		radio_print_status(radio_refresh_status());
 		S2LP_CMD_StrobeSabort();
 #if RADIO_SNIFF_MODE
     S2LP_TIM_LdcrMode(S_ENABLE);
     S2LP_TIM_FastRxTermTimer(S_ENABLE);
     S2LP_GPIO_IrqConfig(RX_DATA_READY,S_ENABLE);
 #endif /*RADIO_SNIFF_MODE*/
-		S2LP_CMD_StrobeRx();
+    	RadioSwitchToRx();
 
 		RADIO_IRQ_ENABLE();
 		return tx_err;
@@ -554,83 +668,30 @@ static eTransmitRes Radio_prepare(sPacket *packet) {
 			S2LP_PCKT_HNDL_SetRxSourceReferenceAddress(BROADCAST_ADDRESS);
 		} else {
 			S2LP_PCKT_HNDL_SetRxSourceReferenceAddress(linkaddr2devaddr((linkaddr_t*)packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER)));
+			TRice("msg:unicast to - %d.\n", linkaddr2devaddr((linkaddr_t*)packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER)));
 		}
 	}
 #endif /*RADIO_ADDRESS_FILTERING*/
 
-	S2LP_CMD_StrobeCommand(CMD_FLUSHTXFIFO);
+	S2LP_CMD_StrobeFlushTxFifo();
 
 	S2LP_PCKT_BASIC_SetPayloadLength(packetbuf_totlen(packet));
 
 	/* Currently does no happen since S2LP_RX_FIFO_SIZE == MAX_PACKET_LEN also note that S2LP_RX_FIFO_SIZE == S2LP_TX_FIFO_SIZE */
 	if (packetbuf_totlen(packet) > S2LP_TX_FIFO_SIZE) {
-		TRice("msg:Payload bigger than FIFO size.'n");
+		TRice("msg:Payload bigger than FIFO size.\n");
+		RADIO_IRQ_ENABLE();
+		return tx_err;
 	} else {
 	    memcpy(txBuf, packetbuf_hdrptr(packet), packetbuf_totlen(packet));
 		S2LP_WriteFIFO(packetbuf_totlen(packet), txBuf);
-		packet_is_prepared = 1;
 	}
 
 	RADIO_IRQ_ENABLE();
 	return tx_ok;
 }
 
-static eTransmitRes Radio_transmit(uint16_t payloadLen) {
-	int retval = tx_err;
-	eRadioStatus radio_state = radio_status;
-
-	/* This function blocks until the packet has been transmitted */
-	if (!packet_is_prepared) {
-		TRice("msg:Radio TRANSMIT: ERROR, packet is NOT prepared.\n");
-		return tx_err;
-	}
-
-	if (radio_off == radio_status) {
-		Radio_on();
-	}
-
-	RADIO_IRQ_DISABLE();
-
-	transmitting_packet = 1;
-	S2LP_GPIO_IrqClearStatus();
-	RADIO_IRQ_ENABLE();
-
-#if RADIO_HW_CSMA
-	if (csma_enabled) { //@TODO: add an API to enable/disable CSMA
-		S2LP_CSMA_Enable(S_ENABLE);
-		S2LP_RADIO_QI_SetRssiThreshdBm(csma_tx_threshold);
-		retval = tx_collision;
-	}
-#endif  /*RADIO_HW_CSMA*/
-
-	xTxDoneFlag = RESET;
-	S2LP_CMD_StrobeTx();
-	/* wait for TX done */
-		/*To be on the safe side we put a timeout. */
-	osDelay(10);
-		BUSYWAIT_UNTIL(xTxDoneFlag, 10* RADIO_WAIT_TIMEOUT);
-	if (transmitting_packet) {
-		S2LP_CMD_StrobeSabort();
-		if (xTxDoneFlag == RESET) {
-			TRice("Packet not transmitted: TIMEOUT\n");
-		} else {
-			TRice("Packet not transmitted: ERROR\n");
-		}
-		transmitting_packet = 0;
-	} else {
-		retval = tx_ok;
-	}
-	xTxDoneFlag = RESET;
-
-#if RADIO_HW_CSMA
-	if (csma_enabled) {
-		S2LP_CSMA_Enable(S_DISABLE);
-#if !RADIO_SNIFF_MODE
-		S2LP_RADIO_QI_SetRssiThreshdBm(backgroundNoise + RX_RSSI_OFFSET);
-#endif /*!RADIO_SNIFF_MODE*/
-	}
-#endif /*RADIO_HW_CSMA*/
-
+static void Exit_TX(void) {
 	rx_num_bytes = 0;
 
 	RADIO_IRQ_DISABLE();
@@ -641,19 +702,86 @@ static eTransmitRes Radio_transmit(uint16_t payloadLen) {
   S2LP_GPIO_IrqConfig(RX_DATA_READY,S_ENABLE);
 #endif /*RADIO_SNIFF_MODE*/
 
-	S2LP_CMD_StrobeRx();
+    RadioSwitchToRx();
 	BUSYWAIT_UNTIL(radio_refresh_status() == MC_STATE_RX
 #if RADIO_SNIFF_MODE
                  || radio_refresh_status() == MC_STATE_SLEEP_NOFIFO
 #endif /*RADIO_SNIFF_MODE*/
 			,RADIO_WAIT_TIMEOUT);
 
-	packet_is_prepared = 0;
-
-	S2LP_CMD_StrobeCommand(CMD_FLUSHTXFIFO);
+	S2LP_CMD_StrobeFlushTxFifo();
 
 	S2LP_GPIO_IrqClearStatus();
 	RADIO_IRQ_ENABLE();
+
+}
+
+static eTransmitRes Radio_transmit(uint16_t payloadLen) {
+	int retval = tx_err;
+	eRadioStatus radio_state = radio_status;
+	if (0 != operation_mode) {
+		return tx_err;
+	}
+	/* This function blocks until the packet has been transmitted */
+	if (0 == transmitting_packet) {
+		TRice("msg:Radio TRANSMIT: ERROR, packet is NOT prepared.\n");
+		return tx_err;
+	}
+
+	if (radio_off == radio_status) {
+		Radio_on();
+	}
+
+	RADIO_IRQ_DISABLE();
+
+	S2LP_GPIO_IrqClearStatus();
+	RADIO_IRQ_ENABLE();
+
+#if RADIO_HW_CSMA
+	csma_tx_restarts = 0;
+	if (csma_enabled) { //@TODO: add an API to enable/disable CSMA
+		S2LP_CSMA_Enable(S_ENABLE);
+		S2LP_RADIO_QI_SetRssiThreshdBm(csma_tx_threshold);
+		retval = tx_collision;
+	}
+#endif  /*RADIO_HW_CSMA*/
+
+	xTxDoneFlag = RESET;
+	smps_set_tx(); /* Change 8: Switch SMPS to TX frequency before transmit */
+	S2LP_CMD_StrobeTx();
+	/* wait for TX done */
+		/*To be on the safe side we put a timeout. */
+	osDelay(1);
+	BUSYWAIT_UNTIL(xTxDoneFlag, 10 * RADIO_WAIT_TIMEOUT);
+	if (transmitting_packet) {
+		S2LP_CMD_StrobeSabort();
+		if (xTxDoneFlag == RESET) {
+			TRice("Packet not transmitted: TIMEOUT\n");
+		} else {
+			TRice("Packet not transmitted: ERROR\n");
+		}
+	} else {
+		retval = tx_ok;
+	}
+	xTxDoneFlag = RESET;
+
+#if RADIO_HW_CSMA
+	if (csma_enabled) {
+		S2LP_CSMA_Enable(S_DISABLE);
+#if !RADIO_SNIFF_MODE
+		/* Put the receive threshold back where Radio_init() set it. RSSI_THR is one register
+		 * serving several unrelated jobs (ST bring-up guide p.50): the CSMA busy level while
+		 * transmitting, and - once back in RX - the level at which AFC starts tracking the
+		 * frequency offset. Leaving it at the tracked noise floor + a few dB, as this used
+		 * to, silently raised the AFC trigger well above the sensitivity-derived value and
+		 * stopped AFC from ever engaging on packets near the noise floor. The noise estimate
+		 * still drives csma_tx_threshold, which is its legitimate consumer. */
+		S2LP_RADIO_QI_SetRssiThreshdBm(RSSI_RX_THRESHOLD);
+#endif /*!RADIO_SNIFF_MODE*/
+	}
+#endif /*RADIO_HW_CSMA*/
+
+	Exit_TX();
 
 	if (radio_off == radio_state) {
 		/*If the radio was OFF before transmitting the packet, we must turn it OFF (legacy for ContikiMAC like upper layer) */
@@ -664,17 +792,25 @@ static eTransmitRes Radio_transmit(uint16_t payloadLen) {
 }
 
 static eTransmitRes Radio_send(sPacket *packet) {
+	eTransmitRes res = tx_err;
+	if (0 != operation_mode) {
+		return tx_err;
+	}
+	transmitting_packet = 1;
 	if (tx_ok != Radio_prepare(packet)) {
 #if RADIO_SNIFF_MODE
     S2LP_TIM_LdcrMode(S_ENABLE);
     S2LP_TIM_FastRxTermTimer(S_ENABLE);
     S2LP_GPIO_IrqConfig(RX_DATA_READY,S_ENABLE);
 #endif /*RADIO_SNIFF_MODE*/
-		S2LP_CMD_StrobeRx();
+		transmitting_packet = 0;
+    	RadioSwitchToRx();
 		TRice("msg:PREPARE FAILED\n");
 		return tx_err;
 	}
-	return Radio_transmit(packetbuf_totlen(packet));
+	res = Radio_transmit(packetbuf_totlen(packet));
+	transmitting_packet = 0;
+	return res;
 }
 
 static int16_t Radio_read(sPacket *packet) {
@@ -685,14 +821,27 @@ static int16_t Radio_read(sPacket *packet) {
 #if RADIO_SNIFF_MODE
       S2LP_CMD_StrobeSleep();
 #else /*!RADIO_SNIFF_MODE*/
-	S2LP_CMD_StrobeRx();
+    /* AFC freezes on sync (AFC_FREEZE_ON_SYNC, set by S2LP_RADIO_Init) and only re-acquires
+     * when the receiver re-enters RX. This node listens continuously - RX persistent mode
+     * with an infinite RX timeout - so the part never leaves RX on its own and a bare
+     * StrobeRx here is a no-op: the correction stays pinned to whichever neighbour was
+     * heard last. ST bring-up guide p.31 asks for AFC to be reset every time Rx restarts.
+     * Abort first so the strobe below is a genuine re-entry. The FIFO is already drained
+     * and flushed by Radio_read_from_fifo(), and the deaf window is two SPI transactions,
+     * so nothing is lost by cycling here rather than staying nominally in RX. */
+    S2LP_CMD_StrobeSabort();
+    RadioSwitchToRx();
 #endif /*RADIO_SNIFF_MODE*/
 	rx_num_bytes = 0;
 	return retval;
 }
 
 static int8_t Radio_channel_clear(void) {
-	float rssi_value;
+	int32_t rssiRaw;
+	int32_t rssiSum;
+	int16_t rssiAvgdBm;
+	int8_t  ret;
+	const uint8_t *sample;
 	/* Local variable used to memorize the S2LP state */
 	eRadioStatus radio_state = radio_status;
 
@@ -702,8 +851,18 @@ static int8_t Radio_channel_clear(void) {
 		/* Wakes up the Radio */
 		Radio_on();
 	}
-	rssi_value = S2LP_RADIO_QI_GetRssidBmRun();
-	int ret = (rssi_value < csma_tx_threshold) ? 1 : 0;
+	/* Despite its name S2LPRadioGetRssidBmRun() returns the raw 4-byte burst read of
+	 * RSSI_LEVEL_RUN with no dBm conversion applied. That register deliberately does not
+	 * auto-increment on a burst (DS11896 5.5.8.1: "the same as SPI burst mode, but no
+	 * automatic address increment"), so the word carries four consecutive RSSI samples, each
+	 * a raw 0..255 step where 0 means -146 dBm. Comparing the packed word straight against a
+	 * negative dBm threshold made this test permanently false, i.e. the channel always
+	 * reported busy. Average the four samples and convert, as Radio_read_from_fifo() does. */
+	rssiRaw = S2LP_RADIO_QI_GetRssidBmRun();
+	sample = (const uint8_t*)&rssiRaw;
+	rssiSum = (int32_t)sample[0] + sample[1] + sample[2] + sample[3];
+	rssiAvgdBm = (int16_t)((rssiSum / 4) - 146);
+	ret = (rssiAvgdBm < csma_tx_threshold) ? 1 : 0;
 
 	/* Puts the S2LP in its previous state */
 	if (radio_off == radio_state) {
@@ -794,6 +953,10 @@ static eRadioRes Radio_get_value(radio_param_t parameter, radio_value_t *ret_val
 		*ret_value = RADIO_POWER_DBM_MAX;
 		get_value_result = radio_ok;
 		break;
+	case RADIO_OPERATION_MODE:
+		*ret_value = operation_mode;
+		get_value_result = radio_ok;
+		break;
 	case RADIO_PARAM_MAX_BACKOFF_NR:
 	{
 		*ret_value = xCsmaInit.cMaxNb;
@@ -810,6 +973,54 @@ static eRadioRes Radio_get_value(radio_param_t parameter, radio_value_t *ret_val
 	}
 
 	return get_value_result;
+}
+
+static void EnterOperationMode(uint8_t mode) {
+	static uint8_t backup_mod2;
+	static uint8_t backup_pcktctrl1;
+	if ((0 != operation_mode) && (0 == mode)) { // exit test mode
+		TRice("msg:[RADIO] - exit test mode\n");
+		S2LP_CMD_StrobeSabort();
+		radio_set_ready_state();
+		S2LPSpiWriteRegisters(MOD2_ADDR, 1, &backup_mod2);
+		S2LPSpiWriteRegisters(PCKTCTRL1_ADDR, 1, &backup_pcktctrl1);
+		operation_mode = mode;
+		Exit_TX();
+	} else if ((0 == operation_mode) && (0 != mode)) { // enter test mode - only from normal mode
+		uint8_t dummy;
+		S2LPSpiReadRegisters(MOD2_ADDR, 1, &backup_mod2);
+		S2LPSpiReadRegisters(PCKTCTRL1_ADDR, 1, &backup_pcktctrl1);
+		switch (mode) {
+		case 1:
+			/* Continuous carrier. ST bring-up guide p.42 asks for both halves: MOD_TYPE = 7
+			 * (unmodulated) in MOD2 *and* TX_SOURCE = 3 (PN9) in PCKTCTRL1. The PCKTCTRL1
+			 * write used to be commented out, which left TX_SOURCE in normal mode - the
+			 * StrobeTx below then transmitted from an empty FIFO instead of emitting a tone,
+			 * so the mode was unusable for certification. Only MOD_TYPE is touched in MOD2 so
+			 * the configured datarate exponent survives. */
+			TRice("msg:[RADIO] - enter CW test mode\n");
+			radio_set_ready_state();
+			dummy = (uint8_t)((backup_mod2 & (uint8_t)(~MOD_TYPE_REGMASK)) | (0x7 << 4));
+			S2LPSpiWriteRegisters(MOD2_ADDR, 1, &dummy);
+			dummy = (uint8_t)((backup_pcktctrl1 & (uint8_t)(~TXSOURCE_REGMASK)) | (0x3 << 2));
+			S2LPSpiWriteRegisters(PCKTCTRL1_ADDR, 1, &dummy);
+			break;
+		case 2:
+			/* PN9: keep the application modulation, switch only the Tx source. Clear the
+			 * field before setting it - PCKTCTRL1 resets to 0x2C, which already has TX_SOURCE
+			 * set, so a bare OR cannot be relied on to produce the intended value. */
+			TRice("msg:[RADIO] - enter PN9 test mode\n");
+			radio_set_ready_state();
+			dummy = (uint8_t)((backup_pcktctrl1 & (uint8_t)(~TXSOURCE_REGMASK)) | (0x3 << 2));
+			S2LPSpiWriteRegisters(PCKTCTRL1_ADDR, 1, &dummy);
+			break;
+		default:
+			return;
+		}
+		//S2LP_PCKT_BASIC_SetPayloadLength(0xFFFF);
+		S2LP_CMD_StrobeTx();
+		operation_mode = mode;
+	}
 }
 
 static eRadioRes Radio_set_value(radio_param_t parameter, radio_value_t input_value) {
@@ -863,6 +1074,9 @@ static eRadioRes Radio_set_value(radio_param_t parameter, radio_value_t input_va
 		}
 	} else if (parameter == RADIO_PARAM_CCA_THRESHOLD) {
 		csma_tx_threshold = input_value;
+		set_value_result = radio_ok;
+	} else if (parameter == RADIO_OPERATION_MODE) {
+		EnterOperationMode(input_value);
 		set_value_result = radio_ok;
 	} else if (RADIO_PARAM_MAX_BACKOFF_NR == parameter) {
 		if (8 > input_value) {
@@ -930,6 +1144,16 @@ void Radio_process_irq_cb(void) {
 	/* get interrupt source from radio */
 	S2LP_GPIO_IrqGetStatus(&x_irq_status);
 
+	/* Change 6: FIFO error handling - abort and flush per PDF p.48 */
+	if (x_irq_status.IRQ_TX_FIFO_ERROR) {
+		TRice("err:[RADIO DRV] - tx FIFO error.\n");
+		S2LP_CMD_StrobeSabort();
+		xTxDoneFlag = SET;
+		receiving_packet = 0;
+		radioEvtHndl(radioEvtIdOffset + radio_txFifoErr, HandleTxFifoError);
+		return;
+	}
+
 	/* The IRQ_TX_DATA_SENT notifies the packet transmission.
 	 * Then puts the Radio in RX/Sleep according to the selected mode */
 	if (x_irq_status.IRQ_TX_DATA_SENT && transmitting_packet) {
@@ -942,15 +1166,32 @@ void Radio_process_irq_cb(void) {
 	/* The IRQ_VALID_SYNC is used to notify a new packet is coming */
 	if (x_irq_status.IRQ_VALID_SYNC && !transmitting_packet) {
 		receiving_packet = 1;
-		S2LP_CMD_StrobeRx();
+		//S2LP_CMD_StrobeRx();
 	}
 #endif /*RADIO_SNIFF_MODE*/
 
 #if RADIO_HW_CSMA
 	if (x_irq_status.IRQ_MAX_BO_CCA_REACH) {
-		/* Send a Tx command: i.e. keep on trying */
-		TRice("dbg:IRQ_MAX_BO_CCA_REACH\n");
-		S2LP_CMD_StrobeTx();
+		/* ST bring-up guide p.24: this IRQ carries two opposite meanings. Either the channel
+		 * was still busy on the last CSMA slot and the transmission was cancelled, or the
+		 * channel was clear, the part transmitted anyway, and TX_DATA_SENT will follow at
+		 * the end of the frame. Re-strobing TX unconditionally wrecks the second case by
+		 * restarting a transmission that is already on air. The guide's disambiguation is to
+		 * read RSSI_LEVEL here and anticipate what the part decided. */
+		if (S2LP_RADIO_QI_GetRssidBm() < csma_tx_threshold) {
+			/* Channel was clear - the frame is going out, wait for TX_DATA_SENT. */
+			TRice("dbg:IRQ_MAX_BO_CCA_REACH - channel clear, tx already started\n");
+		} else if (csma_tx_restarts < CSMA_MAX_TX_RESTARTS) {
+			csma_tx_restarts++;
+			TRice("dbg:IRQ_MAX_BO_CCA_REACH - channel busy, restart %d\n", csma_tx_restarts);
+			S2LP_CMD_StrobeTx();
+		} else {
+			/* Out of restarts. Stop the engine but leave transmitting_packet set so
+			 * Radio_transmit() falls through its timeout and reports tx_collision rather
+			 * than mistaking an abandoned send for a delivered one. */
+			TRice("wrn:IRQ_MAX_BO_CCA_REACH - channel busy, giving up\n");
+			S2LP_CMD_StrobeSabort();
+		}
 		return;
 	}
 #endif /*RADIO_HW_CSMA*/
@@ -971,12 +1212,43 @@ void Radio_process_irq_cb(void) {
 
 #if !RADIO_SNIFF_MODE
 	if (x_irq_status.IRQ_RX_DATA_DISC && !transmitting_packet) {
-		uint32_t irqReg = *(uint32_t*)&x_irq_status;
-		TRice("dbg:IRQ_RX_DATA_DISC(%d)[0x%08X]\n", S2LP_FIFO_ReadNumberBytesRxFifo(), irqReg);
-		/* RX command - to ensure the device will be ready for the next reception */
+		x_irq_status.IRQ_RX_DATA_DISC = 0;
+		transmitting_packet = 0;
+		receiving_packet = 0;
 		if (x_irq_status.IRQ_RX_TIMEOUT) {
-			S2LP_CMD_StrobeCommand(CMD_FLUSHRXFIFO);
-			S2LP_CMD_StrobeRx();
+			TRice("\t IRQ_RX_TIMEOUT\n");
+			x_irq_status.IRQ_RX_TIMEOUT = 0;
+		}
+		if (x_irq_status.IRQ_CRC_ERROR) {
+			TRice("\t IRQ_CRC_ERROR\n");
+			x_irq_status.IRQ_CRC_ERROR = 0;
+		}
+		if (x_irq_status.IRQ_TX_FIFO_ERROR) {
+			TRice("\t IRQ_TX_FIFO_ERROR\n");
+			x_irq_status.IRQ_TX_FIFO_ERROR = 0;
+		}
+		if (x_irq_status.IRQ_RX_FIFO_ALMOST_FULL) {
+			TRice("\t IRQ_RX_FIFO_ALMOST_FULL(%d)\n", S2LP_FIFO_ReadNumberBytesRxFifo());
+			x_irq_status.IRQ_RX_FIFO_ALMOST_FULL = 0;
+		}
+		if (x_irq_status.IRQ_RSSI_ABOVE_TH) {
+			TRice("\t IRQ_RSSI_ABOVE_TH\n");
+			x_irq_status.IRQ_RSSI_ABOVE_TH = 0;
+		}
+		if (x_irq_status.IRQ_RX_START_TIME) {
+			TRice("\t IRQ_RX_START_TIME\n");
+			x_irq_status.IRQ_RX_START_TIME = 0;
+		}
+		if (x_irq_status.IRQ_RX_FIFO_ERROR) {
+			TRice("\t IRQ_RX_FIFO_ERROR\n");
+			x_irq_status.IRQ_RX_FIFO_ERROR = 0;
+			radioEvtHndl(radioEvtIdOffset + radio_rxFifoErr, HandleRxFifoError);
+		} else {
+			radioEvtHndl(radioEvtIdOffset + radio_rxDiscarded, HandleRxError);
+		}
+		if (*(uint32_t*)&x_irq_status) {
+			uint32_t irqReg = *(uint32_t*)&x_irq_status;
+			TRice("\t IRQ_RX_DATA_DISC[0x%08X]\n", irqReg);
 		}
 	}
 #endif /*!RADIO_SNIFF_MODE*/

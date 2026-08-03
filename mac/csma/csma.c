@@ -247,6 +247,7 @@ static uint16_t HandleIncoming(sPacket *incomingPacket) {
 	    int duplicate = 0;
 	#if CSMA_SEND_SOFT_ACK
 	    if(packetbuf_attr(incomingPacket, PACKETBUF_ATTR_MAC_ACK)) {
+	    	uint32_t tmo = HAL_GetTick();
 	      uint8_t *buff = (uint8_t*)packetbuf_hdrptr(&ackPacket);
 	      eTransmitRes ackTxRes;
 	      packetbuf_clear(&ackPacket);
@@ -255,7 +256,9 @@ static uint16_t HandleIncoming(sPacket *incomingPacket) {
 	      buff[2] = packetbuf_attr(incomingPacket, PACKETBUF_ATTR_MAC_SEQNO);
 	      packetbuf_set_datalen(&ackPacket, CSMA_ACK_LEN);
 	      packetbuf_set_addr(&ackPacket, PACKETBUF_ADDR_RECEIVER, packetbuf_addr(incomingPacket, PACKETBUF_ADDR_SENDER));
+	      TRiceS("msg:issue ack to %s,", (char*)linkaddr_printAddr(packetbuf_addr(&ackPacket, PACKETBUF_ADDR_RECEIVER)));
 	      ackTxRes = subGHz_radio_driver.send(&ackPacket);
+		  TRice("sent in %d(res - %d)\n", (HAL_GetTick() - tmo), ackTxRes);
 	    }
 	#endif /* CSMA_SEND_SOFT_ACK */
 	    /* Check for duplicate packet. */
@@ -444,7 +447,11 @@ static void EnqueuePacket(sPacket *packet, mac_callback_t sent, void *ptr) {
 		  CheckStalledTx();
 	  } else {
 		  /* Only one packet is in queue and only for this neighbor - start transmission of it*/
-		  TransmitFromQueue();
+		  if (0 == subGHz_radio_driver.transmitting_packet()) {
+			  TransmitFromQueue();
+		  } else {
+			  csmaEvtHndl(csmaEvtIdOffset + radio_taskCall, KickTranferQueue);
+		  }
 	  }
 	  return;
   } else {

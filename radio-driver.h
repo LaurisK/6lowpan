@@ -47,6 +47,15 @@ extern "C" {
 #define XTAL_OFFSET_PPM             0
 #define INFINITE_TIMEOUT            0.0
 
+/* Guard time allowed for the external reference to stabilise before the PLL is asked to
+ * lock. ST bring-up guide p.14: with a TCXO the enable is outside the S2-LP and a guard
+ * timer is required before any Tx or Rx, otherwise the PLL will not lock. On this board
+ * the TCXO shares the radio supply (PB1, asserted once in MX_GPIO_Init) rather than
+ * having its own enable line, so the wait is taken once during radio init.
+ * 5ms covers the usual 1-3ms TCXO startup with margin; raise it if a slower part is
+ * fitted. */
+#define RADIO_TCXO_STARTUP_MS       5
+
 //@TODO: Validate CHANNEL_NUMBER_MIN / MAX values
 #ifdef USE_RADIO_433MHz
 #define BASE_FREQUENCY              433.0e6
@@ -74,13 +83,53 @@ extern "C" {
 
 #define radio_spi_busy() (HAL_SPI_GetState(&hspi) != HAL_SPI_STATE_READY)
 
-#define CHANNEL_SPACE               100e3
+#define CHANNEL_SPACE               200e3
 #define CHANNEL_NUMBER              0
 #define IEEE802154_CONF_DEFAULT_CHANNEL CHANNEL_NUMBER
-#define MODULATION_SELECT           MOD_2FSK
-#define DATARATE                    38400 /*bps*/
-#define FREQ_DEVIATION              20e3
-#define BANDWIDTH                   100.0e3
+#define MODULATION_SELECT           MOD_2GFSK_BT05
+
+/*------------------------------------------------------------------------
+ *  Environment-specific radio parameters (select in project-conf.h)
+ *
+ *  RADIO_ENV_INDOOR  : 100 kbps on-air (50 kbps effective w/ FEC)
+ *                      h = 1.0, BW = 200 kHz, shorter preamble
+ *  RADIO_ENV_OUTDOOR :  50 kbps on-air (25 kbps effective w/ FEC)
+ *                      h = 1.0, BW = 100 kHz, longer preamble
+ *
+ *  Careful with the CLOCKREC names: the S2LP_Library numbering is offset by
+ *  one from the datasheet and from the ST bring-up guide. CLOCKREC1_VALUE is
+ *  written to CLOCKREC1_ADDR (0x20), which the datasheet calls CLOCKREC2, and
+ *  CLOCKREC0_VALUE goes to 0x21, the datasheet's CLOCKREC1. So when the guide
+ *  says "CLOCKREC2 = 0x28 / CLOCKREC1 = 0x58" that maps to
+ *  CLOCKREC1_VALUE = 0x28 / CLOCKREC0_VALUE = 0x58 here.
+ *----------------------------------------------------------------------*/
+#if defined(RADIO_ENV_INDOOR)
+
+#define DATARATE                    100000  /* bps (on-air symbol rate)           */
+#define FREQ_DEVIATION              50e3    /* Hz  – h = 2·Fd / DR = 1.0         */
+#define BANDWIDTH                   200.0e3 /* Hz  – Carson: 2·(Fd + DR/2)       */
+#define RSSI_RX_THRESHOLD          -112.0   /* dBm – 3 dB below ~-109 sens.      */
+#define AFC_FAST_PERIOD             0x20    /* symbols in fast-gain window        */
+#define AFC_FAST_GAIN               2       /* log2 gain during acquisition       */
+#define AFC_SLOW_GAIN               3       /* log2 gain during tracking          */
+#define CLOCKREC1_VALUE             0x28    /* P_SLOW=1, DLL, I_SLOW=8           */
+#define CLOCKREC0_VALUE             0x58    /* P_FAST=2, 16-sym postfilt, I_FAST=8*/
+
+#elif defined(RADIO_ENV_OUTDOOR)
+
+#define DATARATE                    50000   /* bps                                */
+#define FREQ_DEVIATION              25e3    /* Hz  – h = 1.0                      */
+#define BANDWIDTH                   100.0e3 /* Hz  – Carson: 2·(Fd + DR/2)       */
+#define RSSI_RX_THRESHOLD          -118.0   /* dBm – S2LP sens. ~-115 @50k+FEC   */
+#define AFC_FAST_PERIOD             0x30    /* symbols in fast-gain window        */
+#define AFC_FAST_GAIN               2       /* log2 gain during acquisition       */
+#define AFC_SLOW_GAIN               3       /* log2 gain during tracking          */
+#define CLOCKREC1_VALUE             0x28    /* P_SLOW=1, DLL, I_SLOW=8           */
+#define CLOCKREC0_VALUE             0x28    /* P_FAST=1, 8-sym postfilt, I_FAST=8 */
+
+#else
+#error "Define RADIO_ENV_INDOOR or RADIO_ENV_OUTDOOR in project-conf.h"
+#endif
 
 #define RADIO_POWER_DBM_MAX         14
 #define RADIO_POWER_DBM_MIN        -31
@@ -88,18 +137,19 @@ extern "C" {
 #define POWER_DBM                   12.0
 #define POWER_INDEX                 7
 
-#define RSSI_RX_THRESHOLD          -118.0   /* dBm */
-#define RSSI_TX_THRESHOLD          -90.0   /* dBm */
+#define RSSI_TX_THRESHOLD          -90.0   /* dBm – CCA threshold for CSMA */
 
 /*  Packet configuration parameters  */
 #if RADIO_LONG_PREAMBLE
 #define PREAMBLE_LENGTH             PREAMBLE_BYTE(64)
-#else /*!RADIO_LONG_PREAMBLE*/
-#define PREAMBLE_LENGTH             PREAMBLE_BYTE(4)
-#endif/*RADIO_LONG_PREAMBLE*/
+#elif defined(RADIO_ENV_INDOOR)
+#define PREAMBLE_LENGTH             PREAMBLE_BYTE(8)
+#else /* RADIO_ENV_OUTDOOR */
+#define PREAMBLE_LENGTH             PREAMBLE_BYTE(12)
+#endif
 
 #define SYNC_LENGTH                 SYNC_BYTE(4)
-#define SYNC_WORD                   0x88888888
+#define SYNC_WORD                   0x7A0E3564
 #define VARIABLE_LENGTH             S_ENABLE
 #define EXTENDED_LENGTH_FIELD       S_DISABLE
 #define CRC_MODE                    PKT_CRC_MODE_32BITS

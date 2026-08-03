@@ -415,6 +415,24 @@ enum radio_param_e {
    * mandatory.
    */
   RADIO_CONST_MAX_PAYLOAD_LEN,
+
+  /*
+   * Operation mode of RADIO:
+   *   0 - normal,
+   *   1 - CW test,
+   *   2 - PN9 test,
+   *   3 - constant test frame transmit mode
+   */
+  RADIO_OPERATION_MODE,
+
+  /*
+   * Radio parameters
+   */
+  RADIO_BASE_FREQUENCY,
+  RADIO_MODULATION,
+  RADIO_DATARATE,
+  RADIO_FREQ_DEVIATION,
+  RADIO_BANDWIDTH,
 };
 
 /**
