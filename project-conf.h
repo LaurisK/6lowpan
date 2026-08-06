@@ -41,6 +41,7 @@ extern "C" {
 #define RADIO_LONG_PREAMBLE 0
 #define RADIO_USE_TCXO 1   /* 1=TCXO (current HW), 0=Xtal */
 
+#define RADIO_CENTRE_FREQUENCY_HZ 869700000
 #ifndef RADIO_USE_EXTERNAL_PA
 #define RADIO_USE_EXTERNAL_PA 1
 #endif

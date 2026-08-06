@@ -64,7 +64,7 @@ extern "C" {
 #endif /*USE_RADIO_433MHz*/
 
 #ifdef USE_RADIO_868MHz
-#define BASE_FREQUENCY              868.0e6
+#define BASE_FREQUENCY              RADIO_CENTRE_FREQUENCY_HZ
 #define CHANNEL_NUMBER_MIN          0
 #define CHANNEL_NUMBER_MAX          13
 #endif /*USE_RADIO_868MHz*/
