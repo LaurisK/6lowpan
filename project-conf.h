@@ -41,6 +41,9 @@ extern "C" {
 #define RADIO_LONG_PREAMBLE 0
 #define RADIO_USE_TCXO 1   /* 1=TCXO (current HW), 0=Xtal */
 
+#ifndef RADIO_USE_EXTERNAL_PA
+#define RADIO_USE_EXTERNAL_PA 1
+#endif
 /* Radio environment profile: select ONE */
 #define RADIO_ENV_INDOOR
 // #define RADIO_ENV_OUTDOOR

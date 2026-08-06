@@ -507,17 +507,12 @@ static int8_t Radio_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
 	S2LP_RADIO_SetChannel(CHANNEL_NUMBER);
 	S2LP_RADIO_SetChannelSpace(CHANNEL_SPACE);
 
-	if (!S2LP_ManagementGetRangeExtender()) //Also check similar code in s2lp_interface.c
-	{
-		/* if we haven't an external PA, use the library function */
-		S2LP_RADIO_SetPALeveldBm(POWER_INDEX, POWER_DBM);
-	} else {
-		/* in case we are using the PA board, the S2LP_RADIO_SetPALeveldBm will be not functioning because the output power is affected by the amplification
-		 of this external component. Set the raw register. */
-		uint8_t maxPaPwr = (uint8_t)((int32_t)29 - (2 * MAX(MIN(0/*calibration.data.S2LP_tx_power*/, 14/*MAX_PA_VALUE*/), (-31)/*MIN_PA_VALUE*/)));
-		uint8_t rampScheme[8] = {maxPaPwr, (maxPaPwr - 6), (maxPaPwr - 12), (maxPaPwr - 24), (maxPaPwr - 36), (maxPaPwr - 48), (maxPaPwr - 72), (maxPaPwr - 96)};
-		S2LP_WriteRegister(PA_POWER8_ADDR, 8, rampScheme);
-	}
+#if RADIO_USE_EXTERNAL_PA
+	S2LP_RADIO_SetAutoRampingMode(S_ENABLE);
+	S2LP_RADIO_SetPALeveldBm(POWER_INDEX, RADIO_PA_DRIVE_DBM);
+#else /*!RADIO_USE_EXTERNAL_PA*/
+	S2LP_RADIO_SetPALeveldBm(POWER_INDEX, POWER_DBM);
+#endif /*RADIO_USE_EXTERNAL_PA*/
 	S2LP_RADIO_SetPALevelMaxIndex(POWER_INDEX);
 
 	/* Configures the Radio packet handler part*/
@@ -624,6 +619,13 @@ static int8_t Radio_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
 
 	/* Configure the radio to route the IRQ signal to its GPIO 3 */
 	S2LP_GPIO_Init(&xGpioIRQ);
+
+#if RADIO_USE_EXTERNAL_PA
+	S2LP_GPIO_Init(&(SGpioInit){S2LP_GPIO_0, RADIO_PA_GPIO_MODE, RADIO_PA_CSD_SELECT});
+	S2LP_GPIO_Init(&(SGpioInit){S2LP_GPIO_1, RADIO_PA_GPIO_MODE, RADIO_PA_CTX_SELECT});
+	S2LP_GPIO_Init(&(SGpioInit){S2LP_GPIO_2, RADIO_PA_GPIO_MODE, RADIO_PA_VCONT_SELECT});
+#endif /*RADIO_USE_EXTERNAL_PA*/
+}
 
 	RadioSwitchToRx();
 

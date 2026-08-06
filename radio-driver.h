@@ -137,6 +137,15 @@ extern "C" {
 #define POWER_DBM                   12.0
 #define POWER_INDEX                 7
 
+#if RADIO_USE_EXTERNAL_PA
+#define RADIO_PA_GPIO_MODE          S2LP_GPIO_MODE_DIGITAL_OUTPUT_LP
+#define RADIO_PA_CSD_SELECT         S2LP_GPIO_DIG_OUT_TX_RX_MODE /* enable: high in TX or RX */
+#define RADIO_PA_CTX_SELECT         S2LP_GPIO_DIG_OUT_RX_STATE   /* high while demodulating  */
+#define RADIO_PA_VCONT_SELECT       S2LP_GPIO_DIG_OUT_TX_STATE   /* high in TX               */
+
+#define RADIO_PA_DRIVE_DBM          5
+#endif /*RADIO_USE_EXTERNAL_PA*/
+
 #define RSSI_TX_THRESHOLD          -90.0   /* dBm – CCA threshold for CSMA */
 
 /*  Packet configuration parameters  */
