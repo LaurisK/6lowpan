@@ -17,6 +17,9 @@
 #endif /*RADIO_ADDRESS_FILTERING*/
 
 #define RADIO_WAIT_TIMEOUT (100)
+#define MC_STATE_WAIT_SLEEP ((S2LPState)0x7C)
+#define RADIO_STATE_STEP_TIMEOUT (10)
+#define RADIO_STATE_MAX_STEPS (8)
 /* The receive threshold is not derived from the measured noise floor: RSSI_THR also gates
  * when AFC starts tracking, so it stays at the sensitivity-derived RSSI_RX_THRESHOLD.
  * Only the CSMA busy level tracks the noise floor. */
@@ -118,6 +121,10 @@ static int8_t backgroundNoise = (-127);
 static uint16_t radioEvtIdOffset;
 static fRadioEvtHndl radioEvtHndl;
 void (*overridenRxCb)(void);
+
+/* Private function prototypes ----------------------------------------------*/
+static void RadioApplyConfiguration(void);
+
 /* Private functions --------------------------------------------------------*/
 /**
  * @brief  radio_refresh_status	refresh and returns S2-LP status
@@ -234,6 +241,51 @@ static void radio_print_status(S2LPState s) {
 	}
 }
 
+static int8_t RadioForceReady(void) {
+	uint8_t step;
+
+	for (step = 0; step < RADIO_STATE_MAX_STEPS; step++) {
+		uint8_t state = (uint8_t)radio_refresh_status();
+
+		switch (state) {
+		case MC_STATE_READY:
+			return 0;
+		case MC_STATE_RX:
+		case MC_STATE_TX:
+			/* SABORT is the only exit from the two active states, and it lands in READY. */
+			S2LP_CMD_StrobeSabort();
+			break;
+		case MC_STATE_WAIT_SLEEP:
+			/* Only SLEEP is accepted. The status read above has already released nIRQ, so
+			 * the part is free to complete the sleep entry it was parked on. */
+			S2LP_CMD_StrobeSleep();
+			break;
+		case MC_STATE_SYNTH_SETUP:
+			S2LP_CMD_StrobeStandby();
+			break;
+		case MC_STATE_SLEEP:
+		case MC_STATE_SLEEP_NOFIFO:
+		case MC_STATE_STANDBY:
+		case MC_STATE_LOCKON:
+		case MC_STATE_LOCK_ST:
+			S2LP_CMD_StrobeReady();
+			break;
+		default:
+			/* Undocumented code, so the state machine is passing through something of its
+			 * own accord. Aim SABORT at it in case it settles in TX or RX, and let the wait
+			 * below give it a chance to move on by itself. */
+			S2LP_CMD_StrobeSabort();
+			break;
+		}
+		/* Wait for the state to change rather than for READY: most legs of the ladder are
+		 * intermediate (WAIT_SLEEP -> SLEEP, SYNTH_SETUP -> STANDBY) and waiting for READY
+		 * would spend the whole step timeout on each of them. */
+		BUSYWAIT_UNTIL(state != (uint8_t)radio_refresh_status(), RADIO_STATE_STEP_TIMEOUT);
+	}
+
+	return (MC_STATE_READY == radio_refresh_status()) ? 0 : 1;
+}
+
 /**
  * @brief  radio_set_ready_state sets the state of the radio to READY
  */
@@ -247,12 +299,10 @@ void radio_set_ready_state(void) {
   S2LP_TIM_FastRxTermTimer(S_DISABLE);
 #endif /*RADIO_SNIFF_MODE*/
 
-	if (radio_refresh_status() == MC_STATE_RX) {
-		S2LP_CMD_StrobeSabort();
-	} else {
-		S2LP_CMD_StrobeReady();
+	if (0 != RadioForceReady()) {
+		TRice("err:[RADIO DRV] - stuck in state %X, resetting the part.\n", (uint8_t)radio_refresh_status());
+		RadioApplyConfiguration();
 	}
-	BUSYWAIT_UNTIL(radio_refresh_status() == MC_STATE_READY, RADIO_WAIT_TIMEOUT);
 
 	S2LP_CMD_StrobeFlushRxFifo();
 	receiving_packet = 0;
@@ -462,21 +512,7 @@ static int8_t Radio_off(void) {
 	return 0;
 }
 
-static int8_t Radio_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
-	TRice("msg:RADIO INIT IN\n");
-	radioEvtIdOffset = evtOffset;
-	radioEvtHndl = packedEvtHndl;
-	S2LPInterfaceInit();
-
-	/* The reference frequency is already established by S2LPInterfaceInit(): read from the
-	 * RF module EEPROM, or measured by S2LP_ManagementComputeXtalFrequency(), with the
-	 * library's own 50MHz default standing in when neither is available. Forcing
-	 * XTAL_FREQUENCY over the top of that discarded the detected value, and every setting
-	 * derived from the reference - datarate, deviation, channel filter, SMPS divider, timer
-	 * scaling - would then be computed against the wrong number on any module not fitted
-	 * with a 50MHz part. */
-	TRice("msg:Radio reference %u Hz\n", S2LP_RADIO_GetXtalFrequency());
-
+static void RadioApplyConfiguration(void) {
 	S2LP_CMD_StrobeSres();
 
 	/* SRES restarts the digital core: every register access below is only valid once the
@@ -627,6 +663,16 @@ static int8_t Radio_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
 #endif /*RADIO_USE_EXTERNAL_PA*/
 }
 
+static int8_t Radio_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
+	TRice("msg:RADIO INIT IN\n");
+	radioEvtIdOffset = evtOffset;
+	radioEvtHndl = packedEvtHndl;
+	S2LPInterfaceInit();
+
+	TRice("msg:Radio reference %u Hz\n", S2LP_RADIO_GetXtalFrequency());
+
+	RadioApplyConfiguration();
+
 	RadioSwitchToRx();
 
 	radio_status = radio_on;
@@ -702,6 +748,9 @@ static void Exit_TX(void) {
   S2LP_TIM_LdcrMode(S_ENABLE);
   S2LP_TIM_FastRxTermTimer(S_ENABLE);
   S2LP_GPIO_IrqConfig(RX_DATA_READY,S_ENABLE);
+#else /*!RADIO_SNIFF_MODE*/
+	S2LP_GPIO_IrqConfig(VALID_SYNC, S_ENABLE);
+	S2LP_GPIO_IrqConfig(RX_DATA_DISC, S_ENABLE);
 #endif /*RADIO_SNIFF_MODE*/
 
     RadioSwitchToRx();
@@ -710,6 +759,14 @@ static void Exit_TX(void) {
                  || radio_refresh_status() == MC_STATE_SLEEP_NOFIFO
 #endif /*RADIO_SNIFF_MODE*/
 			,RADIO_WAIT_TIMEOUT);
+
+#if !RADIO_SNIFF_MODE
+	if (MC_STATE_RX != radio_refresh_status()) {
+		if (0 == RadioForceReady()) {
+			RadioSwitchToRx();
+		}
+	}
+#endif /*!RADIO_SNIFF_MODE*/
 
 	S2LP_CMD_StrobeFlushTxFifo();
 
@@ -736,9 +793,6 @@ static eTransmitRes Radio_transmit(uint16_t payloadLen) {
 
 	RADIO_IRQ_DISABLE();
 
-	S2LP_GPIO_IrqClearStatus();
-	RADIO_IRQ_ENABLE();
-
 #if RADIO_HW_CSMA
 	csma_tx_restarts = 0;
 	if (csma_enabled) { //@TODO: add an API to enable/disable CSMA
@@ -748,9 +802,16 @@ static eTransmitRes Radio_transmit(uint16_t payloadLen) {
 	}
 #endif  /*RADIO_HW_CSMA*/
 
+#if !RADIO_SNIFF_MODE
+	S2LP_GPIO_IrqConfig(VALID_SYNC, S_DISABLE);
+	S2LP_GPIO_IrqConfig(RX_DATA_DISC, S_DISABLE);
+#endif /*!RADIO_SNIFF_MODE*/
+
 	xTxDoneFlag = RESET;
 	smps_set_tx(); /* Change 8: Switch SMPS to TX frequency before transmit */
+	S2LP_GPIO_IrqClearStatus();
 	S2LP_CMD_StrobeTx();
+	RADIO_IRQ_ENABLE();
 	/* wait for TX done */
 		/*To be on the safe side we put a timeout. */
 	osDelay(1);
