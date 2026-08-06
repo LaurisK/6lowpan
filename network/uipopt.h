@@ -264,7 +264,7 @@ void uip_log(char *msg);
 /** @} */
 
 #ifndef UIP_CONF_ND6_SEND_RA
-#define UIP_ND6_SEND_RA                     1   /* enable/disable RA sending */
+#define UIP_ND6_SEND_RA                     0   /* enable/disable RA sending */
 #else
 #define UIP_ND6_SEND_RA UIP_CONF_ND6_SEND_RA
 #endif

@@ -605,6 +605,11 @@ void uip_ds6_defrt_rm(uip_ds6_defrt_t *defrt)
   for(d = dfltRouterListHead; d != NULL; d = d->next) {
     if(d == defrt) {
       uip_ds6_defrt_t *walker = dfltRouterListHead, *follower = NULL;
+#if UIP_DS6_NOTIFICATIONS
+      /* The entry is freed below, so keep the address the listeners need. */
+      uip_ipaddr_t rmIpAddr;
+      uip_ipaddr_copy(&rmIpAddr, &defrt->ipaddr);
+#endif
       TRice("msg:Removing default\n");
       /* Remove default router from list */
       while (NULL != walker) {
@@ -622,8 +627,7 @@ void uip_ds6_defrt_rm(uip_ds6_defrt_t *defrt)
       }
       vPortFree(defrt);
 #if UIP_DS6_NOTIFICATIONS
-      call_route_callback(UIP_DS6_NOTIFICATION_DEFRT_RM,
-			  &defrt->ipaddr, &defrt->ipaddr);
+      call_route_callback(UIP_DS6_NOTIFICATION_DEFRT_RM, &rmIpAddr, &rmIpAddr);
 #endif
       return;
     }

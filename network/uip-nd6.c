@@ -748,7 +748,7 @@ void uip_nd6_ra_output(sUipBuff *dsPeriodicBuff, uip_ipaddr_t * dest) {
 #endif /* UIP_ND6_SEND_RA */
 #endif /* UIP_CONF_ROUTER */
 
-#if 1//!UIP_CONF_ROUTER
+#if !UIP_CONF_ROUTER
 /*---------------------------------------------------------------------------*/
 /**
  * Process a Router Advertisement
@@ -966,7 +966,7 @@ static uip_icmp6_input_handler_t na_input_handler = {NULL, ICMP6_NA, UIP_ICMP6_H
 static uip_icmp6_input_handler_t rs_input_handler = {NULL, ICMP6_RS, UIP_ICMP6_HANDLER_CODE_ANY, rs_input};
 #endif
 
-#if 1//!UIP_CONF_ROUTER
+#if !UIP_CONF_ROUTER
 static uip_icmp6_input_handler_t ra_input_handler = {NULL, ICMP6_RA, UIP_ICMP6_HANDLER_CODE_ANY, ra_input};
 #endif
 /*---------------------------------------------------------------------------*/
@@ -989,7 +989,7 @@ uip_nd6_init()
   uip_icmp6_register_input_handler(&rs_input_handler);
 #endif
 
-#if 1//!UIP_CONF_ROUTER
+#if !UIP_CONF_ROUTER
   /* Only process RAs if we are not a router */
   uip_icmp6_register_input_handler(&ra_input_handler);
 #endif

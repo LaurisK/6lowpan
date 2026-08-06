@@ -100,11 +100,15 @@ static uip_ip6addr_t default_prefix = {
 static TimerHandle_t rsSendTmo;
 #endif /* !UIP_CONF_ROUTER */
 static TimerHandle_t periodicTim;
+#if UIP_CONF_ROUTER && UIP_ND6_SEND_RA
 static TimerHandle_t raDelayTimer;
+#endif /* UIP_CONF_ROUTER && UIP_ND6_SEND_RA */
 sUipBuff dsPeriodicBuff;
 static uint16_t ds6EvtIdOffset;
 static fRadioEvtHndl ds6EvtHndl;
+#if UIP_CONF_ROUTER && UIP_ND6_SEND_RA
 uip_ipaddr_t raDest;
+#endif /* UIP_CONF_ROUTER && UIP_ND6_SEND_RA */
 
 /*---------------------------------------------------------------------------*/
 const uip_ip6addr_t * uip_ds6_default_prefix() {
@@ -176,22 +180,26 @@ static void uip_ds6_periodic(sUipBuff *dsPeriodicBuff) {
   return;
 }
 
+#if UIP_CONF_ROUTER && UIP_ND6_SEND_RA
 static void IssueUnicastRa(void* unused) {
 	//raDest
     TRice("msg:Sending unicast RA (RS reply)\n");
     uip_nd6_ra_output(&dsPeriodicBuff, &raDest);
     tcpip_ipv6_output(&dsPeriodicBuff);
 }
+#endif /* UIP_CONF_ROUTER && UIP_ND6_SEND_RA */
 
 static void HandleDs6PeriodicTimer(TimerHandle_t periodicTim) {
     uip_ds6_periodic(&dsPeriodicBuff);
     tcpip_ipv6_output(&dsPeriodicBuff);
 }
 
+#if UIP_CONF_ROUTER && UIP_ND6_SEND_RA
 static void HandleRsToRaDelay(TimerHandle_t delayTim) {
 	//switch context from timers task to ours.
 	ds6EvtHndl(ds6EvtIdOffset + radio_taskCall, IssueUnicastRa);
 }
+#endif /* UIP_CONF_ROUTER && UIP_ND6_SEND_RA */
 
 #if !UIP_CONF_ROUTER
 /*---------------------------------------------------------------------------*/
@@ -339,7 +347,9 @@ void uip_ds6_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl)
 #endif /* UIP_CONF_ROUTER */
   periodicTim = xTimerCreate("ds6-PeriodicTimer", pdMS_TO_TICKS(1000 * UIP_DS6_PERIOD), pdTRUE, 0, HandleDs6PeriodicTimer);
   xTimerStart(periodicTim, 0);
+#if UIP_CONF_ROUTER && UIP_ND6_SEND_RA
   raDelayTimer = xTimerCreate("ds6-RsToRaDelayTimer", 1/*Is to be set on actual use*/, pdFALSE, 0, HandleRsToRaDelay);
+#endif /* UIP_CONF_ROUTER && UIP_ND6_SEND_RA */
 
   return;
 }
