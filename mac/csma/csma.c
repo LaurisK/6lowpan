@@ -265,7 +265,7 @@ static uint16_t HandleIncoming(sPacket *incomingPacket) {
 	    duplicate = mac_sequence_is_duplicate(packetbuf_addr(incomingPacket, PACKETBUF_ADDR_SENDER), packetbuf_attr(incomingPacket, PACKETBUF_ATTR_MAC_SEQNO));
 	    if(duplicate) {
 	      /* Drop the packet. */
-	    	TRiceS("wrn:drop duplicate link layer packet from %s,", (char*)packetbuf_addr(incomingPacket, PACKETBUF_ADDR_SENDER));
+	    	TRiceS("wrn:drop duplicate link layer packet from %s,", (char*)linkaddr_printAddr(packetbuf_addr(incomingPacket, PACKETBUF_ADDR_SENDER)));
 	    	TRice("wrn: seqno %u\n", packetbuf_attr(incomingPacket, PACKETBUF_ATTR_MAC_SEQNO));
 	    	packetbuf_clear(incomingPacket);
 	    } else {
@@ -347,8 +347,9 @@ static void TransmitFromQueue(void) {
 				          	  memcpy(&tempPacket, &ackPacket, sizeof(sPacket));
 				          	  if (0 != HandleIncoming(&tempPacket)) {
 				          		csmaEvtHndl(csmaEvtIdOffset + radio_receivedData, NULL);
+				          	  } else {
+				          		packetbuf_clear(&tempPacket);
 				          	  }
-				          	  //@todo - we could pass this payload further for some handling.
 				            }
 			        	}
 		        	}
@@ -487,12 +488,12 @@ static void send_packet(sPacket *packet, mac_callback_t sent, void *ptr) {
  */
 static uint16_t input_packet(sPacket *rxPacket)
 {
-  if (0 == packetbuf_datalen(&tempPacket)) {
-    subGHz_radio_driver.read(rxPacket);
-  } else {
+  if (0 != packetbuf_datalen(&tempPacket)) {
 	memcpy(rxPacket, &tempPacket, sizeof(sPacket));
 	packetbuf_clear(&tempPacket);
+	return packetbuf_datalen(rxPacket);
   }
+  subGHz_radio_driver.read(rxPacket);
   return HandleIncoming(rxPacket);
 }
 
