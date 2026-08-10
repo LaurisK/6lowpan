@@ -135,12 +135,10 @@ uip_sr_node_t* uip_sr_update_node(void *graph, const uip_ipaddr_t *child, const 
       return NULL;
     }
     child_node->parent = NULL;
+    child_node->announced = 0;
     child_node->next = nodes;
     nodes = child_node;
     num_nodes++;
-    if (NULL != parent) {
-    	srEvtHndl(srEvtIdOffset + radio_dagLinkCreated, (void*)child);
-    }
   }
 
   /* Initialize node */
@@ -148,15 +146,20 @@ uip_sr_node_t* uip_sr_update_node(void *graph, const uip_ipaddr_t *child, const 
   child_node->lifetime = lifetime;
   memcpy(child_node->link_identifier, ((const unsigned char *)child) + 8, 8);
 
-  old_parent_node = child_node->parent;
-  /* Update node */
-  child_node->parent = parent_node;
-  /* Has the node become unreachable? May happen if we create a loop. */
-  if(!uip_sr_is_addr_reachable(graph, child)) {
-    /* The new parent makes the node unreachable, restore old parent.
-     * We will take the update next time, with chances we know more of
-     * the topology and the loop is gone. */
-    child_node->parent = old_parent_node;
+  if(uip_sr_is_addr_reachable(graph, child)) {
+    old_parent_node = child_node->parent;
+    child_node->parent = parent_node;
+    /* Has the node become unreachable? May happen if we create a loop. */
+    if(!uip_sr_is_addr_reachable(graph, child)) {
+      child_node->parent = old_parent_node;
+    }
+  } else {
+    child_node->parent = parent_node;
+  }
+
+  if((NULL != parent) && !child_node->announced) {
+    child_node->announced = 1;
+    srEvtHndl(srEvtIdOffset + radio_dagLinkCreated, (void*)child);
   }
 
   TRiceS("msg:NS: updating link, child %s, ", uip6_printAddr(child, NULL));
@@ -195,7 +198,7 @@ static void uip_sr_node_remove(uip_sr_node_t *itemToRemove) {
 		follower = walker;
 		walker = walker->next;
 	}
-	{
+	if (itemToRemove->announced) {
 		uip_ipaddr_t nodeAddr;
 		rpl_lite_driver.get_sr_node_ipaddr(&nodeAddr, itemToRemove);
 		srEvtHndl(srEvtIdOffset + radio_dagLinkDestroyed, &nodeAddr);
@@ -218,13 +221,13 @@ void uip_sr_periodic(unsigned seconds) {
           break;
         }
       }
-      if(1/*LOG_INFO_ENABLED*/) {
+      if(l2 == NULL) {
+        /* No child found, deallocate node */
         uip_ipaddr_t node_addr;
         rpl_lite_driver.get_sr_node_ipaddr(&node_addr, l);
-        TRiceS("msg:NS: removing expired node %s, ", uip6_printAddr(&node_addr, NULL));
+        TRiceS("msg:NS: removing expired node %s\n", uip6_printAddr(&node_addr, NULL));
+        uip_sr_node_remove(l);
       }
-      /* No child found, deallocate node */
-      uip_sr_node_remove(l);
     } else if(l->lifetime != UIP_SR_INFINITE_LIFETIME) {
       l->lifetime = l->lifetime > seconds ? l->lifetime - seconds : 0;
     }

@@ -97,6 +97,11 @@ typedef struct uip_sr_node {
   us with the prefix */
   unsigned char link_identifier[8];
   struct uip_sr_node *parent;
+  /* Set once radio_dagLinkCreated has been reported for this node. A node may
+  be created as a bare placeholder while it is only known as some other node's
+  parent - such a node has not joined yet and is announced later, when a DAO
+  finally gives it a parent of its own. */
+  uint8_t announced;
 } uip_sr_node_t;
 
 /********** Public functions **********/
