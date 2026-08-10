@@ -104,7 +104,12 @@ void uip_sr_expire_parent(void *graph, const uip_ipaddr_t *child, const uip_ipad
   uip_sr_node_t *l = uip_sr_get_node(graph, child);
   /* Check if parent matches */
   if(l != NULL && node_matches_address(graph, l->parent, parent)) {
-    l->lifetime = UIP_SR_REMOVAL_DELAY;
+    /* A no-path DAO must only ever shorten the lifetime, never extend it -
+     * otherwise a route already counting down to removal gets pushed back up
+     * to UIP_SR_REMOVAL_DELAY by the very message announcing it is gone. */
+    if(l->lifetime > UIP_SR_REMOVAL_DELAY) {
+      l->lifetime = UIP_SR_REMOVAL_DELAY;
+    }
   }
 }
 /*---------------------------------------------------------------------------*/
