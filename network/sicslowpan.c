@@ -1325,12 +1325,18 @@ static bool uncompress_hdr_iphc(sPacket *packet, uint8_t *buf, uint16_t buf_size
 
     /* uncompress the extension header */
     exthdr = (struct uip_ext_hdr *)ip_payload;
-    exthdr->len = (UIP_EXT_HDR_LEN + len) / 8;
-    if(exthdr->len == 0) {
-      TRice("wrn:Extension header length is below 8\n");
+    /* The length written into the uncompressed header is (UIP_EXT_HDR_LEN + len) / 8,
+       but the memcpy below writes all len bytes. Floor-dividing a sum that is not a
+       multiple of 8 therefore advances ip_payload/uncomp_hdr_len by less than what was
+       written, leaving up to 7 bytes to be clobbered by the next header or to leak into
+       the IP payload. RFC 8200 requires IPv6 extension headers to be 8-octet aligned, so
+       anything else is malformed - reject it instead of mis-parsing it. */
+    if(((UIP_EXT_HDR_LEN + len) < 8) || (((UIP_EXT_HDR_LEN + len) % 8) != 0)) {
+      TRice("wrn:uncompression: ext header length %d is not a valid multiple of 8\n",
+            (int)(UIP_EXT_HDR_LEN + len));
       return false;
     }
-    exthdr->len--;
+    exthdr->len = ((UIP_EXT_HDR_LEN + len) / 8) - 1;
     exthdr->next = next;
     last_nextheader = &exthdr->next;
     /* The loop condition needs to read one byte after the next len bytes. */
