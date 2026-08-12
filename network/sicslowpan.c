@@ -364,6 +364,19 @@ static int store_fragment(sPacket *packet, uint8_t index, uint8_t offset) {
     return -1;
   }
 
+  /* Reject duplicates: a fragment covering this offset is already held for this
+     reassembly context. Storing it again would consume a second buffer and, worse, add
+     its length to reassembled_len a second time - the completion test compares that
+     running total against the announced datagram size, so double counting lets it fire
+     while offsets are still missing, and copy_frags2uip() then zero-fills the holes and
+     hands a silently corrupted packet up the stack. */
+  for(i = 0; i < SICSLOWPAN_FRAGMENT_BUFFERS; i++) {
+    if((frag_buf[i].len > 0) && (frag_buf[i].index == index) &&
+       (frag_buf[i].offset == offset)) {
+      return 0;
+    }
+  }
+
   for(i = 0; i < SICSLOWPAN_FRAGMENT_BUFFERS; i++) {
     if(frag_buf[i].len == 0) {
       /* copy over the data from packetbuf into the fragment buffer,
@@ -459,6 +472,10 @@ static int8_t add_fragment(sPacket *packet, uint16_t tag, uint16_t frag_size, ui
   }
   if(len > 0) {
     frag_info[i].reassembled_len += len;
+    return i;
+  } else if(len == 0) {
+    /* Duplicate fragment: already stored and already counted, so accept the packet into
+       this context without touching reassembled_len. */
     return i;
   } else {
     /* should we also clear all fragments since we failed to store
