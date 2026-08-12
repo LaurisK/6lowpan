@@ -254,8 +254,30 @@ static uint16_t my_tag;
 #error Too large SICSLOWPAN_FRAGMENT_SIZE set.
 #endif
 
-/* Assuming that the worst growth for uncompression is 38 bytes */
-#define SICSLOWPAN_FIRST_FRAGMENT_SIZE (SICSLOWPAN_FRAGMENT_SIZE + 38)
+/* Worst-case growth when a FRAG1 is uncompressed, i.e. the largest possible
+ * (uncomp_hdr_len - packetbuf_hdr_len). Upstream assumes 38, which only covers a bare
+ * IPv6 header squeezed down to the 2-byte IPHC minimum. That is too small here: this
+ * build also carries UDP-NHC, and RPL adds extension headers to in-DAG traffic.
+ *
+ *   IPv6 base    40 - 2  (IPHC minimum, every field elided)              = 38
+ *   UDP           8 - 2  (NHC minimum, 4-bit ports, checksum elided)     =  6
+ *   ext headers   up to 8 each: the NHC form carries len bytes verbatim,
+ *                 while uncompression rounds (2 + len) up to a multiple
+ *                 of 8. RPL inserts a hop-by-hop option on in-DAG data,
+ *                 and the root prepends a source-routing header on
+ *                 downward traffic - so budget for two                   = 16
+ *                                                                          --
+ *                                                                          60
+ * Rounded up to 64. Costs SICSLOWPAN_REASS_CONTEXTS * 26 extra bytes of RAM over the
+ * upstream value. Anything that still does not fit is dropped by the bounds check in
+ * input() rather than overflowing first_frag[]. */
+#ifdef SICSLOWPAN_CONF_FIRST_FRAGMENT_GROWTH
+#define SICSLOWPAN_FIRST_FRAGMENT_GROWTH SICSLOWPAN_CONF_FIRST_FRAGMENT_GROWTH
+#else
+#define SICSLOWPAN_FIRST_FRAGMENT_GROWTH 64
+#endif
+
+#define SICSLOWPAN_FIRST_FRAGMENT_SIZE (SICSLOWPAN_FRAGMENT_SIZE + SICSLOWPAN_FIRST_FRAGMENT_GROWTH)
 
 /* all information needed for reassembly */
 struct sicslowpan_frag_info {
@@ -2005,6 +2027,29 @@ static uint8_t input(sUipBuff *rxBuff) {
   /* copy the payload if buffer is non-null - which is only the case with first fragment
      or packets that are non fragmented */
   if(buffer != NULL) {
+    /* The sanity check above is against UIP_BUFSIZE, which is only the size of the
+       destination when this packet is unfragmented. On a FRAG1 the target is instead
+       frag_info[].first_frag, which is SICSLOWPAN_FIRST_FRAGMENT_SIZE - an order of
+       magnitude smaller - so that check leaves the copy below effectively unbounded.
+       uncomp_hdr_len grows with every extension header the sender compressed away, so
+       an RPL hop-by-hop option or a source-routing header is enough to run past the end
+       of first_frag[] and corrupt the neighbouring reassembly context. Bound the copy by
+       the buffer actually in use. */
+    int copy_len = (int)uncomp_hdr_len + packetbuf_payload_len;
+
+    if(copy_len > (int)buffer_size) {
+      TRice("err:input: payload does not fit the target buffer (%d + %d > %d), dropped\n",
+            uncomp_hdr_len, packetbuf_payload_len, buffer_size);
+#if SICSLOWPAN_CONF_FRAG
+      /* A FRAG1 that cannot be stored dooms the whole packet, and with only
+         SICSLOWPAN_REASS_CONTEXTS contexts these are scarce - release it now instead of
+         holding it until SICSLOWPAN_REASS_MAXAGE expires. */
+      if(first_fragment != 0) {
+        clear_fragments(frag_context);
+      }
+#endif /* SICSLOWPAN_CONF_FRAG */
+      return 0;
+    }
     memcpy((uint8_t *)buffer + uncomp_hdr_len, packetbuf_ptr + packetbuf_hdr_len, packetbuf_payload_len);
   }
 
