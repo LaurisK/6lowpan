@@ -379,12 +379,9 @@ void uip_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
 #endif /*UIP_CONF_IPV6_REASSEMBLY*/
 }
 /*---------------------------------------------------------------------------*/
+/* Nothing to release: the stack is never torn down. uip_deinit()'s only caller is
+   tcpip_deinit(), which has no callers of its own. */
 void uip_deinit(void) {
-#if UIP_UDP
-    {
-#warning "uip cennections deinig not present - not sure if needed."
-    }
-#endif /* UIP_UDP */
 }
 /*---------------------------------------------------------------------------*/
 #if UIP_TCP && UIP_ACTIVE_OPEN

@@ -63,7 +63,6 @@ process_event_t tcpip_icmp6_event;
 #endif /* UIP_CONF_ICMP6 */
 
 #if UIP_TCP
-#warning "for now lets disable TPC/IP - work with udp only"
 /**
  * \internal Structure for holding a TCP port and a process ID.
  */
@@ -100,7 +99,9 @@ uint8_t tcpip_output(sUipBuff *tcpUipBuff, const uip_lladdr_t *addr) {
 #endif
 #warning "netstack.c/h is for packet filtering, firewall or other functionality which is not needed for now"
   if(1/*netstack_process_ip_callback(NETSTACK_IP_OUTPUT, addr) == NETSTACK_IP_PROCESS*/) {
-#warning "uip_lladdr_t >>> linkaddr_t - why??? maybe it is same stuff?"
+    /* uip_lladdr_t and linkaddr_t are the same 8 bytes here (UIP_CONF_LL_802154 with
+       LINKADDR_SIZE 8), and the object really is a linkaddr_t - uip_ds6_nbr_get_ll()
+       hands back &key->lladdr out of the nbr_table - so this casts it back. */
     ret = sicslowpan_driver.output(tcpUipBuff, (const linkaddr_t *)addr);
     return ret;
   } else {

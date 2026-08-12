@@ -523,57 +523,6 @@ static bool copy_frags2uip(uint8_t *uipBuff, int context) {
 
 /* -------------------------------------------------------------------------- */
 
-/*-------------------------------------------------------------------------*/
-/* Basic netstack sniffer */
-/*-------------------------------------------------------------------------*/
-#define NO_SNIFFER 1
-#warning "sniffer is not yet ported"
-#if (1 != NO_SNIFFER)
-static struct netstack_sniffer *callback = NULL;
-
-void
-netstack_sniffer_add(struct netstack_sniffer *s)
-{
-  callback = s;
-}
-
-void
-netstack_sniffer_remove(struct netstack_sniffer *s)
-{
-  callback = NULL;
-}
-
-static void set_packet_attrs(sPacket *packet) {
-  int c = 0;
-  /* set protocol in NETWORK_ID */
-  packetbuf_set_attr(packet, PACKETBUF_ATTR_NETWORK_ID, UIP_IP_BUF->proto);
-
-  /* assign values to the channel attribute (port or type + code) */
-  if(UIP_IP_BUF->proto == UIP_PROTO_UDP) {
-    c = (struct uip_udp_hdr *)&uip_buf[UIP_IPH_LEN]->srcport;
-    if((struct uip_udp_hdr *)&uip_buf[UIP_IPH_LEN]->destport < c) {
-      c = (struct uip_udp_hdr *)&uip_buf[UIP_IPH_LEN]->destport;
-    }
-  } else if(UIP_IP_BUF->proto == UIP_PROTO_TCP) {
-    c = UIP_TCP_BUF->srcport;
-    if(UIP_TCP_BUF->destport < c) {
-      c = UIP_TCP_BUF->destport;
-    }
-  } else if(UIP_IP_BUF->proto == UIP_PROTO_ICMP6) {
-    c = UIP_ICMP_BUF->type << 8 | UIP_ICMP_BUF->icode;
-  }
-
-  packetbuf_set_attr(packet, PACKETBUF_ATTR_CHANNEL, c);
-
-/*   if(uip_ds6_is_my_addr(&UIP_IP_BUF->srcipaddr)) { */
-/*     own = 1; */
-/*   } */
-
-}
-
-#endif /* NO_SNIFFER */
-
-
 #if SICSLOWPAN_COMPRESSION >= SICSLOWPAN_COMPRESSION_IPHC
 /** \name variables specific to HC06 and more recent versions
  *  @{
@@ -1591,11 +1540,6 @@ compress_hdr_ipv6(linkaddr_t *link_destaddr)
 static void packet_sent(void *ptr, int status, int transmissions, sPacket *packet) {
   const linkaddr_t *dest;
 
-#if (1 != NO_SNIFFER)
-  if(callback != NULL) {
-    callback->output_callback(status);
-  }
-#endif /* NO_SNIFFER */
   last_tx_status = status;
 
   /* What follows only applies to unicast */
@@ -1712,14 +1656,6 @@ static uint8_t output(sUipBuff *txBuff, const linkaddr_t *localdest) {
   /* reset packetbuf buffer */
   packetbuf_clear(txPacket);
   packetbuf_ptr = packetbuf_dataptr(txPacket);
-
-#if (1 != NO_SNIFFER)
-  if(callback) {
-    /* call the attribution when the callback comes, but set attributes
-       here ! */
-    set_packet_attrs(txPacket);
-  }
-#endif /* NO_SNIFFER */
 
   /*
    * The destination address will be tagged to each outbound
@@ -2215,14 +2151,6 @@ static uint8_t input(sUipBuff *rxBuff) {
     TRice("msg:input: received IPv6 packet with len %d\nuncompression: after (%u):\n\t", rxBuff->len, ipHdr->len[1]);
     TRice8B("msg:%02X\n", rxBuff->buff.u8, (ipHdr->len[1] + 40));
 #endif /* DEBUG_6LOWPAN */
-
-    /* if callback is set then set attributes and call */
-#if (1 != NO_SNIFFER)
-    if(callback) {
-      set_packet_attrs(&rxPacket);
-      callback->input_callback();
-    }
-#endif /* NO_SNIFFER */
 
 #if LLSEC802154_USES_AUX_HEADER
     /*
