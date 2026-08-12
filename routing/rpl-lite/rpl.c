@@ -55,9 +55,6 @@
 #include "rpl-neighbor.h"
 #include "rpl-timers.h"
 
-#warning "deglobalize uip_ds6_if"
-extern uip_ds6_netif_t uip_ds6_if;
-
 static uint8_t rpl_leaf_only = RPL_DEFAULT_LEAF_ONLY;
 
 /*---------------------------------------------------------------------------*/
@@ -74,9 +71,6 @@ int rpl_lollipop_greater_than(int a, int b) {
 }
 /*---------------------------------------------------------------------------*/
 const uip_ipaddr_t * rpl_get_global_address(void) {
-  int i;
-  uint8_t state;
-  uip_ipaddr_t *ipaddr = NULL;
   uip_ipaddr_t *prefix = NULL;
   uint8_t prefix_length = 0;
 
@@ -85,14 +79,7 @@ const uip_ipaddr_t * rpl_get_global_address(void) {
     prefix_length = curr_instance.dag.prefix_info.length;
   }
 
-  for(i = 0; i < UIP_DS6_ADDR_NB; i++) {
-    state = uip_ds6_if.addr_list[i].state;
-    if(uip_ds6_if.addr_list[i].isused && state == ADDR_PREFERRED && !uip_is_addr_linklocal(&uip_ds6_if.addr_list[i].ipaddr) &&
-       (prefix == NULL || uip_ipaddr_prefixcmp(prefix, &uip_ds6_if.addr_list[i].ipaddr, prefix_length))) {
-      ipaddr = &uip_ds6_if.addr_list[i].ipaddr;
-    }
-  }
-  return ipaddr;
+  return uip_ds6_get_preferred_global_addr(prefix, prefix_length);
 }
 /*---------------------------------------------------------------------------*/
 void rpl_link_callback(const linkaddr_t *addr, int status, int numtx) {

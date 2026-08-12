@@ -47,8 +47,6 @@
 
 #define ROOT_LINKS_PRINT_BUFF_LEN 150
 
-#warning "deglobalize uip_ds6_if with doing so - retrun uip_ds6_netif_t to *.c"
-extern uip_ds6_netif_t uip_ds6_if;
 /*---------------------------------------------------------------------------*/
 void rpl_dag_root_print_links(const char *str) {
   if(rpl_dag_root_is_root()) {
@@ -81,8 +79,6 @@ void rpl_dag_root_print_links(const char *str) {
 static void set_global_address(uip_ipaddr_t *prefix, uip_ipaddr_t *iid) {
   static uip_ipaddr_t root_ipaddr;
   const uip_ipaddr_t *default_prefix;
-  int i;
-  uint8_t state;
 
   default_prefix = uip_ds6_default_prefix();
 
@@ -101,13 +97,7 @@ static void set_global_address(uip_ipaddr_t *prefix, uip_ipaddr_t *iid) {
 
   uip_ds6_addr_add(&root_ipaddr, 0, ADDR_AUTOCONF);
 
-  TRice("msg:IPv6 addresses:\n");
-  for(i = 0; i < UIP_DS6_ADDR_NB; i++) {
-    state = uip_ds6_if.addr_list[i].state;
-    if(uip_ds6_if.addr_list[i].isused && (state == ADDR_TENTATIVE || state == ADDR_PREFERRED)) {
-      TRiceS("msg:-- %s\n", uip6_printAddr(&uip_ds6_if.addr_list[i].ipaddr, NULL));
-    }
-  }
+  uip_ds6_print_addresses();
 }
 /*---------------------------------------------------------------------------*/
 void rpl_dag_root_set_prefix(uip_ipaddr_t *prefix, uip_ipaddr_t *iid) {
@@ -121,18 +111,11 @@ void rpl_dag_root_set_prefix(uip_ipaddr_t *prefix, uip_ipaddr_t *iid) {
 /*---------------------------------------------------------------------------*/
 int rpl_dag_root_start(void) {
   struct uip_ds6_addr *root_if;
-  int i;
-  uint8_t state;
   uip_ipaddr_t *ipaddr = NULL;
 
   rpl_dag_root_set_prefix(NULL, NULL);
 
-  for(i = 0; i < UIP_DS6_ADDR_NB; i++) {
-    state = uip_ds6_if.addr_list[i].state;
-    if(uip_ds6_if.addr_list[i].isused && state == ADDR_PREFERRED && !uip_is_addr_linklocal(&uip_ds6_if.addr_list[i].ipaddr)) {
-      ipaddr = &uip_ds6_if.addr_list[i].ipaddr;
-    }
-  }
+  ipaddr = uip_ds6_get_preferred_global_addr(NULL, 0);
 
   root_if = uip_ds6_addr_lookup(ipaddr);
   if(ipaddr != NULL || root_if != NULL) {

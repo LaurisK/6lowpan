@@ -68,7 +68,9 @@ sTimeTimer uip_ds6_timer_ra;                                 /**< RA timer, to s
 
 /** \name "DS6" Data structures */
 /** @{ */
-uip_ds6_netif_t uip_ds6_if;                                     /**< The single interface */
+/* Private to this file. Everything outside reaches the interface through the accessors
+   declared in uip-ds6.h - see uip_ds6_get_preferred_global_addr() and friends. */
+static uip_ds6_netif_t uip_ds6_if;                              /**< The single interface */
 uip_ds6_prefix_t uip_ds6_prefix_list[UIP_DS6_PREFIX_NB];        /**< Prefix list */
 
 /* Used by Cooja to enable extraction of addresses from memory.*/
@@ -527,6 +529,51 @@ uip_ds6_get_global(int8_t state)
     }
   }
   return NULL;
+}
+
+/*---------------------------------------------------------------------------*/
+/*
+ * Returns the LAST preferred non-link-local address, optionally restricted to those
+ * under prefix/prefix_len. "Last" rather than "first" is deliberate: it reproduces the
+ * loops in rpl.c and rpl-dag-root.c that this replaces, which is also what upstream
+ * does. The two differ only while a prefix change leaves two globals alive at once,
+ * and there the newer address is the one wanted. uip_ds6_get_global() above returns
+ * the first match, so it is NOT interchangeable with this.
+ */
+uip_ipaddr_t *
+uip_ds6_get_preferred_global_addr(const uip_ipaddr_t *prefix, uint8_t prefix_len)
+{
+  uip_ipaddr_t *ipaddr = NULL;
+  uint8_t i;
+
+  for(i = 0; i < UIP_DS6_ADDR_NB; i++) {
+    if(uip_ds6_if.addr_list[i].isused
+       && (uip_ds6_if.addr_list[i].state == ADDR_PREFERRED)
+       && !uip_is_addr_linklocal(&uip_ds6_if.addr_list[i].ipaddr)
+       && ((prefix == NULL)
+           || uip_ipaddr_prefixcmp(prefix, &uip_ds6_if.addr_list[i].ipaddr, prefix_len))) {
+      ipaddr = &uip_ds6_if.addr_list[i].ipaddr;
+    }
+  }
+  return ipaddr;
+}
+
+/*---------------------------------------------------------------------------*/
+/* Logs every address currently held by the interface. Lives here rather than in the
+   routing layer so that addr_list stays private to this file. */
+void
+uip_ds6_print_addresses(void)
+{
+  uint8_t i;
+
+  TRice("msg:IPv6 addresses:\n");
+  for(i = 0; i < UIP_DS6_ADDR_NB; i++) {
+    if(uip_ds6_if.addr_list[i].isused
+       && ((uip_ds6_if.addr_list[i].state == ADDR_TENTATIVE)
+           || (uip_ds6_if.addr_list[i].state == ADDR_PREFERRED))) {
+      TRiceS("msg:-- %s\n", uip6_printAddr(&uip_ds6_if.addr_list[i].ipaddr, NULL));
+    }
+  }
 }
 
 /*---------------------------------------------------------------------------*/

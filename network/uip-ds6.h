@@ -333,6 +333,14 @@ uip_ds6_addr_t *uip_ds6_addr_lookup(uip_ipaddr_t *ipaddr);
 uip_ds6_addr_t *uip_ds6_get_link_local(int8_t state);
 uip_ds6_addr_t *uip_ds6_get_global(int8_t state);
 
+/** \brief Last preferred non-link-local address, optionally under prefix/prefix_len.
+ *         Note this returns the LAST match where uip_ds6_get_global() returns the
+ *         first - see the definition for why. Pass prefix NULL for no filtering. */
+uip_ipaddr_t *uip_ds6_get_preferred_global_addr(const uip_ipaddr_t *prefix, uint8_t prefix_len);
+
+/** \brief Log every address currently held by the interface */
+void uip_ds6_print_addresses(void);
+
 /** @} */
 
 /** \name Multicast address list basic routines */
