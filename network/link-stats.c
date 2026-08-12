@@ -60,6 +60,18 @@
 /* Initial ETX value */
 #define ETX_DEFAULT                      2
 
+#define RSSI_DIFF (LINK_STATS_RSSI_HIGH - LINK_STATS_RSSI_LOW)
+
+/* Generate error on incorrect link stats configuration values */
+#if RSSI_DIFF <= 0
+#error "RSSI_HIGH must be greater then RSSI_LOW"
+#endif
+
+/* Generate error if the initial ETX calculation would overflow uint16_t */
+#if ETX_DIVISOR * RSSI_DIFF >= 0x10000
+#error "RSSI math overflow"
+#endif
+
 /* Per-neighbor link statistics table */
 NBR_TABLE(struct link_stats, link_stats);
 
@@ -91,30 +103,32 @@ link_stats_is_fresh(const struct link_stats *stats)
 }
 /*---------------------------------------------------------------------------*/
 #if LINK_STATS_INIT_ETX_FROM_RSSI
-uint16_t
+/*
+ * Returns initial ETX value from an RSSI value.
+ *    RSSI >= RSSI_HIGH           -> use default ETX
+ *    RSSI_LOW < RSSI < RSSI_HIGH -> ETX is a linear function of RSSI
+ *    RSSI <= RSSI_LOW            -> use maximal initial ETX
+ *
+ * The old form computed ETX_DIVISOR * RSSI_DIFF / (rssi - RSSI_LOW), a reciprocal rather
+ * than the linear relation the comment claimed, and one that bottomed out at ETX 1.0 for
+ * a strong link - better than the ETX_DEFAULT of 2.0 given to a neighbour with no RSSI
+ * at all. A first sample could therefore make a link look better than measured, biasing
+ * initial parent selection toward whichever neighbour happened to be loudest.
+ */
+static uint16_t
 guess_etx_from_rssi(const struct link_stats *stats)
 {
   if(stats != NULL) {
-    if(stats->rssi == 0) {
+    if(stats->rssi == LINK_STATS_RSSI_UNKNOWN) {
       return ETX_DEFAULT * ETX_DIVISOR;
     } else {
-      /* A rough estimate of PRR from RSSI, as a linear function where:
-       *      RSSI >= -60 results in PRR of 1
-       *      RSSI <= -90 results in PRR of 0
-       * prr = (bounded_rssi - RSSI_LOW) / (RSSI_DIFF)
-       * etx = ETX_DIVOSOR / ((bounded_rssi - RSSI_LOW) / RSSI_DIFF)
-       * etx = (RSSI_DIFF * ETX_DIVOSOR) / (bounded_rssi - RSSI_LOW)
-       * */
-#define ETX_INIT_MAX 3
-#define RSSI_HIGH -60
-#define RSSI_LOW  -90
-#define RSSI_DIFF (RSSI_HIGH - RSSI_LOW)
-      uint16_t etx;
-      int16_t bounded_rssi = stats->rssi;
-      bounded_rssi = MIN(bounded_rssi, RSSI_HIGH);
-      bounded_rssi = MAX(bounded_rssi, RSSI_LOW + 1);
-      etx = RSSI_DIFF * ETX_DIVISOR / (bounded_rssi - RSSI_LOW);
-      return MIN(etx, ETX_INIT_MAX * ETX_DIVISOR);
+      const int16_t rssi_delta = LINK_STATS_RSSI_HIGH - stats->rssi;
+      const int16_t bounded_rssi_delta = MIN(MAX(rssi_delta, 0), RSSI_DIFF);
+      /* Penalty is in the range from 0 to ETX_DIVISOR */
+      const uint16_t penalty = ETX_DIVISOR * bounded_rssi_delta / RSSI_DIFF;
+      /* ETX is the default ETX value + penalty */
+      const uint16_t etx = ETX_DIVISOR * ETX_DEFAULT + penalty;
+      return MIN(etx, LINK_STATS_ETX_INIT_MAX * ETX_DIVISOR);
     }
   }
   return 0xffff;
@@ -143,15 +157,18 @@ void link_stats_packet_sent(const linkaddr_t *lladdr, int status, int numtx) {
 
     /* Add the neighbor */
     stats = nbr_table_add_lladdr(link_stats, lladdr, NBR_TABLE_REASON_LINK_STATS, NULL);
-    if(stats != NULL) {
-#if LINK_STATS_INIT_ETX_FROM_RSSI
-      stats->etx = guess_etx_from_rssi(stats);
-#else /* LINK_STATS_INIT_ETX_FROM_RSSI */
-      stats->etx = ETX_DEFAULT * ETX_DIVISOR;
-#endif /* LINK_STATS_INIT_ETX_FROM_RSSI */
-    } else {
+    if(stats == NULL) {
       return; /* No space left, return */
     }
+    /* nbr_table_add_lladdr() zeroes the entry, and 0 dBm is a legal RSSI, so mark the
+       field explicitly as "never sampled". Without this an entry created here - i.e. by
+       a successful transmission to a neighbour we have not yet heard from - would later
+       have its first real RSSI reading averaged against 0 by the EWMA below, dragging
+       the estimate toward 0 dBm for tens of packets. */
+    stats->rssi = LINK_STATS_RSSI_UNKNOWN;
+    /* etx is left at zero deliberately. There is no RSSI to guess from on this path, and
+       the transmission that created the entry is itself a measurement - it seeds etx
+       directly below, rather than an EWMA having to decay away from a placeholder. */
   }
 
   /* Update last timestamp and freshness */
@@ -197,9 +214,15 @@ void link_stats_packet_sent(const linkaddr_t *lladdr, int status, int numtx) {
   /* ETX alpha used for this update */
   ewma_alpha = link_stats_is_fresh(stats) ? EWMA_ALPHA : EWMA_BOOTSTRAP_ALPHA;
 
-  /* Compute EWMA and update ETX */
-  stats->etx = ((uint32_t)stats->etx * (EWMA_SCALE - ewma_alpha) +
-      (uint32_t)packet_etx * ewma_alpha) / EWMA_SCALE;
+  if(stats->etx == 0) {
+    /* First measurement for this neighbour - seed ETX with it instead of averaging
+       against the zero left by nbr_table_add_lladdr(). */
+    stats->etx = packet_etx;
+  } else {
+    /* Compute EWMA and update ETX */
+    stats->etx = ((uint32_t)stats->etx * (EWMA_SCALE - ewma_alpha) +
+        (uint32_t)packet_etx * ewma_alpha) / EWMA_SCALE;
+  }
 #endif /* LINK_STATS_ETX_FROM_PACKET_COUNT */
 }
 /*---------------------------------------------------------------------------*/
@@ -211,23 +234,29 @@ void link_stats_input_callback(const linkaddr_t *lladdr, int16_t rssi) {
   if(stats == NULL) {
     /* Add the neighbor */
     stats = nbr_table_add_lladdr(link_stats, lladdr, NBR_TABLE_REASON_LINK_STATS, NULL);
-    if(stats != NULL) {
-      /* Initialize */
-      stats->rssi = rssi;
-#if LINK_STATS_INIT_ETX_FROM_RSSI
-      stats->etx = guess_etx_from_rssi(stats);
-#else /* LINK_STATS_INIT_ETX_FROM_RSSI */
-      stats->etx = ETX_DEFAULT * ETX_DIVISOR;
-#endif /* LINK_STATS_INIT_ETX_FROM_RSSI */
-#if LINK_STATS_PACKET_COUNTERS
-      stats->cnt_current.num_packets_rx = 1;
-#endif
+    if(stats == NULL) {
+      return; /* No space left, return */
     }
-    return;
+    stats->rssi = LINK_STATS_RSSI_UNKNOWN;
   }
 
-  /* Update RSSI EWMA */
-  stats->rssi = ((int32_t)stats->rssi * (EWMA_SCALE - EWMA_ALPHA) + (int32_t)rssi * EWMA_ALPHA) / EWMA_SCALE;
+  if(stats->rssi == LINK_STATS_RSSI_UNKNOWN) {
+    /* First sample for this neighbour - seed the average rather than blending against
+       the sentinel. */
+    stats->rssi = rssi;
+  } else {
+    /* Update RSSI EWMA */
+    stats->rssi = ((int32_t)stats->rssi * (EWMA_SCALE - EWMA_ALPHA) + (int32_t)rssi * EWMA_ALPHA) / EWMA_SCALE;
+  }
+
+  if(stats->etx == 0) {
+    /* Initialize ETX, now that there is an RSSI to derive it from. */
+#if LINK_STATS_INIT_ETX_FROM_RSSI
+    stats->etx = guess_etx_from_rssi(stats);
+#else /* LINK_STATS_INIT_ETX_FROM_RSSI */
+    stats->etx = ETX_DEFAULT * ETX_DIVISOR;
+#endif /* LINK_STATS_INIT_ETX_FROM_RSSI */
+  }
 
 #if LINK_STATS_PACKET_COUNTERS
   stats->cnt_current.num_packets_rx++;

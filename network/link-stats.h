@@ -49,6 +49,36 @@
 #define LINK_STATS_INIT_ETX_FROM_RSSI              1
 #endif /* LINK_STATS_CONF_INIT_ETX_FROM_RSSI */
 
+/* Maximal initial ETX value when guessed from RSSI */
+#ifdef LINK_STATS_CONF_ETX_INIT_MAX
+#define LINK_STATS_ETX_INIT_MAX LINK_STATS_CONF_ETX_INIT_MAX
+#else /* LINK_STATS_CONF_ETX_INIT_MAX */
+#define LINK_STATS_ETX_INIT_MAX                    3
+#endif /* LINK_STATS_CONF_ETX_INIT_MAX */
+
+/* "Good" RSSI value when ETX is guessed from RSSI.
+ * NOTE: -60/-90 are the upstream defaults, chosen for 2.4 GHz 802.15.4 radios. They do
+ * not describe this S2-LP link, whose sensitivity is around -109 dBm (indoor profile) to
+ * -115 dBm (outdoor), so everything at or below -90 dBm collapses onto the maximum
+ * initial ETX even though such links are perfectly usable here. Override via
+ * LINK_STATS_CONF_RSSI_HIGH / _LOW once the operating range is known. */
+#ifdef LINK_STATS_CONF_RSSI_HIGH
+#define LINK_STATS_RSSI_HIGH LINK_STATS_CONF_RSSI_HIGH
+#else /* LINK_STATS_CONF_RSSI_HIGH */
+#define LINK_STATS_RSSI_HIGH                     -60
+#endif /* LINK_STATS_CONF_RSSI_HIGH */
+
+/* "Bad" RSSI value when ETX is guessed from RSSI */
+#ifdef LINK_STATS_CONF_RSSI_LOW
+#define LINK_STATS_RSSI_LOW LINK_STATS_CONF_RSSI_LOW
+#else /* LINK_STATS_CONF_RSSI_LOW */
+#define LINK_STATS_RSSI_LOW                      -90
+#endif /* LINK_STATS_CONF_RSSI_LOW */
+
+/* Special value signalling that no RSSI sample has been taken yet. Zero cannot serve as
+ * that sentinel because 0 dBm is a legal reading. */
+#define LINK_STATS_RSSI_UNKNOWN             0x7fff
+
 /* Option to use packet and ACK count for ETX estimation, instead of EWMA */
 #ifdef LINK_STATS_CONF_ETX_FROM_PACKET_COUNT
 #define LINK_STATS_ETX_FROM_PACKET_COUNT LINK_STATS_CONF_ETX_FROM_PACKET_COUNT
@@ -78,8 +108,8 @@ struct link_packet_counter {
 /* All statistics of a given link */
 struct link_stats {
   uint32_t last_tx_time;      /* Last Tx timestamp */
-  uint16_t etx;               /* ETX using ETX_DIVISOR as fixed point divisor */
-  int16_t rssi;               /* RSSI (received signal strength) */
+  uint16_t etx;               /* ETX using ETX_DIVISOR as fixed point divisor. Zero if not yet measured. */
+  int16_t rssi;               /* RSSI (received signal strength). LINK_STATS_RSSI_UNKNOWN if not yet measured. */
   uint8_t freshness;          /* Freshness of the statistics */
 #if LINK_STATS_ETX_FROM_PACKET_COUNT
   uint8_t tx_count;           /* Tx count, used for ETX calculation */
