@@ -697,4 +697,39 @@ void tcpip_StartDag(void) {
 uint8_t tcpip_IAmGadRoot(void) {
 	return ((0 == rpl_lite_driver.node_is_root()) ? false : true);
 }
+
+/**
+  * @brief  takes a snapshot of the addresses of every node which has joined the DAG. Only the root builds a source routing graph, so on any
+  *         other node this always reports 0. The root's own node and placeholder nodes(the ones known only as some other node's parent, which
+  *         have no parent of their own yet) are skipped.
+  * @param  addrList - buffer to be filled in with the addresses.
+  * @param  maxAddr  - amount of addresses which fit into the provided buffer.
+  * @retval amount of addresses written into the buffer.
+ */
+uint16_t tcpip_GetDagAddresses(uip_ipaddr_t *addrList, uint16_t maxAddr) {
+	uint16_t addrCnt = 0;
+	uip_ipaddr_t rootAddr;
+	uip_sr_node_t *walker;
+	if ((NULL == addrList) || (0 == maxAddr) || (0 == rpl_lite_driver.node_is_root())) {
+		return 0;
+	}
+	rpl_lite_driver.get_root_ipaddr(&rootAddr);
+	taskENTER_CRITICAL();
+	for (walker = uip_sr_node_head(); ((NULL != walker) && (addrCnt < maxAddr)); walker = uip_sr_node_next(walker)) {
+		uip_ipaddr_t nodeAddr;
+		/* No parent means the node has not joined - it is either the root itself or a
+		   placeholder standing in for somebody else's parent until its own DAO arrives. */
+		if (NULL == walker->parent) {
+			continue;
+		}
+		rpl_lite_driver.get_sr_node_ipaddr(&nodeAddr, walker);
+		if (uip_ipaddr_cmp(&nodeAddr, &rootAddr)) {
+			continue;
+		}
+		uip_ipaddr_copy(&addrList[addrCnt], &nodeAddr);
+		addrCnt++;
+	}
+	taskEXIT_CRITICAL();
+	return addrCnt;
+}
 /*---------------------------------------------------------------------------*/

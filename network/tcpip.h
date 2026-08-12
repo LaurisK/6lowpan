@@ -300,6 +300,7 @@ extern unsigned char tcpip_is_forwarding;
 void tcpip_init(uint16_t, fRadioEvtHndl);
 void tcpip_StartDag(void);
 uint8_t tcpip_IAmGadRoot(void);
+uint16_t tcpip_GetDagAddresses(uip_ipaddr_t*, uint16_t);
 
 #endif /* TCPIP_H_ */
 
