@@ -238,7 +238,16 @@ static uint16_t my_tag;
 #ifdef SICSLOWPAN_CONF_REASS_CONTEXTS
 #define SICSLOWPAN_REASS_CONTEXTS SICSLOWPAN_CONF_REASS_CONTEXTS
 #else
-#define SICSLOWPAN_REASS_CONTEXTS 2
+/* One context is held for the whole of SICSLOWPAN_REASS_MAXAGE per (sender, tag) being
+ * reassembled, so this is the number of neighbours that may have a fragmented packet in
+ * flight at once. The upstream default of 2 is saturated by two concurrent senders - in a
+ * mesh where the root fans traffic out to several children that is an ordinary occurrence,
+ * not an edge case. Each context costs sizeof(struct sicslowpan_frag_info), dominated by
+ * first_frag[SICSLOWPAN_FIRST_FRAGMENT_SIZE], i.e. ~204 bytes at the current sizing.
+ * Note this trades against SICSLOWPAN_FRAGMENT_BUFFERS, which is the shared pool the
+ * non-first fragments land in: a packet of N fragments occupies N-1 buffers for the
+ * duration, so the pool has to cover the worst case across all contexts in flight. */
+#define SICSLOWPAN_REASS_CONTEXTS 4
 #endif
 
 /* The size of each fragment (IP payload) for the 6lowpan fragmentation */
@@ -385,6 +394,18 @@ static int8_t add_fragment(sPacket *packet, uint16_t tag, uint16_t frag_size, ui
         clear_fragments(i);
       }
 
+      /* Reuse any existing context for this (sender, tag) rather than opening a second
+         one. A retransmitted FRAG1 - the link layer retries on a lost ACK - would
+         otherwise take a further context every time it arrived, and with only
+         SICSLOWPAN_REASS_CONTEXTS of them a couple of duplicates block every other
+         node's reassembly until they age out. */
+      if((frag_info[i].len > 0) && (frag_info[i].tag == tag) &&
+         linkaddr_cmp(&frag_info[i].sender, packetbuf_addr(packet, PACKETBUF_ADDR_SENDER))) {
+        clear_fragments(i);
+        found = i;
+        continue;
+      }
+
       /* We use len as indication on used or not used */
       if(found < 0 && frag_info[i].len == 0) {
         /* We remember the first free fragment info but must continue
@@ -398,7 +419,14 @@ static int8_t add_fragment(sPacket *packet, uint16_t tag, uint16_t frag_size, ui
       return -1;
     }
 
-    /* Found a free fragment info to store data in */
+    /* Found a free fragment info to store data in. clear_fragments() only releases the
+       buffers and zeroes len, so a context being recycled - by the timeout above or by
+       the duplicate-FRAG1 path - still carries the previous session's running counters.
+       They are normally overwritten once this FRAG1 decompresses, but not on any path
+       that bails out first, and a stale reassembled_len lets a later FRAGN satisfy the
+       completion test early. Reset them here, where the context is (re)allocated. */
+    frag_info[found].reassembled_len = 0;
+    frag_info[found].first_frag_len = 0;
     frag_info[found].len = frag_size;
     frag_info[found].tag = tag;
     linkaddr_copy(&frag_info[found].sender, packetbuf_addr(packet, PACKETBUF_ADDR_SENDER));
