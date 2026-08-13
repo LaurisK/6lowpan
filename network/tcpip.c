@@ -97,18 +97,11 @@ uint8_t tcpip_output(sUipBuff *tcpUipBuff, const uip_lladdr_t *addr) {
     IP_HDR_CAST_TO_BUFF(tcpUipBuff->buff.u8)->tcflow = uipbuf_get_attr(tcpUipBuff, UIPBUF_ATTR_MAX_MAC_TRANSMISSIONS) << 4;
   }
 #endif
-#warning "netstack.c/h is for packet filtering, firewall or other functionality which is not needed for now"
-  if(1/*netstack_process_ip_callback(NETSTACK_IP_OUTPUT, addr) == NETSTACK_IP_PROCESS*/) {
-    /* uip_lladdr_t and linkaddr_t are the same 8 bytes here (UIP_CONF_LL_802154 with
-       LINKADDR_SIZE 8), and the object really is a linkaddr_t - uip_ds6_nbr_get_ll()
-       hands back &key->lladdr out of the nbr_table - so this casts it back. */
-    ret = sicslowpan_driver.output(tcpUipBuff, (const linkaddr_t *)addr);
-    return ret;
-  } else {
-    /* Ok, ignore and drop... */
-    uipbuf_clear(tcpUipBuff);
-    return 0;
-  }
+  /* uip_lladdr_t and linkaddr_t are the same 8 bytes here (UIP_CONF_LL_802154 with
+     LINKADDR_SIZE 8), and the object really is a linkaddr_t - uip_ds6_nbr_get_ll()
+     hands back &key->lladdr out of the nbr_table - so this casts it back. */
+  ret = sicslowpan_driver.output(tcpUipBuff, (const linkaddr_t *)addr);
+  return ret;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -250,11 +243,7 @@ tcpip_icmp6_call(uint8_t type)
 void tcpip_input(void)
 {
   if (sicslowpan_driver.input(&rxBuff)) {
-#warning "netstack.c/h is for packet filtering, firewall or other functionality which is not needed for now"
-    if(1/*netstack_process_ip_callback(NETSTACK_IP_INPUT, NULL) == NETSTACK_IP_PROCESS*/) {
-	  packet_input(&rxBuff);
-    } /* else - do nothing and drop */
-  //uipbuf_clear(); do not care - we clear it at start of reception. and now use different buffers for RX/TX and stuff.
+    packet_input(&rxBuff);
   }
 }
 /*---------------------------------------------------------------------------*/
