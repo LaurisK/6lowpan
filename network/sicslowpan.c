@@ -169,7 +169,6 @@
  * We initialize it to the beginning of the packetbuf buffer, then
  * access different fields by updating the offset packetbuf_hdr_len.
  */
-#warning "make these non global"
 static uint8_t *packetbuf_ptr;
 
 /**
