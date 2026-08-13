@@ -517,25 +517,9 @@ exit:
   return;
 }
 
-sUipBuff uipPollBuff;
-/*---------------------------------------------------------------------------*/
-#if UIP_UDP
-static sSocket *pollingSocket = NULL;
-static void PollUdp(void* unused) {
-    if(NULL != pollingSocket) {
-      uip_process(pollingSocket, &uipPollBuff, UIP_UDP_TIMER);
-      tcpip_ipv6_output(&uipPollBuff);
-    }
-    pollingSocket = NULL;
-}
-
-void tcpip_poll_udp(sSocket *socket) {
-	pollingSocket = socket;
-	tcpipEvtHndl(tcpipEvtIdOffset + radio_taskCall, PollUdp);
-}
-#endif /* UIP_UDP */
 /*---------------------------------------------------------------------------*/
 #if UIP_TCP
+static sUipBuff uipPollBuff;
 static struct uip_conn *pollTcpConn = NULL;
 static void PollTcp(void* unused) {
     if(NULL != pollTcpConn) {

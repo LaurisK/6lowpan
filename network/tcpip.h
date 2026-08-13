@@ -147,6 +147,7 @@ void tcp_unlisten(uint16_t port);
  */
 struct uip_conn *tcp_connect(const uip_ipaddr_t *ripaddr, uint16_t port, void *appstate);
 
+#if UIP_TCP
 /**
  * Cause a specified TCP connection to be polled.
  *
@@ -159,6 +160,7 @@ struct uip_conn *tcp_connect(const uip_ipaddr_t *ripaddr, uint16_t port, void *a
  *
  */
 void tcpip_poll_tcp(struct uip_conn *conn);
+#endif /* UIP_TCP */
 
 /** @} */
 
@@ -200,19 +202,6 @@ struct uip_udp_conn *udp_new(const uip_ipaddr_t *ripaddr, uint16_t port, void *a
  * memory could not be allocated for the connection.
  */
 struct uip_udp_conn *udp_broadcast_new(uint16_t port, void *appstate);
-
-/**
- * Cause a specified UDP connection to be polled.
- *
- * This function causes uIP to poll the specified UDP connection. The
- * function is used when the application has data that is to be sent
- * immediately and do not wish to wait for the periodic uIP polling
- * mechanism.
- *
- * \param conn A pointer to the UDP connection that should be polled.
- *
- */
-void tcpip_poll_udp(sSocket *socket);
 
 /** @} */
 
