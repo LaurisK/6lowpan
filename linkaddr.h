@@ -75,17 +75,6 @@ typedef union {
 } linkaddr_t;
 
 /**
- * \brief      The link-layer address of the node
- *
- *             This variable contains the link-layer address of the
- *             node. This variable should not be changed directly;
- *             rather, the linkaddr_set_node_addr() function should be
- *             used.
- *
- */
-extern linkaddr_t linkaddr_node_addr;
-
-/**
  * \brief      The null link-layer address
  *
  *             This variable contains the null link-layer address. The null
@@ -133,7 +122,18 @@ int linkaddr_cmp(const linkaddr_t *addr1, const linkaddr_t *addr2);
  */
 void linkaddr_set_node_addr(linkaddr_t *addr);
 
+/**
+ * \brief      Copy the address of the current node into addr
+ */
 void linkaddr_get_node_addr(linkaddr_t *addr);
+
+/**
+ * \brief      Test whether addr is the address of the current node
+ * \param addr The address to test
+ * \return     Non-zero if addr is this node's address, zero otherwise
+ */
+int linkaddr_is_node_addr(const linkaddr_t *addr);
+
 const char *linkaddr_printAddr(const linkaddr_t *addr);
 #ifdef __cplusplus
 }

@@ -51,8 +51,7 @@
 /* Private defines ----------------------------------------------------------*/
 /* Private types ------------------------------------------------------------*/
 /* Global variables ---------------------------------------------------------*/
-#warning "make them non global"
-linkaddr_t linkaddr_node_addr;
+static linkaddr_t linkaddr_node_addr;
 #if LINKADDR_SIZE == 2
 const linkaddr_t linkaddr_null = { { 0, 0 } };
 #else /*LINKADDR_SIZE == 2*/
@@ -85,6 +84,11 @@ void linkaddr_set_node_addr(linkaddr_t *t) {
 /*---------------------------------------------------------------------------*/
 void linkaddr_get_node_addr(linkaddr_t *addr) {
   linkaddr_copy(addr, &linkaddr_node_addr);
+}
+
+/*---------------------------------------------------------------------------*/
+int linkaddr_is_node_addr(const linkaddr_t *addr) {
+  return linkaddr_cmp(addr, &linkaddr_node_addr);
 }
 
 /*---------------------------------------------------------------------------*/

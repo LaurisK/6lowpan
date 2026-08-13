@@ -88,6 +88,8 @@ static uint8_t  operation_mode = 0;
 /* (Software) frame filtering enabled by default */
 #if RADIO_ADDRESS_FILTERING
 static uint8_t auto_pkt_filter = 1;
+
+static uint8_t my_devaddr = BROADCAST_ADDRESS;
 #else /*!RADIO_ADDRESS_FILTERING*/
 static uint8_t auto_pkt_filter = 0;
 #endif /*RADIO_ADDRESS_FILTERING*/
@@ -406,7 +408,7 @@ static uint32_t radio_get_packet_timestamp(void) {
 	return last_packet_timestamp;
 }
 
-static uint8_t linkaddr2devaddr(linkaddr_t *linkaddr) {
+static uint8_t linkaddr2devaddr(const linkaddr_t *linkaddr) {
 	uint16_t sum = linkaddr->u16[0] + linkaddr->u16[1] + linkaddr->u16[2] + linkaddr->u16[3];
 	sum = ((sum & 0xFF) ^ (sum >> 8));
 	if ((MULTICAST_ADDRESS == sum) || (BROADCAST_ADDRESS == sum)) {
@@ -589,7 +591,7 @@ static void RadioApplyConfiguration(void) {
 #if RADIO_ADDRESS_FILTERING
 	S2LP_PCKT_HNDL_SetAutoPcktFilter(S_ENABLE);
 	S2LP_PCKT_HNDL_SelectSecondarySync(S_DISABLE);
-	xAddressInit.cMyAddress = linkaddr2devaddr(&linkaddr_node_addr);
+	xAddressInit.cMyAddress = my_devaddr;
 	S2LP_PCKT_BASIC_AddressesInit(&xAddressInit);
 	TRice("msg:Node Source address %2X\n", xAddressInit.cMyAddress);
 #endif /*RADIO_ADDRESS_FILTERING*/
@@ -715,8 +717,8 @@ static eTransmitRes Radio_prepare(sPacket *packet) {
 		if (packetbuf_holds_broadcast(packet)) {
 			S2LP_PCKT_HNDL_SetRxSourceReferenceAddress(BROADCAST_ADDRESS);
 		} else {
-			S2LP_PCKT_HNDL_SetRxSourceReferenceAddress(linkaddr2devaddr((linkaddr_t*)packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER)));
-			TRice("msg:unicast to - %d.\n", linkaddr2devaddr((linkaddr_t*)packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER)));
+			S2LP_PCKT_HNDL_SetRxSourceReferenceAddress(linkaddr2devaddr(packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER)));
+			TRice("msg:unicast to - %d.\n", linkaddr2devaddr(packetbuf_addr(packet, PACKETBUF_ADDR_RECEIVER)));
 		}
 	}
 #endif /*RADIO_ADDRESS_FILTERING*/
@@ -1172,12 +1174,26 @@ static eRadioRes Radio_get_object(radio_param_t parameter, void *destination, si
 }
 
 static eRadioRes Radio_set_object(radio_param_t parameter, const void *source, size_t size) {
+	eRadioRes set_object_retval;
+	set_object_retval = radio_notSupported;
+
+	/*@TODO: add other parameters. */
+#if RADIO_ADDRESS_FILTERING
+	if (parameter == RADIO_PARAM_64BIT_ADDR) {
+		if ((size == LINKADDR_SIZE) && (source != NULL)) {
+			/* Takes effect at the next RadioApplyConfiguration(), so the MAC must push this before init(). */
+			my_devaddr = linkaddr2devaddr((const linkaddr_t *)source);
+			set_object_retval = radio_ok;
+		} else {
+			set_object_retval = radio_invalidArgument;
+		}
+	}
+#else /*!RADIO_ADDRESS_FILTERING*/
 	UNUSED(parameter);
 	UNUSED(source);
 	UNUSED(size);
-	/*@TODO: this API is currently not supported. */
-
-	return radio_notSupported;
+#endif /*RADIO_ADDRESS_FILTERING*/
+	return set_object_retval;
 }
 
 const struct radio_driver subGHz_radio_driver = {

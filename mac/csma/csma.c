@@ -212,9 +212,11 @@ static void HandleTransferEnd(uint8_t transfRes, uint8_t packetPos) {
 
 static uint8_t FormPayload(sPacket *packet) {
   uint8_t seqNr = GetSeqNr();
+  linkaddr_t self;
+  linkaddr_get_node_addr(&self);
   packetbuf_set_attr(packet, PACKETBUF_ATTR_MAC_SEQNO, seqNr);
   packetbuf_set_attr(packet, PACKETBUF_ATTR_FRAME_TYPE, FRAME802154_DATAFRAME);
-  packetbuf_set_addr(packet, PACKETBUF_ADDR_SENDER, &linkaddr_node_addr);
+  packetbuf_set_addr(packet, PACKETBUF_ADDR_SENDER, &self);
   packetbuf_set_attr(packet, PACKETBUF_ATTR_MAC_ACK, 1);
 #if LLSEC802154_ENABLED
 #if LLSEC802154_USES_EXPLICIT_KEYS
@@ -239,9 +241,9 @@ static uint16_t HandleIncoming(sPacket *incomingPacket) {
 	#warning "for now csma security is disabled - will need to be ported/implemented also..."
 	  } else if(/*csma_security_parse_frame()*/framer_802154.parse(incomingPacket) < 0) {
 		  TRice("err:failed to parse %u\n", packetbuf_datalen(incomingPacket));
-	  } else if(!linkaddr_cmp(packetbuf_addr(incomingPacket, PACKETBUF_ADDR_RECEIVER), &linkaddr_node_addr) && !packetbuf_holds_broadcast(incomingPacket)) {
+	  } else if(!linkaddr_is_node_addr(packetbuf_addr(incomingPacket, PACKETBUF_ADDR_RECEIVER)) && !packetbuf_holds_broadcast(incomingPacket)) {
 		  TRiceS("wrn:not for us. Target(%s)\n", (char*)linkaddr_printAddr(packetbuf_addr(incomingPacket, PACKETBUF_ADDR_RECEIVER)));
-	  } else if(linkaddr_cmp(packetbuf_addr(incomingPacket, PACKETBUF_ADDR_SENDER), &linkaddr_node_addr)) {
+	  } else if(linkaddr_is_node_addr(packetbuf_addr(incomingPacket, PACKETBUF_ADDR_SENDER))) {
 		  TRice("wrn:frame from ourselves\n");
 	  } else {
 	    int duplicate = 0;
@@ -525,6 +527,10 @@ static void init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
 	(*(((uint32_t*)node_mac)+1)) += HAL_GetUIDw0();
 	TRice("msg:MCU uid %08X %08X %08X to %08X %08X MAC.\n", HAL_GetUIDw0(), HAL_GetUIDw1(), HAL_GetUIDw2(), (*(uint32_t*)node_mac), (*(((uint32_t*)node_mac)+1)));
 	linkaddr_set_node_addr((linkaddr_t*)node_mac);
+	/* Hand the address down to the radio rather than letting the driver reach up for it. This MUST stay ahead of the init(). */
+	if (radio_ok != subGHz_radio_driver.set_object(RADIO_PARAM_64BIT_ADDR, node_mac, LINKADDR_SIZE)) {
+		TRice("err:[CSMA] - radio rejected the node address.\n");
+	}
   }
   seqNr = (uint8_t)System_Random(0xFF);
   subGHz_radio_driver.init(evtOffset, packedEvtHndl);
