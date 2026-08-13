@@ -280,9 +280,7 @@ typedef struct uip_ds6_netif {
 
 
 /*---------------------------------------------------------------------------*/
-#if UIP_CONF_ROUTER
 extern uip_ds6_prefix_t uip_ds6_prefix_list[UIP_DS6_PREFIX_NB];
-#endif /* UIP_CONF_ROUTER */
 
 
 /*---------------------------------------------------------------------------*/

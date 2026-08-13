@@ -261,6 +261,18 @@ void uip_log(char *msg);
 /** Minimum number of default routers */
 #define UIP_CONF_DS6_DEFRT_NBU       2
 #endif
+
+/**
+ * Act as an IPv6 router rather than a host.
+ *
+ * Deliberately pinned rather than given the #ifndef/#else override treatment the
+ * neighbouring options get: the !UIP_CONF_ROUTER (host) paths have not been carried
+ * through the sUipBuff refactor and no longer compile - uip_ds6.c's RS sending calls
+ * uip_nd6_rs_output() with no argument and writes to a uip_buf that no longer exists.
+ * Offering this as a knob would advertise a mode that cannot be built. Restoring host
+ * mode means porting those paths first, and only then relaxing this to #ifndef.
+ */
+#define UIP_CONF_ROUTER                 1
 /** @} */
 
 #ifndef UIP_CONF_ND6_SEND_RA
@@ -339,7 +351,6 @@ void uip_log(char *msg);
  * \defgroup uipopttcp TCP configuration options
  * @{
  */
-#define UIP_CONF_ROUTER                 1
 
 /**
  * Toggles whether TCP support should be compiled in or not.

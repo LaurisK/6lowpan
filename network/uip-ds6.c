@@ -165,7 +165,6 @@ static void uip_ds6_periodic(sUipBuff *dsPeriodicBuff) {
   /* Periodic processing on default routers */
   uip_ds6_defrt_periodic();
 
-#if 1//!UIP_CONF_ROUTER
   /* Periodic processing on prefixes */
   for(locprefix = uip_ds6_prefix_list; locprefix < uip_ds6_prefix_list + UIP_DS6_PREFIX_NB; locprefix++) {
     if(locprefix->prexifActive && !locprefix->isinfinite && Time_TimerExpired(&(locprefix->prefixTmo))) {
@@ -173,7 +172,6 @@ static void uip_ds6_periodic(sUipBuff *dsPeriodicBuff) {
       uip_ds6_prefix_rm(locprefix);
     }
   }
-#endif /* !UIP_CONF_ROUTER */
 
 #if UIP_ND6_SEND_NS
   uip_ds6_neighbor_periodic(dsPeriodicBuff);
