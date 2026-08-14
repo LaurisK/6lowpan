@@ -64,6 +64,8 @@
 #ifndef UIPOPT_H_
 #define UIPOPT_H_
 
+#include "../project-conf.h"
+
 #ifndef UIP_LITTLE_ENDIAN
 #define UIP_LITTLE_ENDIAN  3412
 #endif /* UIP_LITTLE_ENDIAN */
@@ -140,6 +142,13 @@
 #ifndef NETSTACK_MAX_ROUTE_ENTRIES
 #define NETSTACK_MAX_ROUTE_ENTRIES 16
 #endif /* NETSTACK_MAX_ROUTE_ENTRIES */
+
+#ifndef ROUTING_CONF_RPL_LITE
+#define ROUTING_CONF_RPL_LITE 1
+#endif /* ROUTING_CONF_RPL_LITE */
+#ifndef ROUTING_CONF_RPL_CLASSIC
+#define ROUTING_CONF_RPL_CLASSIC 0
+#endif /* ROUTING_CONF_RPL_CLASSIC */
 
 /**
  * Determines if statistics support should be compiled in.

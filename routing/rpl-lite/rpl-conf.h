@@ -46,6 +46,7 @@
 #define RPL_CONF_H
 
 #include "App/Time/time.h"
+#include "rpl-const.h"
 
 /******************************************************************************/
 /*********************** Enabling/disabling features **************************/

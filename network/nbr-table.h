@@ -37,12 +37,13 @@
 
 #include <stdint.h>
 #include "../linkaddr.h"
+#include "../project-conf.h"
 
 /* Neighbor table size */
 #ifdef NBR_TABLE_CONF_MAX_NEIGHBORS
 #define NBR_TABLE_MAX_NEIGHBORS NBR_TABLE_CONF_MAX_NEIGHBORS
 #else /* NBR_TABLE_CONF_MAX_NEIGHBORS */
-#define NBR_TABLE_MAX_NEIGHBORS 16
+#define NBR_TABLE_MAX_NEIGHBORS 64
 #endif /* NBR_TABLE_CONF_MAX_NEIGHBORS */
 
 #define LAYER_DRV 0

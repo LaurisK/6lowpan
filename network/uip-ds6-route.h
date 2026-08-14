@@ -52,7 +52,6 @@
 
 #else /* UIP_CONF_MAX_ROUTES */
 
-#define ROUTING_CONF_RPL_LITE 1
 
 #if ROUTING_CONF_RPL_LITE
 #define UIP_MAX_ROUTES 0 /* RPL Lite only supports non-storing, no routes */

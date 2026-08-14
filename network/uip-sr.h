@@ -69,7 +69,7 @@
 
 #else
 
-#define UIP_SR_LINK_NUM 0
+#error "uip-sr.h: no routing module selected - set ROUTING_CONF_RPL_LITE or ROUTING_CONF_RPL_CLASSIC (see uipopt.h), or define UIP_SR_CONF_LINK_NUM explicitly in project-conf.h"
 
 #endif
 

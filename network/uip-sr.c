@@ -43,6 +43,18 @@
 #include "../routing/routing.h"
 #include "../routing/rpl-lite/rpl-neighbor.h"
 
+#if RPL_WITH_NON_STORING
+#if UIP_SR_LINK_NUM < NBR_TABLE_MAX_NEIGHBORS
+#warning "UIP_SR_LINK_NUM < NBR_TABLE_MAX_NEIGHBORS: in non-storing mode the root can hold more neighbours than it has source-route slots, so the nodes above the limit are unreachable downwards. Raise UIP_SR_CONF_LINK_NUM in project-conf.h to match NBR_TABLE_CONF_MAX_NEIGHBORS."
+#endif
+#endif /* RPL_WITH_NON_STORING */
+
+#if RPL_WITH_STORING
+#if UIP_MAX_ROUTES < NBR_TABLE_MAX_NEIGHBORS
+#warning "UIP_MAX_ROUTES < NBR_TABLE_MAX_NEIGHBORS: in storing mode the routing table cannot hold a route for every neighbour. Raise NETSTACK_MAX_ROUTE_ENTRIES (or UIP_CONF_MAX_ROUTES) in project-conf.h to match NBR_TABLE_CONF_MAX_NEIGHBORS."
+#endif
+#endif /* RPL_WITH_STORING */
+
 /* Total number of nodes */
 static int num_nodes;
 
