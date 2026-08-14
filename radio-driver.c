@@ -25,6 +25,15 @@
  * Only the CSMA busy level tracks the noise floor. */
 #define TX_CSMA_RSSI_OFFSET 8	// signal above which channel is considered to be busy. According to AI some guidance:
 
+#define RADIO_FREQ_IS_VALID(v)      ((((uint32_t)(v) >= 412900000UL) && ((uint32_t)(v) <= 527100000UL)) || \
+                                     (((uint32_t)(v) >= 825900000UL) && ((uint32_t)(v) <= 1056000000UL)))
+#define RADIO_DATARATE_IS_VALID(v)  (((uint32_t)(v) >= 100UL) && ((uint32_t)(v) <= 250000UL))
+#define RADIO_FREQ_DEV_IS_VALID(v)  (((uint32_t)(v) >= (XTAL_FREQUENCY >> 22)) && \
+                                     ((uint32_t)(v) <= (((uint64_t)787109 * XTAL_FREQUENCY / 1000000) / 26)))
+#define RADIO_BW_IS_VALID(v)        (((uint32_t)(v) >= (((uint64_t)1100 * XTAL_FREQUENCY / 1000000) / 26)) && \
+                                     ((uint32_t)(v) <= (((uint64_t)800100 * XTAL_FREQUENCY / 1000000) / 26)))
+#define RADIO_RSSI_DBM_IS_VALID(v)  (((v) >= -146) && ((v) <= -2))
+
 #if RADIO_HW_CSMA
 #define PERSISTENT_MODE_EN              S_DISABLE
 #define CS_PERIOD                       CSMA_PERIOD_64TBIT
@@ -101,7 +110,23 @@ static uint8_t csma_enabled = 1;
 #else /*!RADIO_HW_CSMA*/
 static uint8_t csma_enabled = 0;
 #endif /*RADIO_HW_CSMA*/
-static int conf_tx_power = (int) POWER_DBM; //@TODO: validate
+#if RADIO_USE_EXTERNAL_PA
+/* The S2-LP output drives the external PA, so this is the drive level, not radiated power. */
+static int conf_tx_power = RADIO_PA_DRIVE_DBM;
+#else /*!RADIO_USE_EXTERNAL_PA*/
+static int conf_tx_power = (int) POWER_DBM;
+#endif /*RADIO_USE_EXTERNAL_PA*/
+static int      rssi_rx_threshold = (int)RSSI_RX_THRESHOLD;
+static uint32_t afc_param         = (((uint32_t)(AFC_FREEZE_ON_SYNC_REGMASK | AFC_ENABLED_REGMASK) << 16) | \
+                                     ((uint32_t)(AFC_FAST_PERIOD) << 8) | \
+                                     ((uint32_t)(((AFC_FAST_GAIN) << 4) | (AFC_SLOW_GAIN))));
+static uint16_t clock_recovery    = (((uint16_t)(CLOCKREC1_VALUE) << 8) | (uint16_t)(CLOCKREC0_VALUE));
+static uint8_t  radio_initialised = 0;
+static const ModulationSelect modulationTable[] = {
+	MOD_2FSK, MOD_4FSK, MOD_2GFSK_BT05, MOD_2GFSK_BT1,
+	MOD_4GFSK_BT05, MOD_4GFSK_BT1, MOD_ASK_OOK, MOD_POLAR, MOD_NO_MOD,
+};
+#define RADIO_MODULATION_COUNT  (sizeof(modulationTable) / sizeof(modulationTable[0]))
 
 volatile FlagStatus xTxDoneFlag = RESET;
 SGpioInit xGpioIRQ = { S2LP_GPIO_3, RADIO_GPIO_MODE_DIGITAL_OUTPUT_LP, RADIO_GPIO_DIG_OUT_IRQ };
@@ -350,6 +375,9 @@ static void radio_set_channel(uint8_t channel) {
  */
 static int32_t radio_get_txpower(void) {
 	int32_t register_tx_power;
+	if (0 == radio_initialised) {
+		return conf_tx_power;
+	}
 	register_tx_power = S2LP_RADIO_GetPALeveldBm(POWER_INDEX);
 	if (register_tx_power != conf_tx_power) {
 		TRice("wrn:Warning retrieved tx power %d != saved tx power %d\n", register_tx_power, conf_tx_power );
@@ -366,6 +394,9 @@ static void radio_set_txpower(int8_t power) {
 	/*Power value is validated in the calling function */
 	conf_tx_power = power;
 
+	if (0 == radio_initialised) {
+		return;
+	}
 	S2LP_RADIO_SetPALeveldBm(POWER_INDEX, conf_tx_power);
 }
 
@@ -547,17 +578,21 @@ static void RadioApplyConfiguration(void) {
 
 #if RADIO_USE_EXTERNAL_PA
 	S2LP_RADIO_SetAutoRampingMode(S_ENABLE);
-	S2LP_RADIO_SetPALeveldBm(POWER_INDEX, RADIO_PA_DRIVE_DBM);
-#else /*!RADIO_USE_EXTERNAL_PA*/
-	S2LP_RADIO_SetPALeveldBm(POWER_INDEX, POWER_DBM);
 #endif /*RADIO_USE_EXTERNAL_PA*/
+	S2LP_RADIO_SetPALeveldBm(POWER_INDEX, conf_tx_power);
 	S2LP_RADIO_SetPALevelMaxIndex(POWER_INDEX);
 
 	/* Configures the Radio packet handler part*/
 	S2LP_PCKT_BASIC_Init(&xBasicInit);
 	{
-		SAfcInit afc = {S_ENABLE, S_ENABLE, AFC_MODE_LOOP_CLOSED_ON_SLICER,
-		                AFC_FAST_PERIOD, AFC_FAST_GAIN, AFC_SLOW_GAIN};
+		SAfcInit afc = {
+			.xAfcEnable       = (afc_param & ((uint32_t)AFC_ENABLED_REGMASK << 16)) ? S_ENABLE : S_DISABLE,
+			.xAfcFreezeOnSync = (afc_param & ((uint32_t)AFC_FREEZE_ON_SYNC_REGMASK << 16)) ? S_ENABLE : S_DISABLE,
+			.xAfcMode         = (afc_param & ((uint32_t)AFC_MODE_REGMASK << 16)) ? AFC_MODE_LOOP_CLOSED_ON_2ND_CONV_STAGE : AFC_MODE_LOOP_CLOSED_ON_SLICER,
+			.cAfcFastPeriod   = (uint8_t)(afc_param >> 8),
+			.cAfcFastGain     = (uint8_t)((afc_param & AFC_FAST_GAIN_REGMASK) >> 4),
+			.cAfcSlowGain     = (uint8_t)(afc_param & AFC_SLOW_GAIN_REGMASK),
+		};
 		S2LP_RADIO_AfcInit(&afc);
 	}
 
@@ -565,7 +600,7 @@ static void RadioApplyConfiguration(void) {
 
 	/* Change 1: Clock recovery - "update strongly required" per PDF p.26 */
 	{
-		uint8_t clockrec[2] = {CLOCKREC1_VALUE, CLOCKREC0_VALUE};
+		uint8_t clockrec[2] = {(uint8_t)(clock_recovery >> 8), (uint8_t)clock_recovery};
 		S2LPSpiWriteRegisters(CLOCKREC1_ADDR, 2, clockrec);
 	}
 
@@ -598,6 +633,7 @@ static void RadioApplyConfiguration(void) {
 
 #if RADIO_HW_CSMA
 	S2LP_CSMA_Init(&xCsmaInit);
+	xSRssiInit.cRssiThreshdBm = csma_tx_threshold;
 	S2LP_RADIO_QI_RssiInit(&xSRssiInit);
 #endif /*RADIO_HW_CSMA*/
 
@@ -647,7 +683,7 @@ static void RadioApplyConfiguration(void) {
   S2LP_TIM_FastRxTermTimer(S_ENABLE);
 #else /*!RADIO_SNIFF_MODE*/
 
-	S2LP_RADIO_QI_SetRssiThreshdBm(RSSI_RX_THRESHOLD);
+	S2LP_RADIO_QI_SetRssiThreshdBm(rssi_rx_threshold);
 	SET_INFINITE_RX_TIMEOUT();
 	/* Configure Radio */
 	S2LP_PCKT_HNDL_SetRxPersistentMode(S_ENABLE);
@@ -665,6 +701,56 @@ static void RadioApplyConfiguration(void) {
 #endif /*RADIO_USE_EXTERNAL_PA*/
 }
 
+/**
+ * @brief  Re-stages the front-end parameters the driver was built with, so a caller can
+ *         read the defaults back with get_value(). Does not touch the part.
+ */
+static void RadioStageDefaults(void) {
+	xRadioInit.lFrequencyBase    = BASE_FREQUENCY;
+	xRadioInit.xModulationSelect = MODULATION_SELECT;
+	xRadioInit.lDatarate         = DATARATE;
+	xRadioInit.lFreqDev          = FREQ_DEVIATION;
+	xRadioInit.lBandwidth        = BANDWIDTH;
+	xBasicInit.xPreambleLength   = PREAMBLE_LENGTH;
+	rssi_rx_threshold            = (int)RSSI_RX_THRESHOLD;
+	csma_tx_threshold            = (int)RSSI_TX_THRESHOLD;
+#if RADIO_USE_EXTERNAL_PA
+	conf_tx_power                = RADIO_PA_DRIVE_DBM;
+#else /*!RADIO_USE_EXTERNAL_PA*/
+	conf_tx_power                = (int)POWER_DBM;
+#endif /*RADIO_USE_EXTERNAL_PA*/
+	afc_param      = (((uint32_t)(AFC_FREEZE_ON_SYNC_REGMASK | AFC_ENABLED_REGMASK) << 16) |
+	                  ((uint32_t)(AFC_FAST_PERIOD) << 8) |
+	                  ((uint32_t)(((AFC_FAST_GAIN) << 4) | (AFC_SLOW_GAIN))));
+	clock_recovery = (((uint16_t)(CLOCKREC1_VALUE) << 8) | (uint16_t)(CLOCKREC0_VALUE));
+}
+
+/**
+ * @brief  Reprograms the part with the staged front-end parameters, taking effect
+ *         immediately instead of at the next boot.
+ */
+static void RadioReapplyParams(void) {
+	if (0 == radio_initialised) {
+		return;
+	}
+
+	RADIO_IRQ_DISABLE();
+
+	RadioApplyConfiguration();
+
+	receiving_packet = 0;
+	pending_packet = 0;
+
+	if (radio_on == radio_status) {
+		RadioSwitchToRx();
+	} else {
+		S2LP_CMD_StrobeStandby();
+	}
+
+	S2LP_GPIO_IrqClearStatus();
+	RADIO_IRQ_ENABLE();
+}
+
 static int8_t Radio_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
 	TRice("msg:RADIO INIT IN\n");
 	radioEvtIdOffset = evtOffset;
@@ -678,8 +764,14 @@ static int8_t Radio_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
 	RadioSwitchToRx();
 
 	radio_status = radio_on;
+	radio_initialised = 1;
 
-	TRice("msg:Radio init done\n");
+	TRice("msg:Radio init done - %u Hz, modulation 0x%02X, %u bps, deviation %u Hz, bandwidth %u Hz\n",
+			xRadioInit.lFrequencyBase, (uint8_t)xRadioInit.xModulationSelect,
+			xRadioInit.lDatarate, xRadioInit.lFreqDev, xRadioInit.lBandwidth);
+	TRice("msg:\t txPower %d dBm, rssiThr %d dBm, ccaThr %d dBm, afc 0x%06X, clkRec 0x%04X, preamble %u\n",
+			conf_tx_power, rssi_rx_threshold, csma_tx_threshold,
+			afc_param, clock_recovery, xBasicInit.xPreambleLength);
 	return 0;
 }
 
@@ -841,7 +933,7 @@ static eTransmitRes Radio_transmit(uint16_t payloadLen) {
 		 * to, silently raised the AFC trigger well above the sensitivity-derived value and
 		 * stopped AFC from ever engaging on packets near the noise floor. The noise estimate
 		 * still drives csma_tx_threshold, which is its legitimate consumer. */
-		S2LP_RADIO_QI_SetRssiThreshdBm(RSSI_RX_THRESHOLD);
+		S2LP_RADIO_QI_SetRssiThreshdBm(rssi_rx_threshold);
 #endif /*!RADIO_SNIFF_MODE*/
 	}
 #endif /*RADIO_HW_CSMA*/
@@ -1033,6 +1125,52 @@ static eRadioRes Radio_get_value(radio_param_t parameter, radio_value_t *ret_val
 		*ret_value = MAX_PACKET_LEN;
 		get_value_result = radio_ok;
 		break;
+	case RADIO_BASE_FREQUENCY:
+		*ret_value = (radio_value_t)xRadioInit.lFrequencyBase;
+		get_value_result = radio_ok;
+		break;
+	case RADIO_MODULATION:
+	{
+		uint32_t i = RADIO_MODULATION_COUNT;
+		get_value_result = radio_notSupported;
+		while (i) {
+			i--;
+			if (modulationTable[i] == xRadioInit.xModulationSelect) {
+				*ret_value = (radio_value_t)i;
+				get_value_result = radio_ok;
+				break;
+			}
+		}
+		break;
+	}
+	case RADIO_DATARATE:
+		*ret_value = (radio_value_t)xRadioInit.lDatarate;
+		get_value_result = radio_ok;
+		break;
+	case RADIO_FREQ_DEVIATION:
+		*ret_value = (radio_value_t)xRadioInit.lFreqDev;
+		get_value_result = radio_ok;
+		break;
+	case RADIO_BANDWIDTH:
+		*ret_value = (radio_value_t)xRadioInit.lBandwidth;
+		get_value_result = radio_ok;
+		break;
+	case RADIO_RSSI_THRESHOLD:
+		*ret_value = rssi_rx_threshold;
+		get_value_result = radio_ok;
+		break;
+	case RADIO_AFC_PARAM:
+		*ret_value = (radio_value_t)afc_param;
+		get_value_result = radio_ok;
+		break;
+	case RADIO_CLOCK_RECOVERY:
+		*ret_value = clock_recovery;
+		get_value_result = radio_ok;
+		break;
+	case RADIO_PREAMBLE_LEN:
+		*ret_value = xBasicInit.xPreambleLength;
+		get_value_result = radio_ok;
+		break;
 	default:
 		TRice("dbg:Radio_get_value(%d) - radio_notSupported.\n", parameter);
 	}
@@ -1138,10 +1276,76 @@ static eRadioRes Radio_set_value(radio_param_t parameter, radio_value_t input_va
 			set_value_result = radio_invalidArgument;
 		}
 	} else if (parameter == RADIO_PARAM_CCA_THRESHOLD) {
-		csma_tx_threshold = input_value;
-		set_value_result = radio_ok;
+		if (RADIO_RSSI_DBM_IS_VALID(input_value)) {
+			csma_tx_threshold = input_value;
+			set_value_result = radio_ok;
+		} else {
+			set_value_result = radio_invalidArgument;
+		}
 	} else if (parameter == RADIO_OPERATION_MODE) {
 		EnterOperationMode(input_value);
+		set_value_result = radio_ok;
+	} else if (parameter == RADIO_BASE_FREQUENCY) {
+		if (RADIO_FREQ_IS_VALID(input_value)) {
+			xRadioInit.lFrequencyBase = (uint32_t)input_value;
+			set_value_result = radio_ok;
+		} else {
+			set_value_result = radio_invalidArgument;
+		}
+	} else if (parameter == RADIO_MODULATION) {
+		if ((0 <= input_value) && (RADIO_MODULATION_COUNT > (uint32_t)input_value)) {
+			xRadioInit.xModulationSelect = modulationTable[input_value];
+			set_value_result = radio_ok;
+		} else {
+			set_value_result = radio_invalidArgument;
+		}
+	} else if (parameter == RADIO_DATARATE) {
+		if (RADIO_DATARATE_IS_VALID(input_value)) {
+			xRadioInit.lDatarate = (uint32_t)input_value;
+			set_value_result = radio_ok;
+		} else {
+			set_value_result = radio_invalidArgument;
+		}
+	} else if (parameter == RADIO_FREQ_DEVIATION) {
+		if (RADIO_FREQ_DEV_IS_VALID(input_value)) {
+			xRadioInit.lFreqDev = (uint32_t)input_value;
+			set_value_result = radio_ok;
+		} else {
+			set_value_result = radio_invalidArgument;
+		}
+	} else if (parameter == RADIO_BANDWIDTH) {
+		if (RADIO_BW_IS_VALID(input_value)) {
+			xRadioInit.lBandwidth = (uint32_t)input_value;
+			set_value_result = radio_ok;
+		} else {
+			set_value_result = radio_invalidArgument;
+		}
+	} else if (parameter == RADIO_RSSI_THRESHOLD) {
+		if (RADIO_RSSI_DBM_IS_VALID(input_value)) {
+			rssi_rx_threshold = input_value;
+			set_value_result = radio_ok;
+		} else {
+			set_value_result = radio_invalidArgument;
+		}
+	} else if (parameter == RADIO_AFC_PARAM) {
+		afc_param = (uint32_t)input_value;
+		set_value_result = radio_ok;
+	} else if (parameter == RADIO_CLOCK_RECOVERY) {
+		clock_recovery = (uint16_t)input_value;
+		set_value_result = radio_ok;
+	} else if (parameter == RADIO_PREAMBLE_LEN) {
+		if ((0 <= input_value) && IS_PREAMBLE_LEN(input_value)) {
+			xBasicInit.xPreambleLength = (uint16_t)input_value;
+			set_value_result = radio_ok;
+		} else {
+			set_value_result = radio_invalidArgument;
+		}
+	} else if (parameter == RADIO_APPLY_PARAMS) {
+		if (RADIO_PARAMS_DEFAULT == input_value) {
+			RadioStageDefaults();
+		} else {
+			RadioReapplyParams();
+		}
 		set_value_result = radio_ok;
 	} else if (RADIO_PARAM_MAX_BACKOFF_NR == parameter) {
 		if (8 > input_value) {
@@ -1153,6 +1357,9 @@ static eRadioRes Radio_set_value(radio_param_t parameter, radio_value_t input_va
 		}
 	}
 
+	if (radio_invalidArgument == set_value_result) {
+		TRice("err:[RADIO DRV] - parameter %d rejected (value %d)\n", parameter, input_value);
+	}
 	return set_value_result;
 }
 
