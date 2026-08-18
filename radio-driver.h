@@ -196,12 +196,37 @@ extern "C" {
  */
 #define MAX_PACKET_LEN              S2LP_RX_FIFO_SIZE
 
+typedef struct {
+	/* Receive */
+	uint32_t	rxPackets;			/* frames read out of the FIFO and passed up the stack */
+	uint32_t	rxDiscarded;		/* frames the packet handler dropped, every cause */
+	uint32_t	rxFiltered;			/* ...well-formed, but addressed to another node */
+	uint32_t	rxCrcErrors;		/* ...reached the CRC check and failed it */
+	uint32_t	rxFifoErrors;		/* ...RX FIFO under/overflowed mid-frame */
+	uint32_t	rxRestarts;			/* receiver found outside RX after a drop and re-armed */
+	uint32_t	rxLastTick_ms;		/* HAL tick at the last successful reception */
+	/* Transmit */
+	uint32_t	txPackets;			/* sends the part confirmed with TX_DATA_SENT */
+	uint32_t	txFailures;			/* sends that never confirmed */
+	uint32_t	txCollisions;		/* ...abandoned with the channel still busy */
+	uint32_t	txFifoErrors;		/* ...TX FIFO under/overflowed mid-frame */
+	uint32_t	txForcedReady;		/* turnarounds that needed a forced READY to reach RX */
+	uint32_t	txCsmaRestarts;		/* CSMA re-arms spent across all sends */
+	/* Interrupt hygiene */
+	uint32_t	irqUnhandled;		/* status words carrying a bit the driver has no case for */
+	/* Link quality, as of the last reception */
+	int16_t		rxLastRssi_dBm;		/* RSSI of the most recently received frame */
+	int8_t		noiseFloor_dBm;		/* running background noise estimate */
+	int8_t		csmaThreshold_dBm;	/* level above which CSMA calls the channel busy */
+} sRadioStatus;
+
 /*---------------------------------------------------------------------------*/
 extern const struct radio_driver subGHz_radio_driver;
 /*---------------------------------------------------------------------------*/
 
 void Radio_process_irq_cb(void);
 void RadioOverrideRxCb(void (*overRxCb)(void));
+const sRadioStatus *Radio_GetStatus(void);
 
 /*---------------------------------------------------------------------------*/
 #ifdef __cplusplus

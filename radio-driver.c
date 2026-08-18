@@ -47,6 +47,17 @@
 #define CSMA_MAX_TX_RESTARTS            3
 #endif /*RADIO_HW_CSMA*/
 
+/* Timers that only exist in low-duty-cycle sniff mode. Outside it they cannot legitimately
+ * fire - RX runs with SET_INFINITE_RX_TIMEOUT() - so leave them out and let them trace. */
+#if RADIO_SNIFF_MODE
+#define RADIO_IRQ_SNIFF_COMPANIONS ((uint32_t)(WKUP_TOUT_LDC | RX_TIMEOUT | RX_SNIFF_TIMEOUT))
+#else /*!RADIO_SNIFF_MODE*/
+#define RADIO_IRQ_SNIFF_COMPANIONS (0UL)
+#endif /*RADIO_SNIFF_MODE*/
+
+/* Reasons the packet handler gives for dropping a frame. Counted, not traced. */
+#define RADIO_IRQ_DISC_CAUSES   ((uint32_t)(CRC_ERROR | RX_FIFO_ERROR))
+
 /* S2-LP SMPS frequency switching for TX/RX (Change 8, per ST bring-up guide p.22) */
 static void smps_set_tx(void) {
 	uint8_t regs[2] = {0x9B, 0xF4}; /* PM_CONF3, PM_CONF2 for TX (50MHz osc) */
@@ -144,6 +155,7 @@ SCsmaInit xCsmaInit = { PERSISTENT_MODE_EN, CS_PERIOD, CS_TIMEOUT, MAX_NB, BU_CO
 SRssiInit xSRssiInit = { .cRssiFlt = 14, .xRssiMode = RSSI_STATIC_MODE, .cRssiThreshdBm = RSSI_TX_THRESHOLD };
 #endif /*RADIO_HW_CSMA*/
 
+static sRadioStatus	radioStats = {0};
 static int8_t backgroundNoise = (-127);
 static uint16_t radioEvtIdOffset;
 static fRadioEvtHndl radioEvtHndl;
@@ -215,6 +227,7 @@ static int16_t Radio_read_from_fifo(sPacket *packet) {
 		TRice("msg: \t packet info: seqNr(%d), payloadCrc(0x%08X), fsc - %04X.\n \t my addr - %d\n", pqiSqi[2], packetCrc, fsc, xAddressInit.cMyAddress);
 		packetbuf_set_attr(packet, PACKETBUF_ATTR_RSSI, last_packet_rssi);
 		packetbuf_set_attr(packet, PACKETBUF_ATTR_LINK_QUALITY, last_packet_lqi);
+		radioStats.rxPackets++;
 	} else {
 		TRice("msg:Buf too small (%d bytes to hold %d bytes)\n", packetbuf_remaininglen(packet), rx_bytes);
 	}
@@ -479,8 +492,18 @@ static void HandleRxFifoError(void) {
 
 static void HandleRxError(void) {
 	if ((MC_STATE_RX != radio_refresh_status()) && (0 == transmitting_packet)) {
+		radioStats.rxRestarts++;
 		RadioSwitchToRx();
 	}
+}
+
+/**
+ * @brief  Reports an unhandled IRQ status.
+ * @param  pxIrqStatus - Set of IRQ registers received at interrupt
+ */
+static void RadioReportUnknownIrq(uint32_t pxIrqStatus) {
+	radioStats.irqUnhandled++;
+	TRice("wrn:[RADIO] unhandled IRQ status 0x%08X\n", pxIrqStatus);
 }
 
 /* API Realization ----------------------------------------------------------*/
@@ -856,6 +879,7 @@ static void Exit_TX(void) {
 
 #if !RADIO_SNIFF_MODE
 	if (MC_STATE_RX != radio_refresh_status()) {
+		radioStats.txForcedReady++;
 		if (0 == RadioForceReady()) {
 			RadioSwitchToRx();
 		}
@@ -912,13 +936,15 @@ static eTransmitRes Radio_transmit(uint16_t payloadLen) {
 	BUSYWAIT_UNTIL(xTxDoneFlag, 10 * RADIO_WAIT_TIMEOUT);
 	if (transmitting_packet) {
 		S2LP_CMD_StrobeSabort();
-		if (xTxDoneFlag == RESET) {
+		radioStats.txFailures++;
+		if (RESET == xTxDoneFlag) {
 			TRice("Packet not transmitted: TIMEOUT\n");
 		} else {
 			TRice("Packet not transmitted: ERROR\n");
 		}
 	} else {
 		retval = tx_ok;
+		radioStats.txPackets++;
 	}
 	xTxDoneFlag = RESET;
 
@@ -1425,13 +1451,19 @@ const struct radio_driver subGHz_radio_driver = {
  * @brief  Radio_process_irq_cb callback when an interrupt is received
  */
 void Radio_process_irq_cb(void) {
-	S2LPIrqs x_irq_status;
+	union {
+		S2LPIrqs	flags;	/* the part's own bitfield view, one event per member */
+		uint32_t	word;	/* the same 32 bits, for whole-word tests */
+	} irqStatus = {0};
+
+	_Static_assert(sizeof(irqStatus.flags) == sizeof(irqStatus.word), "S2LPIrqs must overlay a 32-bit word");
 
 	/* get interrupt source from radio */
-	S2LP_GPIO_IrqGetStatus(&x_irq_status);
+	S2LP_GPIO_IrqGetStatus(&irqStatus.flags);
 
 	/* Change 6: FIFO error handling - abort and flush per PDF p.48 */
-	if (x_irq_status.IRQ_TX_FIFO_ERROR) {
+	if (irqStatus.flags.IRQ_TX_FIFO_ERROR) {
+		radioStats.txFifoErrors++;
 		TRice("err:[RADIO DRV] - tx FIFO error.\n");
 		S2LP_CMD_StrobeSabort();
 		xTxDoneFlag = SET;
@@ -1442,22 +1474,25 @@ void Radio_process_irq_cb(void) {
 
 	/* The IRQ_TX_DATA_SENT notifies the packet transmission.
 	 * Then puts the Radio in RX/Sleep according to the selected mode */
-	if (x_irq_status.IRQ_TX_DATA_SENT && transmitting_packet) {
+	if (irqStatus.flags.IRQ_TX_DATA_SENT && transmitting_packet) {
 		transmitting_packet = 0;
 		xTxDoneFlag = SET;
 		return;
 	}
 
 #if !RADIO_SNIFF_MODE
-	/* The IRQ_VALID_SYNC is used to notify a new packet is coming */
-	if (x_irq_status.IRQ_VALID_SYNC && !transmitting_packet) {
+	/* The IRQ_VALID_SYNC is used to notify a new packet is coming. */
+	if (irqStatus.flags.IRQ_VALID_SYNC && !transmitting_packet) {
+		irqStatus.flags.IRQ_VALID_SYNC = 0;
+		irqStatus.flags.IRQ_RSSI_ABOVE_TH = 0;
 		receiving_packet = 1;
 		//S2LP_CMD_StrobeRx();
+		//no return intentionally
 	}
 #endif /*RADIO_SNIFF_MODE*/
 
 #if RADIO_HW_CSMA
-	if (x_irq_status.IRQ_MAX_BO_CCA_REACH) {
+	if (irqStatus.flags.IRQ_MAX_BO_CCA_REACH) {
 		/* ST bring-up guide p.24: this IRQ carries two opposite meanings. Either the channel
 		 * was still busy on the last CSMA slot and the transmission was cancelled, or the
 		 * channel was clear, the part transmitted anyway, and TX_DATA_SENT will follow at
@@ -1469,12 +1504,14 @@ void Radio_process_irq_cb(void) {
 			TRice("dbg:IRQ_MAX_BO_CCA_REACH - channel clear, tx already started\n");
 		} else if (csma_tx_restarts < CSMA_MAX_TX_RESTARTS) {
 			csma_tx_restarts++;
+			radioStats.txCsmaRestarts++;
 			TRice("dbg:IRQ_MAX_BO_CCA_REACH - channel busy, restart %d\n", csma_tx_restarts);
 			S2LP_CMD_StrobeTx();
 		} else {
 			/* Out of restarts. Stop the engine but leave transmitting_packet set so
 			 * Radio_transmit() falls through its timeout and reports tx_collision rather
 			 * than mistaking an abandoned send for a delivered one. */
+			radioStats.txCollisions++;
 			TRice("wrn:IRQ_MAX_BO_CCA_REACH - channel busy, giving up\n");
 			S2LP_CMD_StrobeSabort();
 		}
@@ -1483,7 +1520,7 @@ void Radio_process_irq_cb(void) {
 #endif /*RADIO_HW_CSMA*/
 
 	/* The IRQ_RX_DATA_READY notifies a new packet arrived */
-	if (x_irq_status.IRQ_RX_DATA_READY && !(transmitting_packet)) {
+	if (irqStatus.flags.IRQ_RX_DATA_READY && !(transmitting_packet)) {
 		receiving_packet = 0;
 
 		pending_packet = 1;
@@ -1497,49 +1534,62 @@ void Radio_process_irq_cb(void) {
 	}
 
 #if !RADIO_SNIFF_MODE
-	if (x_irq_status.IRQ_RX_DATA_DISC && !transmitting_packet) {
-		x_irq_status.IRQ_RX_DATA_DISC = 0;
-		transmitting_packet = 0;
+	if (irqStatus.flags.IRQ_RX_DATA_DISC && !transmitting_packet) {
 		receiving_packet = 0;
-		if (x_irq_status.IRQ_RX_TIMEOUT) {
-			TRice("\t IRQ_RX_TIMEOUT\n");
-			x_irq_status.IRQ_RX_TIMEOUT = 0;
+		radioStats.rxDiscarded++;
+		if (irqStatus.flags.IRQ_RX_FIFO_ERROR) {
+			/* FIFO under/overflowed mid-frame - the part needs an abort before it will RX again. */
+			radioStats.rxFifoErrors++;
+		} else if (irqStatus.flags.IRQ_CRC_ERROR) {
+			/* Frame reached the CRC check and failed it - a collision, or a link at its margin. */
+			radioStats.rxCrcErrors++;
+		} else if (irqStatus.flags.IRQ_RX_FIFO_ALMOST_FULL) {
+			/* At least RX_AFTHR bytes (48, the reset default this driver never overrides) were clocked in before the drop, and the CRC did not complain,
+			 * so this was a well-formed frame the address filter rejected - a neighbor talking to somebody else. */
+			radioStats.rxFiltered++;
+		} else if (irqStatus.flags.IRQ_VALID_PREAMBLE) {
+			/* Tail of the frame the previous discard already rejected: same frame, already counted, nothing to do. */
+		} else if (irqStatus.flags.IRQ_RSSI_ABOVE_TH) {
+			/* Carrier still up right after a packet this node did receive: Radio_read_from_fifo(). Runs within a millisecond of the RX in the logs.
+			 * Self-inflicted, not a lost frame. */
+		} else {
+			/* Discard with no cause bit set - a drop this driver has no case for. */
+			RadioReportUnknownIrq(irqStatus.word);
 		}
-		if (x_irq_status.IRQ_CRC_ERROR) {
-			TRice("\t IRQ_CRC_ERROR\n");
-			x_irq_status.IRQ_CRC_ERROR = 0;
-		}
-		if (x_irq_status.IRQ_TX_FIFO_ERROR) {
-			TRice("\t IRQ_TX_FIFO_ERROR\n");
-			x_irq_status.IRQ_TX_FIFO_ERROR = 0;
-		}
-		if (x_irq_status.IRQ_RX_FIFO_ALMOST_FULL) {
-			TRice("\t IRQ_RX_FIFO_ALMOST_FULL(%d)\n", S2LP_FIFO_ReadNumberBytesRxFifo());
-			x_irq_status.IRQ_RX_FIFO_ALMOST_FULL = 0;
-		}
-		if (x_irq_status.IRQ_RSSI_ABOVE_TH) {
-			TRice("\t IRQ_RSSI_ABOVE_TH\n");
-			x_irq_status.IRQ_RSSI_ABOVE_TH = 0;
-		}
-		if (x_irq_status.IRQ_RX_START_TIME) {
-			TRice("\t IRQ_RX_START_TIME\n");
-			x_irq_status.IRQ_RX_START_TIME = 0;
-		}
-		if (x_irq_status.IRQ_RX_FIFO_ERROR) {
-			TRice("\t IRQ_RX_FIFO_ERROR\n");
-			x_irq_status.IRQ_RX_FIFO_ERROR = 0;
+		if (irqStatus.flags.IRQ_RX_FIFO_ERROR) {
 			radioEvtHndl(radioEvtIdOffset + radio_rxFifoErr, HandleRxFifoError);
 		} else {
 			radioEvtHndl(radioEvtIdOffset + radio_rxDiscarded, HandleRxError);
 		}
-		if (*(uint32_t*)&x_irq_status) {
-			uint32_t irqReg = *(uint32_t*)&x_irq_status;
-			TRice("\t IRQ_RX_DATA_DISC[0x%08X]\n", irqReg);
-		}
+		return;
 	}
 #endif /*!RADIO_SNIFF_MODE*/
+	irqStatus.word &= ~((uint32_t)(VALID_PREAMBLE | RSSI_ABOVE_TH | RX_FIFO_ALMOST_FULL	| RX_FIFO_ALMOST_EMPTY | RX_START_TIME | TX_FIFO_ALMOST_FULL | TX_FIFO_ALMOST_EMPTY
+			| TX_START_TIME | READY | STANDBY_DELAYED | LOCK | VCO_CALIBRATION_END | PA_CALIBRATION_END | PM_COUNT_EXPIRED | XO_COUNT_EXPIRED ));
+
+	if (0 != irqStatus.word) {
+		RadioReportUnknownIrq(irqStatus.word);
+	}
 }
 
 void RadioOverrideRxCb(void (*overRxCb)(void)) {
 	overridenRxCb = overRxCb;
+}
+
+/**
+ * @brief  Publishes the radio statistics for periodic observation.
+ * @retval Pointer to the driver's statistics block, const so a caller cannot disturb the
+ *         counters the ISR is maintaining.
+ * @note   The link-quality fields live in the driver's own working variables and are
+ *         mirrored in here on the way out rather than on every update, so that there stays
+ *         one source of truth for each of them. The counters are free-running: take the
+ *         difference between two reads to get a rate, and expect no reset but a reboot.
+ */
+const sRadioStatus *Radio_GetStatus(void) {
+	radioStats.rxLastTick_ms     = last_packet_timestamp;
+	radioStats.rxLastRssi_dBm    = (int16_t)last_packet_rssi;
+	radioStats.noiseFloor_dBm    = backgroundNoise;
+	radioStats.csmaThreshold_dBm = (int8_t)csma_tx_threshold;
+
+	return (&radioStats);
 }
