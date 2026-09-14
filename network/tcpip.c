@@ -706,4 +706,26 @@ uint16_t tcpip_GetDagAddresses(uip_ipaddr_t *addrList, uint16_t maxAddr) {
 	taskEXIT_CRITICAL();
 	return addrCnt;
 }
+
+/**
+  * @brief  tells whether the root holds a complete downward source route to a node.
+  * @param  addr - global address of the node.
+  * @retval true if a downward route exists, false otherwise.
+  * @note   A route exists only when every hop from the node up to the root is known. A node whose parent(or any further
+  *         ancestor) is still a placeholder - known only because somebody named it as parent - has none: anything sent to
+  *         it fails in the SRH insertion with "no path found" until the missing DAO arrives. Only the root builds a source
+  *         routing graph, so on any other node this always reports false.
+  *         The walk is guarded by suspending the scheduler rather than by a critical section: it is linear in the number of
+  *         nodes and must not hold interrupts off(DALI edge timing), and the graph is only ever changed from task context.
+ */
+uint8_t tcpip_IsDagAddrReachable(const uip_ipaddr_t *addr) {
+	uint8_t reachable = false;
+	if ((NULL == addr) || (0 == rpl_lite_driver.node_is_root())) {
+		return false;
+	}
+	vTaskSuspendAll();
+	reachable = (0 != uip_sr_is_addr_reachable(NULL, addr)) ? true : false;
+	(void)xTaskResumeAll();
+	return reachable;
+}
 /*---------------------------------------------------------------------------*/
