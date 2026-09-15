@@ -131,9 +131,16 @@ uip_sr_node_t* uip_sr_update_node(void *graph, const uip_ipaddr_t *child, const 
   uip_sr_node_t *old_parent_node;
 
   if(parent != NULL) {
-    /* No node for the parent, add one with infinite lifetime */
+    /* No node for the parent, add a placeholder. Only our own node is permanent;
+     * any other parent is a stand-in until its own DAO arrives and overwrites the
+     * lifetime. Until then uip_sr_periodic() keeps it while a child points at it
+     * and frees it once the last child has left. UIP_SR_REMOVAL_DELAY rather than
+     * 0, so it survives at least one aging pass before it can be freed. */
     if(parent_node == NULL) {
-      parent_node = uip_sr_update_node(graph, parent, NULL, UIP_SR_INFINITE_LIFETIME);
+      uip_ipaddr_t root_ipaddr;
+      uint32_t parent_lifetime = (rpl_lite_driver.get_root_ipaddr(&root_ipaddr) && uip_ipaddr_cmp(parent, &root_ipaddr))
+                                 ? UIP_SR_INFINITE_LIFETIME : UIP_SR_REMOVAL_DELAY;
+      parent_node = uip_sr_update_node(graph, parent, NULL, parent_lifetime);
       if(parent_node == NULL) {
     	  TRice("err:NS: no space left for root node!\n");
         return NULL;
