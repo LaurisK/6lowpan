@@ -22,6 +22,7 @@ typedef enum {
 	radio_taskCall, //typically to break nesting
 	radio_dagLinkCreated,
 	radio_dagLinkDestroyed,
+	radio_dagVersionChanged, //root adopted a new DAG version, carried in the event data pointer itself
 	radio_pollUdp,
 	radio_lastEvt
 } eRadioEvent;

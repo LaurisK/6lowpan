@@ -109,7 +109,7 @@ void rpl_dag_root_set_prefix(uip_ipaddr_t *prefix, uip_ipaddr_t *iid) {
   }
 }
 /*---------------------------------------------------------------------------*/
-int rpl_dag_root_start(void) {
+int rpl_dag_root_start(uint8_t last_version) {
   struct uip_ds6_addr *root_if;
   uip_ipaddr_t *ipaddr = NULL;
 
@@ -120,7 +120,7 @@ int rpl_dag_root_start(void) {
   root_if = uip_ds6_addr_lookup(ipaddr);
   if(ipaddr != NULL || root_if != NULL) {
 
-    rpl_dag_init_root(RPL_DEFAULT_INSTANCE, ipaddr, (uip_ipaddr_t *)rpl_get_global_address(), 64, UIP_ND6_RA_FLAG_AUTONOMOUS);
+    rpl_dag_init_root(RPL_DEFAULT_INSTANCE, ipaddr, (uip_ipaddr_t *)rpl_get_global_address(), 64, UIP_ND6_RA_FLAG_AUTONOMOUS, last_version);
     rpl_dag_update_state(NULL);
 
     TRice("msg:created a new RPL DAG\n");

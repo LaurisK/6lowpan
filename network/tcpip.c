@@ -662,9 +662,14 @@ void tcpip_deinit() {
 #endif /* UIP_TCP */
 }
 
-void tcpip_StartDag(void) {
+/**
+  * @brief  makes this node the DAG root, unless it already is one.
+  * @param  lastVersion - DAG version this node last used as root. The DAG starts one version past it, so lamps
+  *                       still holding it see a new version and register again.
+ */
+void tcpip_StartDag(uint8_t lastVersion) {
   if (0 == rpl_lite_driver.node_is_root()) {
-	rpl_lite_driver.root_start();
+	rpl_lite_driver.root_start(lastVersion);
   }
 }
 

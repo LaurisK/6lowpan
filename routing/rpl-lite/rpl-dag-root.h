@@ -53,9 +53,10 @@ void rpl_dag_root_set_prefix(uip_ipaddr_t *prefix, uip_ipaddr_t *iid);
 /**
  * Set the node as root and start a DAG
  *
+ * \param last_version The DAG version this node last used as root, the DAG starts one past it
  * \return 0 in case of success, -1 otherwise
 */
-int rpl_dag_root_start(void);
+int rpl_dag_root_start(uint8_t last_version);
 
 /**
  * Tells whether we are DAG root or not

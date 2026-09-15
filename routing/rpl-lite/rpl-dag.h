@@ -115,9 +115,10 @@ int rpl_is_addr_in_our_dag(const uip_ipaddr_t *addr);
  * \param prefix The prefix
  * \param prefix_len The prefix length
  * \param flags The prefix flags (from DIO)
+ * \param last_version The DAG version this node last used as root, the DAG starts one past it
 */
 void rpl_dag_init_root(uint8_t instance_id, uip_ipaddr_t *dag_id,
-  uip_ipaddr_t *prefix, unsigned prefix_len, uint8_t flags);
+  uip_ipaddr_t *prefix, unsigned prefix_len, uint8_t flags, uint8_t last_version);
 
 /**
  * Returns pointer to the default instance (for compatibility with legagy RPL code)

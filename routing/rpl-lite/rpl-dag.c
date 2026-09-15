@@ -176,10 +176,19 @@ void rpl_refresh_routes(const char *str) {
   }
 }
 /*---------------------------------------------------------------------------*/
+/* Every version the root adopts goes to the application, which keeps it across
+ * reboots and hands it back to rpl_dag_init_root() */
+static void report_root_version(void) {
+  if(dagEvtHndl != NULL) {
+    dagEvtHndl(dagEvtIdOffset + radio_dagVersionChanged, (void *)(uintptr_t)curr_instance.dag.version);
+  }
+}
+/*---------------------------------------------------------------------------*/
 void rpl_global_repair(const char *str) {
   if(rpl_dag_root_is_root()) {
     RPL_LOLLIPOP_INCREMENT(curr_instance.dag.version);  /* New DAG version */
     curr_instance.dtsn_out = RPL_LOLLIPOP_INIT;  /* Re-initialize DTSN */
+    report_root_version();
 
     TRice("wrn:initiating global repair (%s), version %u, rank %u\n", str, curr_instance.dag.version, curr_instance.dag.rank);
     if(1/*LOG_DBG_ENABLED*/) {
@@ -671,9 +680,10 @@ int rpl_process_hbh(rpl_nbr_t *sender, uint16_t sender_rank, int loop_detected, 
   return !drop;
 }
 /*---------------------------------------------------------------------------*/
-void rpl_dag_init_root(uint8_t instance_id, uip_ipaddr_t *dag_id, uip_ipaddr_t *prefix, unsigned prefix_len, uint8_t prefix_flags)
+void rpl_dag_init_root(uint8_t instance_id, uip_ipaddr_t *dag_id, uip_ipaddr_t *prefix, unsigned prefix_len, uint8_t prefix_flags, uint8_t last_version)
 {
-  uint8_t version = RPL_LOLLIPOP_INIT;
+  uint8_t version = last_version;
+  RPL_LOLLIPOP_INCREMENT(version);
 
   /* If we're in an instance, first leave it */
   if(curr_instance.used) {
@@ -712,8 +722,9 @@ void rpl_dag_init_root(uint8_t instance_id, uip_ipaddr_t *dag_id, uip_ipaddr_t *
   rpl_timers_dio_reset("Init root");
 
   TRiceS("msg:created DAG with DAG ID %s, ", uip6_printAddr(&curr_instance.dag.dag_id, NULL));
-  TRice("msg:instance ID %u, rank %u\n", curr_instance.instance_id, curr_instance.dag.rank);
+  TRice("msg:instance ID %u, rank %u, version %u(last %u)\n", curr_instance.instance_id, curr_instance.dag.rank, curr_instance.dag.version, last_version);
   TRice("notice:Set DAG to reachable - we root of it. (dag.state = DAG_REACHABLE)\n");
+  report_root_version();
 }
 /*---------------------------------------------------------------------------*/
 void rpl_dag_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl)
