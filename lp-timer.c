@@ -120,8 +120,14 @@ sLpTimer *LpTimer_Create(const char *name, bool autoReload, fLpWork cb) {
 /*---------------------------------------------------------------------------*/
 void LpTimer_Arm(sLpTimer *tim, uint32_t ms) {
   if(NULL != tim) {
+    /* A timer period is at least one tick. Callers compute timeouts, some of them random from 0 up
+     * (urgent probing), so a timeout shorter than a tick is taken as the next tick. */
+    TickType_t ticks = pdMS_TO_TICKS(ms);
+    if(0 == ticks) {
+      ticks = 1;
+    }
     TakePending(&tim->work);
-    xTimerChangePeriod(tim->tim, pdMS_TO_TICKS(ms), 0);
+    xTimerChangePeriod(tim->tim, ticks, 0);
     xTimerStart(tim->tim, 0);
   }
 }

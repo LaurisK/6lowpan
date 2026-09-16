@@ -40,7 +40,8 @@ void LpTimer_Init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl);
  *  Returns NULL when the pool is exhausted; every call below tolerates that. */
 sLpTimer *LpTimer_Create(const char *name, bool autoReload, fLpWork cb);
 
-/** (Re)starts the timer with this timeout, dropping an expiry of it that has not run yet. */
+/** (Re)starts the timer with this timeout, dropping an expiry of it that has not run yet.
+ *  Any timeout is valid; one shorter than a tick (0 included) expires on the next tick. */
 void LpTimer_Arm(sLpTimer *tim, uint32_t ms);
 
 /** Stops the timer, dropping an expiry of it that has not run yet. */
