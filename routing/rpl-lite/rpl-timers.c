@@ -63,8 +63,66 @@ static TimerHandle_t periodicTimer; /* Not part of a DAG because used for genera
 static uint16_t rplTimEvtIdOffset;
 static fRadioEvtHndl rplTimEvtHndl;
 
+/* Timer IDs, each one's bit in expiredTimers */
+typedef enum {
+  rplTim_periodic,
+  rplTim_dis,
+  rplTim_dio,
+  rplTim_daoResend,
+  rplTim_daoRefresh,
+  rplTim_leave,
+  rplTim_probing,
+  rplTim_urgProbing,
+  rplTim_last
+} eRplTimer;
+
+/* The RPL timers expire on the timer task, but their work runs on the radio task, which owns the RPL
+ * state (DAG, neighbours, SR graph) and the transmit path. An expiry stays marked here until its work
+ * has run, so one whose post was dropped (radio queue full) is run by the next post - at the latest
+ * the periodic one. (Re)arming or stopping a timer from the radio task drops its unserviced expiry. */
+static uint32_t expiredTimers;
+
+static void RunExpiredTimers(void);
 /*---------------------------------------------------------------------------*/
-static void DisTmoHandler(TimerHandle_t periodicTim) {
+static uint32_t TimerBit(TimerHandle_t tim) {
+  return 1UL << (uint32_t)(uintptr_t)pvTimerGetTimerID(tim);
+}
+/*---------------------------------------------------------------------------*/
+/* Timer task: marks the expiry and hands the work to the radio task */
+static void TimerExpired(TimerHandle_t tim) {
+  taskENTER_CRITICAL();
+  expiredTimers |= TimerBit(tim);
+  taskEXIT_CRITICAL();
+  rplTimEvtHndl(rplTimEvtIdOffset + radio_taskCall, RunExpiredTimers);
+}
+/*---------------------------------------------------------------------------*/
+/* Clears an unserviced expiry, returns whether there was one */
+static bool TakeExpired(uint32_t timBit) {
+  bool expired;
+  taskENTER_CRITICAL();
+  expired = (0 != (expiredTimers & timBit));
+  expiredTimers &= ~timBit;
+  taskEXIT_CRITICAL();
+  return expired;
+}
+/*---------------------------------------------------------------------------*/
+/* Running, or expired with its work still to run */
+static bool TimerIsScheduled(TimerHandle_t tim) {
+  return (pdFALSE != xTimerIsTimerActive(tim)) || (0 != (expiredTimers & TimerBit(tim)));
+}
+/*---------------------------------------------------------------------------*/
+static void TimerArm(TimerHandle_t tim, uint32_t ms) {
+  TakeExpired(TimerBit(tim));
+  xTimerChangePeriod(tim, pdMS_TO_TICKS(ms), 0);
+  xTimerStart(tim, 0);
+}
+/*---------------------------------------------------------------------------*/
+static void TimerDisarm(TimerHandle_t tim) {
+  TakeExpired(TimerBit(tim));
+  xTimerStop(tim, 0);
+}
+/*---------------------------------------------------------------------------*/
+static void DisTmoHandler(void) {
   if(!rpl_dag_root_is_root() && (!curr_instance.used || curr_instance.dag.preferred_parent == NULL || curr_instance.dag.rank == RPL_INFINITE_RANK)) {
     /* Send DIS and schedule next */
     rpl_icmp6_dis_output(NULL);
@@ -72,7 +130,7 @@ static void DisTmoHandler(TimerHandle_t periodicTim) {
   }
 }
 /*---------------------------------------------------------------------------*/
-static void PeriodicTimerHandler(TimerHandle_t periodicTim)
+static void PeriodicTimerHandler(void)
 {
   if(curr_instance.used) {
     rpl_dag_periodic(PERIODIC_DELAY_SECONDS);
@@ -96,9 +154,8 @@ static void PeriodicTimerHandler(TimerHandle_t periodicTim)
 /*------------------------------- DIS -------------------------------------- */
 /*---------------------------------------------------------------------------*/
 void rpl_timers_schedule_periodic_dis(void) {
-  if(pdFALSE == xTimerIsTimerActive(disTimer)) {
-    xTimerChangePeriod(disTimer, pdMS_TO_TICKS(RPL_DIS_INTERVAL / 2 + System_Random(RPL_DIS_INTERVAL)), 0);
-    xTimerStart(disTimer, 0);
+  if(!TimerIsScheduled(disTimer)) {
+    TimerArm(disTimer, RPL_DIS_INTERVAL / 2 + System_Random(RPL_DIS_INTERVAL));
   }
 }
 /*---------------------------------------------------------------------------*/
@@ -123,16 +180,15 @@ static void new_dio_interval(void) {
   curr_instance.dag.dio_counter = 0;
 
   /* schedule the timer */
-  xTimerChangePeriod(curr_instance.dag.dio_timer, pdMS_TO_TICKS(ticks), 0);
+  TimerArm(curr_instance.dag.dio_timer, ticks);
   TRice("msg:DIO timer scheduled for(%d)\n", ticks);
-  xTimerStart(curr_instance.dag.dio_timer, 0);
 
 #ifdef RPL_CALLBACK_NEW_DIO_INTERVAL
   RPL_CALLBACK_NEW_DIO_INTERVAL((CLOCK_SECOND * 1UL << curr_instance.dag.dio_intcurrent) / 1000);
 #endif /* RPL_CALLBACK_NEW_DIO_INTERVAL */
 }
 /*---------------------------------------------------------------------------*/
-static void DioTmoHandler(TimerHandle_t periodicTim) {
+static void DioTmoHandler(void) {
   if(!rpl_dag_ready_to_advertise()) {
 	TRice("msg:DioTmoHandler(exit - We will be scheduled again later)\n");
     return; /* We will be scheduled again later */
@@ -187,9 +243,8 @@ static void DioTmoHandler(TimerHandle_t periodicTim) {
 #endif /* UIP_IPV6_MULTICAST */
     }
     curr_instance.dag.dio_send = 0;
-    xTimerChangePeriod(curr_instance.dag.dio_timer, pdMS_TO_TICKS(curr_instance.dag.dio_next_delay), 0);
+    TimerArm(curr_instance.dag.dio_timer, curr_instance.dag.dio_next_delay);
     TRice("msg:DIO timer continue for(%d)\n", curr_instance.dag.dio_next_delay);
-    xTimerStart(curr_instance.dag.dio_timer, 0);
   } else {
     /* check if we need to double interval */
     if(curr_instance.dag.dio_intcurrent < curr_instance.dio_intmin + curr_instance.dio_intdoubl) {
@@ -240,11 +295,10 @@ void rpl_timers_schedule_unicast_dio(rpl_nbr_t *target) {
 /*---------------------------------------------------------------------------*/
 static void schedule_dao_retransmission(void) {
   uint32_t expiration_time = RPL_DAO_RETRANSMISSION_TIMEOUT / 2 + (System_Random(RPL_DAO_RETRANSMISSION_TIMEOUT));
-  xTimerChangePeriod(curr_instance.dag.timDaoResend, pdMS_TO_TICKS(expiration_time), 0);
-  xTimerStart(curr_instance.dag.timDaoResend, 0);
+  TimerArm(curr_instance.dag.timDaoResend, expiration_time);
 }
 /*---------------------------------------------------------------------------*/
-static void DaoRefreshTmoHandler(TimerHandle_t periodicTim)
+static void DaoRefreshTmoHandler(void)
 {
 #if RPL_WITH_DAO_ACK
   /* We are sending a new DAO here. Prepare retransmissions */
@@ -287,8 +341,7 @@ static void schedule_dao_refresh(void) {
     }
 
     /* Schedule transmission */
-	xTimerChangePeriod(curr_instance.dag.timDaoRefresh, pdMS_TO_TICKS(target_refresh), 0);
-	xTimerStart(curr_instance.dag.timDaoRefresh, 0);
+    TimerArm(curr_instance.dag.timDaoRefresh, target_refresh);
   }
 }
 /*---------------------------------------------------------------------------*/
@@ -298,8 +351,7 @@ void rpl_timers_schedule_dao(void) {
     * only serves storing mode. Use simple delay instead, with the only purpose
     * to reduce congestion. */
 	uint32_t expiration_time = RPL_DAO_DELAY / 2 + (System_Random(RPL_DAO_DELAY));
-	xTimerChangePeriod(curr_instance.dag.timDaoRefresh, pdMS_TO_TICKS(expiration_time), 0);
-	xTimerStart(curr_instance.dag.timDaoRefresh, 0);
+	TimerArm(curr_instance.dag.timDaoRefresh, expiration_time);
   }
 }
 #if RPL_WITH_DAO_ACK
@@ -325,11 +377,11 @@ void rpl_timers_schedule_dao_ack(uip_ipaddr_t *target, uint16_t sequence) {
 /*---------------------------------------------------------------------------*/
 void rpl_timers_notify_dao_ack(void) {
   /* The last DAO was ACKed. Schedule refresh to avoid route expiration.*/
-  xTimerStop(curr_instance.dag.timDaoResend, 0);
+  TimerDisarm(curr_instance.dag.timDaoResend);
   schedule_dao_refresh();
 }
 /*---------------------------------------------------------------------------*/
-static void DaoResendTmoHandler(TimerHandle_t periodicTim) {
+static void DaoResendTmoHandler(void) {
   /* Increment transmission counter before sending */
   curr_instance.dag.dao_transmissions++;
   /* Send a DAO with own prefix as target and default lifetime */
@@ -416,7 +468,7 @@ static rpl_nbr_t * get_probing_target(void)
   return probing_target;
 }
 /*---------------------------------------------------------------------------*/
-static void ProbingTmoHandler(TimerHandle_t periodicTim) {
+static void Probe(void) {
   rpl_nbr_t *probing_target = get_probing_target();
   uip_ipaddr_t *target_ipaddr = rpl_neighbor_get_ipaddr(probing_target);
 
@@ -436,20 +488,24 @@ static void ProbingTmoHandler(TimerHandle_t periodicTim) {
   } else {
 	  TRice("sig:probing rejected - no target found.\n");
   }
-
+}
+/*---------------------------------------------------------------------------*/
+static void ProbingTmoHandler(void) {
+  Probe();
   /* Schedule next probing */
-  if (curr_instance.dag.probing_timer == periodicTim) {
-    rpl_schedule_probing();
-  }
+  rpl_schedule_probing();
+}
+/*---------------------------------------------------------------------------*/
+static void UrgProbingTmoHandler(void) {
+  Probe(); /* The periodic probing keeps its own schedule */
 }
 /*---------------------------------------------------------------------------*/
 void rpl_schedule_probing(void) {
   if (curr_instance.used) {
-	if (!xTimerIsTimerActive(curr_instance.dag.probing_timer)) {
+	if (!TimerIsScheduled(curr_instance.dag.probing_timer)) {
 	  uint16_t rescheduleTmo = ((RPL_PROBING_INTERVAL) / 2) + System_Random(RPL_PROBING_INTERVAL);
 	  TRice("sig:Schedule probing in %dmS\n", rescheduleTmo);
-	  xTimerChangePeriod(curr_instance.dag.probing_timer, pdMS_TO_TICKS(rescheduleTmo), 0);
-	  xTimerStart(curr_instance.dag.probing_timer, 0);
+	  TimerArm(curr_instance.dag.probing_timer, rescheduleTmo);
 	} else {
 	  TRice("sig:Probing not started - it is already running.\n");
 	}
@@ -460,10 +516,9 @@ void rpl_schedule_probing(void) {
 /*---------------------------------------------------------------------------*/
 void rpl_schedule_probing_now(void) {
   if(curr_instance.used) {
-	if (!xTimerIsTimerActive(curr_instance.dag.urgProbeTmo)) {
+	if (!TimerIsScheduled(curr_instance.dag.urgProbeTmo)) {
 	  TRice("sig:Schedule urgent probing in 4 sec.\n");
-	  xTimerChangePeriod(curr_instance.dag.urgProbeTmo, pdMS_TO_TICKS(System_Random(1000 * 4)), 0);
-	  xTimerStart(curr_instance.dag.urgProbeTmo, 0);
+	  TimerArm(curr_instance.dag.urgProbeTmo, System_Random(1000 * 4));
 	} else {
 	  TRice("sig:Urgent probing not started - it is already running.\n");
 	}
@@ -475,7 +530,7 @@ void rpl_schedule_probing_now(void) {
 /*---------------------------------------------------------------------------*/
 /*------------------------------- Leaving-- -------------------------------- */
 /*---------------------------------------------------------------------------*/
-static void LeavingTmoHandler(TimerHandle_t periodicTim) {
+static void LeavingTmoHandler(void) {
   if(curr_instance.used) {
     rpl_dag_leave();
   }
@@ -483,15 +538,13 @@ static void LeavingTmoHandler(TimerHandle_t periodicTim) {
 /*---------------------------------------------------------------------------*/
 void rpl_timers_unschedule_leaving(void) {
   if(curr_instance.used) {
-    if(pdTRUE == xTimerIsTimerActive(curr_instance.dag.leave)) {
-      xTimerStop(curr_instance.dag.leave, 0);
-    }
+    TimerDisarm(curr_instance.dag.leave);
   }
 }
 /*---------------------------------------------------------------------------*/
 void rpl_timers_schedule_leaving(void) {
   if(curr_instance.used) {
-    if(pdFALSE == xTimerIsTimerActive(curr_instance.dag.leave)) {
+    if(!TimerIsScheduled(curr_instance.dag.leave)) {
       xTimerStart(curr_instance.dag.leave, 0);
     }
   }
@@ -499,22 +552,48 @@ void rpl_timers_schedule_leaving(void) {
 /*---------------------------------------------------------------------------*/
 /*------------------------------- Periodic---------------------------------- */
 /*---------------------------------------------------------------------------*/
+/* Radio task: runs the work of every expired timer. Each expiry is taken just before its work runs,
+ * so a timer that an earlier one's work stops or re-arms (e.g. leaving stops the DAG timers) is skipped. */
+static void RunExpiredTimers(void) {
+  static void (*const work[rplTim_last])(void) = {
+    [rplTim_periodic]   = PeriodicTimerHandler,
+    [rplTim_dis]        = DisTmoHandler,
+    [rplTim_dio]        = DioTmoHandler,
+#if RPL_WITH_DAO_ACK
+    [rplTim_daoResend]  = DaoResendTmoHandler,
+    [rplTim_daoRefresh] = DaoRefreshTmoHandler,
+#endif /* RPL_WITH_DAO_ACK */
+    [rplTim_leave]      = LeavingTmoHandler,
+#if RPL_WITH_PROBING
+    [rplTim_probing]    = ProbingTmoHandler,
+    [rplTim_urgProbing] = UrgProbingTmoHandler,
+#endif /* RPL_WITH_PROBING */
+  };
+  uint32_t id;
+
+  for(id = 0; id < rplTim_last; id++) {
+    if(TakeExpired(1UL << id) && (NULL != work[id])) {
+      work[id]();
+    }
+  }
+}
+/*---------------------------------------------------------------------------*/
 void rpl_timers_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
   rplTimEvtIdOffset = evtOffset;
   rplTimEvtHndl = packedEvtHndl;
-  periodicTimer = xTimerCreate("6lowpan-rpl-periodicTimer", pdMS_TO_TICKS(PERIODIC_DELAY), pdTRUE, 0, PeriodicTimerHandler);
+  periodicTimer = xTimerCreate("6lowpan-rpl-periodicTimer", pdMS_TO_TICKS(PERIODIC_DELAY), pdTRUE, (void *)rplTim_periodic, TimerExpired);
   xTimerStart(periodicTimer, 0);
    /*DIS (DODAG Information Solicitation) message*/
-  disTimer = xTimerCreate("6lowpan-rpl-disPeriodicTimer", pdMS_TO_TICKS(RPL_DIS_INTERVAL / 2 + System_Random(RPL_DIS_INTERVAL)), pdFALSE, 0, DisTmoHandler);
+  disTimer = xTimerCreate("6lowpan-rpl-disPeriodicTimer", pdMS_TO_TICKS(RPL_DIS_INTERVAL / 2 + System_Random(RPL_DIS_INTERVAL)), pdFALSE, (void *)rplTim_dis, TimerExpired);
   xTimerStart(disTimer, 0);
 
-  curr_instance.dag.dio_timer = xTimerCreate("6lowpan-rpl-dioTimer", pdMS_TO_TICKS(1/*will set before starting*/), pdFALSE, 0, DioTmoHandler);
-  curr_instance.dag.timDaoResend = xTimerCreate("6lowpan-rpl-daoResendTimer", pdMS_TO_TICKS(1/*will set before starting*/), pdFALSE, 0, DaoResendTmoHandler);
-  curr_instance.dag.timDaoRefresh = xTimerCreate("6lowpan-rpl-daoRefreshTimer", pdMS_TO_TICKS(1/*will set before starting*/), pdFALSE, 0, DaoRefreshTmoHandler);
-  curr_instance.dag.leave = xTimerCreate("6lowpan-rpl-leaveTimer", pdMS_TO_TICKS(RPL_DELAY_BEFORE_LEAVING), pdFALSE, 0, LeavingTmoHandler);
+  curr_instance.dag.dio_timer = xTimerCreate("6lowpan-rpl-dioTimer", pdMS_TO_TICKS(1/*will set before starting*/), pdFALSE, (void *)rplTim_dio, TimerExpired);
+  curr_instance.dag.timDaoResend = xTimerCreate("6lowpan-rpl-daoResendTimer", pdMS_TO_TICKS(1/*will set before starting*/), pdFALSE, (void *)rplTim_daoResend, TimerExpired);
+  curr_instance.dag.timDaoRefresh = xTimerCreate("6lowpan-rpl-daoRefreshTimer", pdMS_TO_TICKS(1/*will set before starting*/), pdFALSE, (void *)rplTim_daoRefresh, TimerExpired);
+  curr_instance.dag.leave = xTimerCreate("6lowpan-rpl-leaveTimer", pdMS_TO_TICKS(RPL_DELAY_BEFORE_LEAVING), pdFALSE, (void *)rplTim_leave, TimerExpired);
 #if RPL_WITH_PROBING
-  curr_instance.dag.probing_timer = xTimerCreate("6lowpan-rpl-probingTimer", pdMS_TO_TICKS(1/*will set before starting*/), pdFALSE, 0, ProbingTmoHandler);
-  curr_instance.dag.urgProbeTmo = xTimerCreate("6lowpan-rpl-probingTimer", pdMS_TO_TICKS(1/*will set before starting*/), pdFALSE, 0, ProbingTmoHandler);
+  curr_instance.dag.probing_timer = xTimerCreate("6lowpan-rpl-probingTimer", pdMS_TO_TICKS(1/*will set before starting*/), pdFALSE, (void *)rplTim_probing, TimerExpired);
+  curr_instance.dag.urgProbeTmo = xTimerCreate("6lowpan-rpl-probingTimer", pdMS_TO_TICKS(1/*will set before starting*/), pdFALSE, (void *)rplTim_urgProbing, TimerExpired);
 #endif /* RPL_WITH_PROBING */
 }
 /*---------------------------------------------------------------------------*/
@@ -522,12 +601,12 @@ void
 rpl_timers_stop_dag_timers(void)
 {
   /* Stop all timers related to the DAG */
-  xTimerStop(curr_instance.dag.leave, 0);
-  xTimerStop(curr_instance.dag.dio_timer, 0);
-  xTimerStop(curr_instance.dag.timDaoResend, 0);
-  xTimerStop(curr_instance.dag.timDaoRefresh, 0);
+  TimerDisarm(curr_instance.dag.leave);
+  TimerDisarm(curr_instance.dag.dio_timer);
+  TimerDisarm(curr_instance.dag.timDaoResend);
+  TimerDisarm(curr_instance.dag.timDaoRefresh);
 #if RPL_WITH_PROBING
-  xTimerStop(curr_instance.dag.probing_timer, 0);
+  TimerDisarm(curr_instance.dag.probing_timer);
 #endif /* RPL_WITH_PROBING */
 }
 /*---------------------------------------------------------------------------*/
