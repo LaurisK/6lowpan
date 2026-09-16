@@ -47,7 +47,6 @@
 
 #include "../../network/uip.h"
 #include "App/common.h"
-#include "cmsis_os.h"
 #include "rpl-conf.h"
  /********** Macros **********/
 
@@ -171,7 +170,6 @@ struct rpl_dag {
   uint8_t grounded;
   uint8_t preference;
   uint8_t dio_intcurrent; /* Current DIO interval */
-  uint8_t dio_send; /* internal trickle timer state: do we need to send a DIO at the next wakeup? */
   uint8_t dio_counter; /* internal trickle timer state: redundancy counter */
   uint8_t dao_last_seqno; /* the node's last sent DAO seqno */
   uint8_t dao_last_acked_seqno; /* the last seqno we got an ACK for */
@@ -179,22 +177,11 @@ struct rpl_dag {
   bool unprocessed_parent_switch;
   enum rpl_dag_state state;
 
-  /* Timers */
-  uint32_t dio_next_delay; /* delay for completion of dio interval */
-  TimerHandle_t leave;
-  TimerHandle_t dio_timer;
-  TimerHandle_t timDaoResend;
-  TimerHandle_t timDaoRefresh;
+  /* Targets of work rpl-timers schedules; the timers themselves are private to that module */
   rpl_nbr_t *unicast_dio_target;
 #if RPL_WITH_PROBING
-  TimerHandle_t probing_timer;
-  TimerHandle_t urgProbeTmo;
   rpl_nbr_t *urgent_probing_target;
 #endif /* RPL_WITH_PROBING */
-#if RPL_WITH_DAO_ACK
-  uip_ipaddr_t dao_ack_target;
-  uint16_t dao_ack_sequence;
-#endif /* RPL_WITH_DAO_ACK */
 };
 typedef struct rpl_dag rpl_dag_t;
 

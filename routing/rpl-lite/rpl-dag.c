@@ -467,10 +467,6 @@ static int init_dag(uint8_t instance_id, uip_ipaddr_t *dag_id, rpl_ocp_t ocp, ui
 #if RPL_WITH_PROBING
   curr_instance.dag.urgent_probing_target = NULL;
 #endif /* RPL_WITH_PROBING */
-#if RPL_WITH_DAO_ACK
-  memset(&curr_instance.dag.dao_ack_target, 0, sizeof(uip_ipaddr_t));
-  curr_instance.dag.dao_ack_sequence = 0;
-#endif /* RPL_WITH_DAO_ACK */
 
   /* OF */
   of = find_objective_function(ocp);

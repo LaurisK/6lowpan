@@ -43,6 +43,7 @@
  */
 
 #include <stdio.h>
+#include "cmsis_os.h" /* pvPortMalloc()/vPortFree() */
 #include "rpl.h"
 #include "rpl-dag.h"
 #include "rpl-dag-root.h"

@@ -40,6 +40,7 @@
  * Simon Duquennoy <simon.duquennoy@inria.fr>
  */
 
+#include "cmsis_os.h"
 #include "../../network/link-stats.h"
 #include "../../network/uip-sr.h"
 #include "rpl.h"
@@ -57,13 +58,27 @@ void RPL_CALLBACK_NEW_DIO_INTERVAL(uint32_t/*clock_time_t*/ dio_interval);
 #define PERIODIC_DELAY             ((PERIODIC_DELAY_SECONDS) * 1000)
 
 /*---------------------------------------------------------------------------*/
-static TimerHandle_t disTimer; /* Not part of a DAG because when not joined */
+/* The timers and the state that belongs to them. They are private to this module: the rest of RPL
+ * asks for timed work through the rpl_timers_* API and never learns that it runs on FreeRTOS timers. */
 static TimerHandle_t periodicTimer; /* Not part of a DAG because used for general state maintenance */
+static TimerHandle_t disTimer; /* Not part of a DAG because when not joined */
+static TimerHandle_t dioTimer;
+static TimerHandle_t daoResendTimer;
+static TimerHandle_t daoRefreshTimer;
+static TimerHandle_t leaveTimer;
+#if RPL_WITH_PROBING
+static TimerHandle_t probingTimer;
+static TimerHandle_t urgProbingTimer;
+#endif /* RPL_WITH_PROBING */
+
+static uint32_t dioNextDelay; /* delay for completion of the DIO (trickle) interval */
+static uint8_t dioSend; /* internal trickle timer state: do we need to send a DIO at the next wakeup? */
 
 static uint16_t rplTimEvtIdOffset;
 static fRadioEvtHndl rplTimEvtHndl;
 
-/* Timer IDs, each one's bit in expiredTimers */
+/* Work this module runs on the radio task. The timers come first: a timer's entry is both its bit
+ * here and the ID it carries as a FreeRTOS timer. The rest is work requested without a timer. */
 typedef enum {
   rplTim_periodic,
   rplTim_dis,
@@ -73,52 +88,63 @@ typedef enum {
   rplTim_leave,
   rplTim_probing,
   rplTim_urgProbing,
-  rplTim_last
-} eRplTimer;
+  rplWork_stateUpdate,
+  rplWork_unicastDio,
+  rplWork_daoAck,
+  rplWork_last
+} eRplWork;
 
-/* The RPL timers expire on the timer task, but their work runs on the radio task, which owns the RPL
- * state (DAG, neighbours, SR graph) and the transmit path. An expiry stays marked here until its work
- * has run, so one whose post was dropped (radio queue full) is run by the next post - at the latest
- * the periodic one. (Re)arming or stopping a timer from the radio task drops its unserviced expiry. */
-static uint32_t expiredTimers;
+/* RPL timers expire on the timer task and the rest of the stack requests work from whichever task it
+ * runs on, but all of it runs on the radio task, which owns the RPL state (DAG, neighbours, SR graph)
+ * and the transmit path. A request stays marked here until it has run, so one whose post was dropped
+ * (radio queue full) is run by the next post - at the latest the periodic timer's. The same work
+ * requested twice before it runs, runs once. (Re)arming or stopping a timer on the radio task drops
+ * its pending expiry. */
+static uint32_t pendingWork;
 
-static void RunExpiredTimers(void);
+static void RunPendingWork(void);
 /*---------------------------------------------------------------------------*/
-static uint32_t TimerBit(TimerHandle_t tim) {
-  return 1UL << (uint32_t)(uintptr_t)pvTimerGetTimerID(tim);
+static eRplWork TimerWork(TimerHandle_t tim) {
+  return (eRplWork)(uintptr_t)pvTimerGetTimerID(tim);
 }
 /*---------------------------------------------------------------------------*/
-/* Timer task: marks the expiry and hands the work to the radio task */
+/* Marks the work and hands it to the radio task */
+static void PostWork(eRplWork work) {
+  taskENTER_CRITICAL();
+  pendingWork |= 1UL << work;
+  taskEXIT_CRITICAL();
+  rplTimEvtHndl(rplTimEvtIdOffset + radio_taskCall, RunPendingWork);
+}
+/*---------------------------------------------------------------------------*/
+/* Timer task: every RPL timer expires here */
 static void TimerExpired(TimerHandle_t tim) {
-  taskENTER_CRITICAL();
-  expiredTimers |= TimerBit(tim);
-  taskEXIT_CRITICAL();
-  rplTimEvtHndl(rplTimEvtIdOffset + radio_taskCall, RunExpiredTimers);
+  PostWork(TimerWork(tim));
 }
 /*---------------------------------------------------------------------------*/
-/* Clears an unserviced expiry, returns whether there was one */
-static bool TakeExpired(uint32_t timBit) {
-  bool expired;
+/* Clears pending work, returns whether there was any */
+static bool TakePending(eRplWork work) {
+  uint32_t bit = 1UL << work;
+  bool pending;
   taskENTER_CRITICAL();
-  expired = (0 != (expiredTimers & timBit));
-  expiredTimers &= ~timBit;
+  pending = (0 != (pendingWork & bit));
+  pendingWork &= ~bit;
   taskEXIT_CRITICAL();
-  return expired;
+  return pending;
 }
 /*---------------------------------------------------------------------------*/
 /* Running, or expired with its work still to run */
 static bool TimerIsScheduled(TimerHandle_t tim) {
-  return (pdFALSE != xTimerIsTimerActive(tim)) || (0 != (expiredTimers & TimerBit(tim)));
+  return (pdFALSE != xTimerIsTimerActive(tim)) || (0 != (pendingWork & (1UL << TimerWork(tim))));
 }
 /*---------------------------------------------------------------------------*/
 static void TimerArm(TimerHandle_t tim, uint32_t ms) {
-  TakeExpired(TimerBit(tim));
+  TakePending(TimerWork(tim));
   xTimerChangePeriod(tim, pdMS_TO_TICKS(ms), 0);
   xTimerStart(tim, 0);
 }
 /*---------------------------------------------------------------------------*/
 static void TimerDisarm(TimerHandle_t tim) {
-  TakeExpired(TimerBit(tim));
+  TakePending(TimerWork(tim));
   xTimerStop(tim, 0);
 }
 /*---------------------------------------------------------------------------*/
@@ -164,23 +190,23 @@ void rpl_timers_schedule_periodic_dis(void) {
 static void new_dio_interval(void) {
   uint32_t ticks;
 
-  curr_instance.dag.dio_next_delay = 1UL << curr_instance.dag.dio_intcurrent;
+  dioNextDelay = 1UL << curr_instance.dag.dio_intcurrent;
 
   /* random number between I/2 and I */
-  ticks = curr_instance.dag.dio_next_delay / 2 + System_Random(curr_instance.dag.dio_next_delay / 2);
+  ticks = dioNextDelay / 2 + System_Random(dioNextDelay / 2);
 
   /*
    * The intervals must be equally long among the nodes for Trickle to
    * operate efficiently. Therefore we need to calculate the delay between
    * the randomized time and the start time of the next interval.
    */
-  curr_instance.dag.dio_next_delay -= ticks;
-  curr_instance.dag.dio_send = 1;
+  dioNextDelay -= ticks;
+  dioSend = 1;
   /* reset the redundancy counter */
   curr_instance.dag.dio_counter = 0;
 
   /* schedule the timer */
-  TimerArm(curr_instance.dag.dio_timer, ticks);
+  TimerArm(dioTimer, ticks);
   TRice("msg:DIO timer scheduled for(%d)\n", ticks);
 
 #ifdef RPL_CALLBACK_NEW_DIO_INTERVAL
@@ -194,7 +220,7 @@ static void DioTmoHandler(void) {
     return; /* We will be scheduled again later */
   }
 
-  if(curr_instance.dag.dio_send) {
+  if(dioSend) {
     /* send DIO if counter is less than desired redundancy, or if dio_redundancy
     is set to 0, or if we are the root */
     if(rpl_dag_root_is_root() || curr_instance.dio_redundancy == 0 ||
@@ -242,9 +268,9 @@ static void DioTmoHandler(void) {
      }
 #endif /* UIP_IPV6_MULTICAST */
     }
-    curr_instance.dag.dio_send = 0;
-    TimerArm(curr_instance.dag.dio_timer, curr_instance.dag.dio_next_delay);
-    TRice("msg:DIO timer continue for(%d)\n", curr_instance.dag.dio_next_delay);
+    dioSend = 0;
+    TimerArm(dioTimer, dioNextDelay);
+    TRice("msg:DIO timer continue for(%d)\n", dioNextDelay);
   } else {
     /* check if we need to double interval */
     if(curr_instance.dag.dio_intcurrent < curr_instance.dio_intmin + curr_instance.dio_intdoubl) {
@@ -275,7 +301,7 @@ void rpl_timers_dio_reset(const char *str) {
 /*------------------------------- Unicast DIO ------------------------------ */
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
-static void handle_unicast_dio_timer(void* unused) {
+static void UnicastDioWork(void) {
   uip_ipaddr_t *target_ipaddr = rpl_neighbor_get_ipaddr(curr_instance.dag.unicast_dio_target);
   if(target_ipaddr != NULL) {
     rpl_icmp6_dio_output(target_ipaddr);
@@ -285,7 +311,7 @@ static void handle_unicast_dio_timer(void* unused) {
 void rpl_timers_schedule_unicast_dio(rpl_nbr_t *target) {
   if(curr_instance.used) {
     curr_instance.dag.unicast_dio_target = target;
-    rplTimEvtHndl(rplTimEvtIdOffset + radio_taskCall, handle_unicast_dio_timer);
+    PostWork(rplWork_unicastDio);
   }
 }
 /*---------------------------------------------------------------------------*/
@@ -295,7 +321,7 @@ void rpl_timers_schedule_unicast_dio(rpl_nbr_t *target) {
 /*---------------------------------------------------------------------------*/
 static void schedule_dao_retransmission(void) {
   uint32_t expiration_time = RPL_DAO_RETRANSMISSION_TIMEOUT / 2 + (System_Random(RPL_DAO_RETRANSMISSION_TIMEOUT));
-  TimerArm(curr_instance.dag.timDaoResend, expiration_time);
+  TimerArm(daoResendTimer, expiration_time);
 }
 /*---------------------------------------------------------------------------*/
 static void DaoRefreshTmoHandler(void)
@@ -341,7 +367,7 @@ static void schedule_dao_refresh(void) {
     }
 
     /* Schedule transmission */
-    TimerArm(curr_instance.dag.timDaoRefresh, target_refresh);
+    TimerArm(daoRefreshTimer, target_refresh);
   }
 }
 /*---------------------------------------------------------------------------*/
@@ -351,7 +377,7 @@ void rpl_timers_schedule_dao(void) {
     * only serves storing mode. Use simple delay instead, with the only purpose
     * to reduce congestion. */
 	uint32_t expiration_time = RPL_DAO_DELAY / 2 + (System_Random(RPL_DAO_DELAY));
-	TimerArm(curr_instance.dag.timDaoRefresh, expiration_time);
+	TimerArm(daoRefreshTimer, expiration_time);
   }
 }
 #if RPL_WITH_DAO_ACK
@@ -359,17 +385,70 @@ void rpl_timers_schedule_dao(void) {
 /*------------------------------- DAO-ACK ---------------------------------- */
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
-static void handle_dao_ack_timer(void* unused) {
+/* DAOs arrive in bursts - after a global repair every lamp re-registers at once - and each ACK is
+ * sent once the DAO that asked for it has been processed. A single slot would keep only the last of
+ * a burst, and a lamp left without an ACK retransmits until it gives up and repairs locally. */
+#define DAO_ACK_QUEUE_LEN     8
+
+static struct {
+  uip_ipaddr_t target;
+  uint16_t sequence;
+} daoAckQueue[DAO_ACK_QUEUE_LEN];
+static uint8_t daoAckFirst; /* oldest entry */
+static uint8_t daoAckCount;
+/*---------------------------------------------------------------------------*/
+static void DropPendingDaoAcks(void) {
+  taskENTER_CRITICAL();
+  daoAckFirst = 0;
+  daoAckCount = 0;
+  taskEXIT_CRITICAL();
+}
+/*---------------------------------------------------------------------------*/
+static void DaoAckWork(void) {
+  uip_ipaddr_t target;
+  uint16_t sequence;
+  bool more;
+
+  taskENTER_CRITICAL();
+  if(daoAckCount == 0) {
+    taskEXIT_CRITICAL();
+    return;
+  }
+  uip_ipaddr_copy(&target, &daoAckQueue[daoAckFirst].target);
+  sequence = daoAckQueue[daoAckFirst].sequence;
+  daoAckFirst = (daoAckFirst + 1) % DAO_ACK_QUEUE_LEN;
+  daoAckCount--;
+  more = (daoAckCount > 0);
+  taskEXIT_CRITICAL();
+
   TRice("msg:Calling DAO ACK call from task.\n");
-  rpl_icmp6_dao_ack_output(&curr_instance.dag.dao_ack_target, curr_instance.dag.dao_ack_sequence, RPL_DAO_ACK_UNCONDITIONAL_ACCEPT);
+  rpl_icmp6_dao_ack_output(&target, sequence, RPL_DAO_ACK_UNCONDITIONAL_ACCEPT);
+
+  if(more) {
+    PostWork(rplWork_daoAck); /* One ACK per pass, so other radio work runs between them */
+  }
 }
 /*---------------------------------------------------------------------------*/
 void rpl_timers_schedule_dao_ack(uip_ipaddr_t *target, uint16_t sequence) {
   if(curr_instance.used) {
-    uip_ipaddr_copy(&curr_instance.dag.dao_ack_target, target);
-    curr_instance.dag.dao_ack_sequence = sequence;
-    TRice("msg:Requesting DAO ACK call from task.\n");
-    rplTimEvtHndl(rplTimEvtIdOffset + radio_taskCall, handle_dao_ack_timer);
+    bool queued = false;
+
+    taskENTER_CRITICAL();
+    if(daoAckCount < DAO_ACK_QUEUE_LEN) {
+      uint8_t slot = (daoAckFirst + daoAckCount) % DAO_ACK_QUEUE_LEN;
+      uip_ipaddr_copy(&daoAckQueue[slot].target, target);
+      daoAckQueue[slot].sequence = sequence;
+      daoAckCount++;
+      queued = true;
+    }
+    taskEXIT_CRITICAL();
+
+    if(queued) {
+      TRice("msg:Requesting DAO ACK call from task.\n");
+      PostWork(rplWork_daoAck);
+    } else {
+      TRiceS("wrn:DAO-ACK queue full - %s has to retransmit\n", uip6_printAddr(target, NULL));
+    }
   } else {
 	TRice("msg:Current instance not used - Do not ACK DAO.\n");
   }
@@ -377,7 +456,7 @@ void rpl_timers_schedule_dao_ack(uip_ipaddr_t *target, uint16_t sequence) {
 /*---------------------------------------------------------------------------*/
 void rpl_timers_notify_dao_ack(void) {
   /* The last DAO was ACKed. Schedule refresh to avoid route expiration.*/
-  TimerDisarm(curr_instance.dag.timDaoResend);
+  TimerDisarm(daoResendTimer);
   schedule_dao_refresh();
 }
 /*---------------------------------------------------------------------------*/
@@ -502,10 +581,10 @@ static void UrgProbingTmoHandler(void) {
 /*---------------------------------------------------------------------------*/
 void rpl_schedule_probing(void) {
   if (curr_instance.used) {
-	if (!TimerIsScheduled(curr_instance.dag.probing_timer)) {
+	if (!TimerIsScheduled(probingTimer)) {
 	  uint16_t rescheduleTmo = ((RPL_PROBING_INTERVAL) / 2) + System_Random(RPL_PROBING_INTERVAL);
 	  TRice("sig:Schedule probing in %dmS\n", rescheduleTmo);
-	  TimerArm(curr_instance.dag.probing_timer, rescheduleTmo);
+	  TimerArm(probingTimer, rescheduleTmo);
 	} else {
 	  TRice("sig:Probing not started - it is already running.\n");
 	}
@@ -516,9 +595,9 @@ void rpl_schedule_probing(void) {
 /*---------------------------------------------------------------------------*/
 void rpl_schedule_probing_now(void) {
   if(curr_instance.used) {
-	if (!TimerIsScheduled(curr_instance.dag.urgProbeTmo)) {
+	if (!TimerIsScheduled(urgProbingTimer)) {
 	  TRice("sig:Schedule urgent probing in 4 sec.\n");
-	  TimerArm(curr_instance.dag.urgProbeTmo, System_Random(1000 * 4));
+	  TimerArm(urgProbingTimer, System_Random(1000 * 4));
 	} else {
 	  TRice("sig:Urgent probing not started - it is already running.\n");
 	}
@@ -538,42 +617,49 @@ static void LeavingTmoHandler(void) {
 /*---------------------------------------------------------------------------*/
 void rpl_timers_unschedule_leaving(void) {
   if(curr_instance.used) {
-    TimerDisarm(curr_instance.dag.leave);
+    TimerDisarm(leaveTimer);
   }
 }
 /*---------------------------------------------------------------------------*/
 void rpl_timers_schedule_leaving(void) {
   if(curr_instance.used) {
-    if(!TimerIsScheduled(curr_instance.dag.leave)) {
-      xTimerStart(curr_instance.dag.leave, 0);
+    if(!TimerIsScheduled(leaveTimer)) {
+      xTimerStart(leaveTimer, 0);
     }
   }
 }
 /*---------------------------------------------------------------------------*/
 /*------------------------------- Periodic---------------------------------- */
 /*---------------------------------------------------------------------------*/
-/* Radio task: runs the work of every expired timer. Each expiry is taken just before its work runs,
- * so a timer that an earlier one's work stops or re-arms (e.g. leaving stops the DAG timers) is skipped. */
-static void RunExpiredTimers(void) {
-  static void (*const work[rplTim_last])(void) = {
-    [rplTim_periodic]   = PeriodicTimerHandler,
-    [rplTim_dis]        = DisTmoHandler,
-    [rplTim_dio]        = DioTmoHandler,
+static void StateUpdateWork(void) {
+  rpl_dag_update_state(NULL);
+}
+/*---------------------------------------------------------------------------*/
+/* Radio task: runs everything pending. Each item is taken just before it runs, so work that an
+ * earlier item in the same pass cancelled (leaving stops the DAG timers) is skipped. */
+static void RunPendingWork(void) {
+  static void (*const work[rplWork_last])(void) = {
+    [rplTim_periodic]     = PeriodicTimerHandler,
+    [rplTim_dis]          = DisTmoHandler,
+    [rplTim_dio]          = DioTmoHandler,
 #if RPL_WITH_DAO_ACK
-    [rplTim_daoResend]  = DaoResendTmoHandler,
-    [rplTim_daoRefresh] = DaoRefreshTmoHandler,
+    [rplTim_daoResend]    = DaoResendTmoHandler,
+    [rplTim_daoRefresh]   = DaoRefreshTmoHandler,
+    [rplWork_daoAck]      = DaoAckWork,
 #endif /* RPL_WITH_DAO_ACK */
-    [rplTim_leave]      = LeavingTmoHandler,
+    [rplTim_leave]        = LeavingTmoHandler,
 #if RPL_WITH_PROBING
-    [rplTim_probing]    = ProbingTmoHandler,
-    [rplTim_urgProbing] = UrgProbingTmoHandler,
+    [rplTim_probing]      = ProbingTmoHandler,
+    [rplTim_urgProbing]   = UrgProbingTmoHandler,
 #endif /* RPL_WITH_PROBING */
+    [rplWork_stateUpdate] = StateUpdateWork,
+    [rplWork_unicastDio]  = UnicastDioWork,
   };
-  uint32_t id;
+  uint32_t item;
 
-  for(id = 0; id < rplTim_last; id++) {
-    if(TakeExpired(1UL << id) && (NULL != work[id])) {
-      work[id]();
+  for(item = 0; item < rplWork_last; item++) {
+    if(TakePending(item) && (NULL != work[item])) {
+      work[item]();
     }
   }
 }
@@ -587,13 +673,13 @@ void rpl_timers_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
   disTimer = xTimerCreate("6lowpan-rpl-disPeriodicTimer", pdMS_TO_TICKS(RPL_DIS_INTERVAL / 2 + System_Random(RPL_DIS_INTERVAL)), pdFALSE, (void *)rplTim_dis, TimerExpired);
   xTimerStart(disTimer, 0);
 
-  curr_instance.dag.dio_timer = xTimerCreate("6lowpan-rpl-dioTimer", pdMS_TO_TICKS(1/*will set before starting*/), pdFALSE, (void *)rplTim_dio, TimerExpired);
-  curr_instance.dag.timDaoResend = xTimerCreate("6lowpan-rpl-daoResendTimer", pdMS_TO_TICKS(1/*will set before starting*/), pdFALSE, (void *)rplTim_daoResend, TimerExpired);
-  curr_instance.dag.timDaoRefresh = xTimerCreate("6lowpan-rpl-daoRefreshTimer", pdMS_TO_TICKS(1/*will set before starting*/), pdFALSE, (void *)rplTim_daoRefresh, TimerExpired);
-  curr_instance.dag.leave = xTimerCreate("6lowpan-rpl-leaveTimer", pdMS_TO_TICKS(RPL_DELAY_BEFORE_LEAVING), pdFALSE, (void *)rplTim_leave, TimerExpired);
+  dioTimer = xTimerCreate("6lowpan-rpl-dioTimer", pdMS_TO_TICKS(1/*will set before starting*/), pdFALSE, (void *)rplTim_dio, TimerExpired);
+  daoResendTimer = xTimerCreate("6lowpan-rpl-daoResendTimer", pdMS_TO_TICKS(1/*will set before starting*/), pdFALSE, (void *)rplTim_daoResend, TimerExpired);
+  daoRefreshTimer = xTimerCreate("6lowpan-rpl-daoRefreshTimer", pdMS_TO_TICKS(1/*will set before starting*/), pdFALSE, (void *)rplTim_daoRefresh, TimerExpired);
+  leaveTimer = xTimerCreate("6lowpan-rpl-leaveTimer", pdMS_TO_TICKS(RPL_DELAY_BEFORE_LEAVING), pdFALSE, (void *)rplTim_leave, TimerExpired);
 #if RPL_WITH_PROBING
-  curr_instance.dag.probing_timer = xTimerCreate("6lowpan-rpl-probingTimer", pdMS_TO_TICKS(1/*will set before starting*/), pdFALSE, (void *)rplTim_probing, TimerExpired);
-  curr_instance.dag.urgProbeTmo = xTimerCreate("6lowpan-rpl-probingTimer", pdMS_TO_TICKS(1/*will set before starting*/), pdFALSE, (void *)rplTim_urgProbing, TimerExpired);
+  probingTimer = xTimerCreate("6lowpan-rpl-probingTimer", pdMS_TO_TICKS(1/*will set before starting*/), pdFALSE, (void *)rplTim_probing, TimerExpired);
+  urgProbingTimer = xTimerCreate("6lowpan-rpl-probingTimer", pdMS_TO_TICKS(1/*will set before starting*/), pdFALSE, (void *)rplTim_urgProbing, TimerExpired);
 #endif /* RPL_WITH_PROBING */
 }
 /*---------------------------------------------------------------------------*/
@@ -601,22 +687,27 @@ void
 rpl_timers_stop_dag_timers(void)
 {
   /* Stop all timers related to the DAG */
-  TimerDisarm(curr_instance.dag.leave);
-  TimerDisarm(curr_instance.dag.dio_timer);
-  TimerDisarm(curr_instance.dag.timDaoResend);
-  TimerDisarm(curr_instance.dag.timDaoRefresh);
+  TimerDisarm(leaveTimer);
+  TimerDisarm(dioTimer);
+  TimerDisarm(daoResendTimer);
+  TimerDisarm(daoRefreshTimer);
 #if RPL_WITH_PROBING
-  TimerDisarm(curr_instance.dag.probing_timer);
+  TimerDisarm(probingTimer);
 #endif /* RPL_WITH_PROBING */
+#if RPL_WITH_DAO_ACK
+  /* Any ACK still waiting belongs to the DAG we are leaving */
+  TakePending(rplWork_daoAck);
+  DropPendingDaoAcks();
+#endif /* RPL_WITH_DAO_ACK */
 }
 /*---------------------------------------------------------------------------*/
 void rpl_timers_unschedule_state_update(void) {
-//not as timer now - so no way to cancel
+  TakePending(rplWork_stateUpdate);
 }
 /*---------------------------------------------------------------------------*/
 void rpl_timers_schedule_state_update(void) {
   if(curr_instance.used) {
-	rplTimEvtHndl(rplTimEvtIdOffset + radio_taskCall, rpl_dag_update_state);
+	PostWork(rplWork_stateUpdate);
   }
 }
 

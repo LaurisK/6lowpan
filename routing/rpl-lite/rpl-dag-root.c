@@ -37,6 +37,7 @@
 *         DAG root utility functions for RPL.
 */
 
+#include "cmsis_os.h" /* pvPortMalloc()/vPortFree() */
 #include "../../addressing.h"
 #include "../../network/uip-ds6.h"
 #include "../../network/uip-nd6.h"

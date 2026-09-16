@@ -40,6 +40,7 @@
  */
 
 #include <stdio.h>
+#include "cmsis_os.h" /* pvPortMalloc()/vPortFree() */
 #include "../routing/routing.h"
 #include "../routing/rpl-lite/rpl-neighbor.h"
 
