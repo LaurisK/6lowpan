@@ -561,7 +561,7 @@ void rpl_icmp6_dao_output(uint8_t lifetime) {
   pos = 0;
 
   buffer[pos++] = curr_instance.instance_id;
-  buffer[pos] = 0;
+  buffer[pos] = RPL_DAO_D_FLAG;
 #if RPL_WITH_DAO_ACK
   if(lifetime != 0) {
     buffer[pos] |= RPL_DAO_K_FLAG;
@@ -570,6 +570,8 @@ void rpl_icmp6_dao_output(uint8_t lifetime) {
   ++pos;
   buffer[pos++] = 0; /* reserved */
   buffer[pos++] = curr_instance.dag.dao_last_seqno;
+  memcpy(buffer + pos, &curr_instance.dag.dag_id, sizeof(curr_instance.dag.dag_id));
+  pos += sizeof(curr_instance.dag.dag_id);
 
   /* create target subopt */
   prefixlen = sizeof(*prefix) * CHAR_BIT;
@@ -610,19 +612,37 @@ void rpl_icmp6_dao_output(uint8_t lifetime) {
 /*---------------------------------------------------------------------------*/
 static void dao_ack_input(sUipBuff *uipBuff) {
   uint8_t *buffer;
+  int16_t buffer_length;
   uint8_t instance_id;
+  uint8_t flags;
   uint8_t sequence;
   uint8_t status;
 
   buffer = uipBuff->buff.u8 + UIP_IPH_LEN + UIP_ICMPH_LEN + uipBuff->extLen;
+  buffer_length = uipBuff->len - (UIP_IPH_LEN + UIP_ICMPH_LEN + uipBuff->extLen);
 
   instance_id = buffer[0];
+  flags = buffer[1];
   sequence = buffer[2];
   status = buffer[3];
 
   if(!curr_instance.used || curr_instance.instance_id != instance_id) {
 	  TRice("err:dao_ack_input: unknown instance, discard\n");
     goto discard;
+  }
+
+  if(!uip_ipaddr_cmp(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, &curr_instance.dag.dag_id)) {
+	  TRiceS("wrn:dao_ack_input: DAO-ACK from %s ", uip6_printAddr(&IP_HDR_CAST_TO_BUFF(uipBuff->buff.u8)->srcipaddr, NULL));
+	  TRiceS("wrn:is not from our DAG root %s, discard\n", uip6_printAddr(&curr_instance.dag.dag_id, NULL));
+    goto discard;
+  }
+
+  if(flags & RPL_DAO_ACK_D_FLAG) {
+    if((buffer_length < (int16_t)(4 + sizeof(curr_instance.dag.dag_id))) ||
+        memcmp(&curr_instance.dag.dag_id, &buffer[4], sizeof(curr_instance.dag.dag_id))) {
+      TRice("wrn:dao_ack_input: DAO-ACK for a different DAG ID, discard\n");
+      goto discard;
+    }
   }
 
   if (status < RPL_DAO_ACK_UNABLE_TO_ACCEPT) {
@@ -646,9 +666,11 @@ void rpl_icmp6_dao_ack_output(uip_ipaddr_t *dest, uint8_t sequence, uint8_t stat
 
   buffer = daoAckBuff.buff.u8 + UIP_IPH_LEN + UIP_ICMPH_LEN + daoAckBuff.extLen;
   buffer[0] = curr_instance.instance_id;
-  buffer[1] = 0;
+  buffer[1] = RPL_DAO_ACK_D_FLAG;
   buffer[2] = sequence;
   buffer[3] = status;
+  /* DODAG ID, so the lamp can tell an ACK from its own DAG's root apart from one of another DAG */
+  memcpy(buffer + 4, &curr_instance.dag.dag_id, sizeof(curr_instance.dag.dag_id));
 
   if (status < RPL_DAO_ACK_UNABLE_TO_ACCEPT) {
 	  TRiceS("msg:sending a DAO-ACK to %s, ", uip6_printAddr(dest, NULL));
@@ -657,7 +679,7 @@ void rpl_icmp6_dao_ack_output(uip_ipaddr_t *dest, uint8_t sequence, uint8_t stat
   }
   TRice("msg:seqno %d with status %d\n", sequence, status);
 
-  uip_icmp6_send(&daoAckBuff, dest, ICMP6_RPL, RPL_CODE_DAO_ACK, 4);
+  uip_icmp6_send(&daoAckBuff, dest, ICMP6_RPL, RPL_CODE_DAO_ACK, 4 + sizeof(curr_instance.dag.dag_id));
 }
 #endif /* RPL_WITH_DAO_ACK */
 /*---------------------------------------------------------------------------*/

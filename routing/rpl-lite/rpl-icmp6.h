@@ -116,6 +116,7 @@ void rpl_icmp6_dio_output(uip_ipaddr_t *uc_addr);
 /**
  * Creates an ICMPv6 DAO packet and sends it to the root, advertising the
  * current preferred parent, and with our global address as prefix.
+ * Carries the DODAG ID, so only nodes of our DAG relay it and only our root registers it.
  *
  * \param lifetime The DAO lifetime. Use 0 to send a No-path DAO
 */
@@ -123,7 +124,7 @@ void rpl_icmp6_dao_output(uint8_t lifetime);
 
 /**
  * Creates an ICMPv6 DAO-ACK packet and sends it to the originator
- * of the ACK.
+ * of the ACK. Carries the DODAG ID; the receiver accepts it only from its own DAG root.
  *
  * \param dest The DAO-ACK destination (was source of the DAO)
  * \param sequence The sequence number of the DAO being ACKed

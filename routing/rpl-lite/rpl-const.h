@@ -116,6 +116,8 @@
 #define RPL_DAO_K_FLAG                   0x80 /* DAO-ACK requested */
 #define RPL_DAO_D_FLAG                   0x40 /* DODAG ID present */
 
+#define RPL_DAO_ACK_D_FLAG               0x80 /* DODAG ID present (RFC 6550 section 6.5) */
+
 #define RPL_DAO_ACK_UNCONDITIONAL_ACCEPT 0
 #define RPL_DAO_ACK_ACCEPT               1   /* 1 - 127 is OK but not good */
 #define RPL_DAO_ACK_UNABLE_TO_ACCEPT     128 /* >127 is fail */
