@@ -96,10 +96,10 @@ typedef enum {
 
 /* RPL timers expire on the timer task and the rest of the stack requests work from whichever task it
  * runs on, but all of it runs on the radio task, which owns the RPL state (DAG, neighbours, SR graph)
- * and the transmit path. A request stays marked here until it has run, so one whose post was dropped
- * (radio queue full) is run by the next post - at the latest the periodic timer's. The same work
- * requested twice before it runs, runs once. (Re)arming or stopping a timer on the radio task drops
- * its pending expiry. */
+ * and the transmit path. Work stays marked here until it has run, so work whose post was dropped
+ * (radio queue full) is run by the next post - at the latest the periodic timer's, which is why a
+ * timer expiry always posts. The same work marked twice before it runs, runs once. (Re)arming or
+ * stopping a timer on the radio task drops its pending expiry. */
 static uint32_t pendingWork;
 
 static void RunPendingWork(void);
@@ -108,17 +108,39 @@ static eRplWork TimerWork(TimerHandle_t tim) {
   return (eRplWork)(uintptr_t)pvTimerGetTimerID(tim);
 }
 /*---------------------------------------------------------------------------*/
-/* Marks the work and hands it to the radio task */
-static void PostWork(eRplWork work) {
+/* Marks work pending, returns whether it already was */
+static bool MarkPending(eRplWork work) {
+  uint32_t bit = 1UL << work;
+  bool alreadyPending;
   taskENTER_CRITICAL();
-  pendingWork |= 1UL << work;
+  alreadyPending = (0 != (pendingWork & bit));
+  pendingWork |= bit;
   taskEXIT_CRITICAL();
+  return alreadyPending;
+}
+/*---------------------------------------------------------------------------*/
+/* Asks the radio task to run what is pending */
+static void PostRun(void) {
   rplTimEvtHndl(rplTimEvtIdOffset + radio_taskCall, RunPendingWork);
 }
 /*---------------------------------------------------------------------------*/
-/* Timer task: every RPL timer expires here */
+/* Timer task: every RPL timer expires here. The post is unconditional, so a periodic expiry retries
+ * the whole pending set every 60 s if an earlier post was dropped. A timer expires at most once per
+ * arming, so this cannot flood the radio queue. */
 static void TimerExpired(TimerHandle_t tim) {
-  PostWork(TimerWork(tim));
+  MarkPending(TimerWork(tim));
+  PostRun();
+}
+/*---------------------------------------------------------------------------*/
+/* Work asked for by the rest of RPL, from whichever task it runs on. Posted only when the same work
+ * is not already waiting its turn: remove_neighbor() asks for a state update per neighbour removed
+ * and a repair removes up to NBR_TABLE_MAX_NEIGHBORS of them in one go, so a post each would fill
+ * the 10-deep radio queue and push out whatever else was in flight - incoming packets, the CSMA
+ * transmit kick, this module's own timer posts. */
+static void RequestWork(eRplWork work) {
+  if(!MarkPending(work)) {
+    PostRun();
+  }
 }
 /*---------------------------------------------------------------------------*/
 /* Clears pending work, returns whether there was any */
@@ -311,7 +333,7 @@ static void UnicastDioWork(void) {
 void rpl_timers_schedule_unicast_dio(rpl_nbr_t *target) {
   if(curr_instance.used) {
     curr_instance.dag.unicast_dio_target = target;
-    PostWork(rplWork_unicastDio);
+    RequestWork(rplWork_unicastDio);
   }
 }
 /*---------------------------------------------------------------------------*/
@@ -425,7 +447,7 @@ static void DaoAckWork(void) {
   rpl_icmp6_dao_ack_output(&target, sequence, RPL_DAO_ACK_UNCONDITIONAL_ACCEPT);
 
   if(more) {
-    PostWork(rplWork_daoAck); /* One ACK per pass, so other radio work runs between them */
+    RequestWork(rplWork_daoAck); /* One ACK per pass, so other radio work runs between them */
   }
 }
 /*---------------------------------------------------------------------------*/
@@ -445,7 +467,7 @@ void rpl_timers_schedule_dao_ack(uip_ipaddr_t *target, uint16_t sequence) {
 
     if(queued) {
       TRice("msg:Requesting DAO ACK call from task.\n");
-      PostWork(rplWork_daoAck);
+      RequestWork(rplWork_daoAck);
     } else {
       TRiceS("wrn:DAO-ACK queue full - %s has to retransmit\n", uip6_printAddr(target, NULL));
     }
@@ -707,7 +729,7 @@ void rpl_timers_unschedule_state_update(void) {
 /*---------------------------------------------------------------------------*/
 void rpl_timers_schedule_state_update(void) {
   if(curr_instance.used) {
-	PostWork(rplWork_stateUpdate);
+	RequestWork(rplWork_stateUpdate);
   }
 }
 
