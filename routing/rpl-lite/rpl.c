@@ -168,7 +168,7 @@ static void init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
 
   rpl_dag_init(evtOffset, packedEvtHndl);
   rpl_neighbor_init();
-  rpl_timers_init(evtOffset, packedEvtHndl);
+  rpl_timers_init();
   rpl_icmp6_init();
 
   uip_sr_init(evtOffset, packedEvtHndl);

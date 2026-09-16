@@ -52,7 +52,8 @@
 #include "uip-ds6-nbr.h"
 #include "App/Time/time.h"
 #include "../addressing.h"
-#include "cmsis_os.h"
+#include "cmsis_os.h" /* the Router Solicitation and Router Advertisement timers below, both compiled out here */
+#include "../lp-timer.h"
 #include "App/common.h"
 #include "../routing/rpl-lite/rpl.h"
 
@@ -101,7 +102,7 @@ static uip_ip6addr_t default_prefix = {
 #if !UIP_CONF_ROUTER
 static TimerHandle_t rsSendTmo;
 #endif /* !UIP_CONF_ROUTER */
-static TimerHandle_t periodicTim;
+static sLpTimer *periodicTim;
 #if UIP_CONF_ROUTER && UIP_ND6_SEND_RA
 static TimerHandle_t raDelayTimer;
 #endif /* UIP_CONF_ROUTER && UIP_ND6_SEND_RA */
@@ -189,7 +190,7 @@ static void IssueUnicastRa(void* unused) {
 }
 #endif /* UIP_CONF_ROUTER && UIP_ND6_SEND_RA */
 
-static void HandleDs6PeriodicTimer(TimerHandle_t periodicTim) {
+static void HandleDs6PeriodicTimer(void) {
     uip_ds6_periodic(&dsPeriodicBuff);
     tcpip_ipv6_output(&dsPeriodicBuff);
 }
@@ -345,8 +346,8 @@ void uip_ds6_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl)
   rsSendTmo = xTimerCreate("rsSendingTmo", pdMS_TO_TICKS(System_Random(1000 * UIP_ND6_MAX_RTR_SOLICITATION_DELAY)), pdFALSE, 0, HandleRsSendingTmo);
   xTimerStart(rsSendTmo, 0);
 #endif /* UIP_CONF_ROUTER */
-  periodicTim = xTimerCreate("ds6-PeriodicTimer", pdMS_TO_TICKS(1000 * UIP_DS6_PERIOD), pdTRUE, 0, HandleDs6PeriodicTimer);
-  xTimerStart(periodicTim, 0);
+  periodicTim = LpTimer_Create("ds6-PeriodicTimer", true, HandleDs6PeriodicTimer);
+  LpTimer_Arm(periodicTim, 1000 * UIP_DS6_PERIOD);
 #if UIP_CONF_ROUTER && UIP_ND6_SEND_RA
   raDelayTimer = xTimerCreate("ds6-RsToRaDelayTimer", 1/*Is to be set on actual use*/, pdFALSE, 0, HandleRsToRaDelay);
 #endif /* UIP_CONF_ROUTER && UIP_ND6_SEND_RA */

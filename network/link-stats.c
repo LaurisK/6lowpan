@@ -34,7 +34,7 @@
 #include "nbr-table.h"
 #include "../mac/mac.h"
 #include "App/Time/time.h"
-#include "cmsis_os.h"
+#include "../lp-timer.h"
 
 /* Maximum value for the Tx count counter */
 #define TX_COUNT_MAX                    32
@@ -76,7 +76,7 @@
 NBR_TABLE(struct link_stats, link_stats);
 
 /* Called at a period of FRESHNESS_HALF_LIFE */
-static TimerHandle_t periodicTimer;
+static sLpTimer *periodicTimer;
 
 /*---------------------------------------------------------------------------*/
 /* Returns the neighbor's link stats */
@@ -286,7 +286,7 @@ print_and_update_counters(void)
 #endif /* LINK_STATS_PACKET_COUNTERS */
 /*---------------------------------------------------------------------------*/
 /* Periodic timer called at a period of FRESHNESS_HALF_LIFE */
-static void periodic(TimerHandle_t periodicTim)
+static void periodic(void)
 {
   /* Age (by halving) freshness counter of all neighbors */
   struct link_stats *stats;
@@ -316,6 +316,6 @@ void
 link_stats_init(void)
 {
   nbr_table_register("link statistics", link_stats, NULL, LAYER_MAC);
-  periodicTimer = xTimerCreate("6lowpan-linkStats-periodicTimer", pdMS_TO_TICKS(FRESHNESS_HALF_LIFE * 1000), pdTRUE, 0, periodic);
-  xTimerStart(periodicTimer, 0);
+  periodicTimer = LpTimer_Create("6lowpan-linkStats-periodicTimer", true, periodic);
+  LpTimer_Arm(periodicTimer, FRESHNESS_HALF_LIFE * 1000);
 }

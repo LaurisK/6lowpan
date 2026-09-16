@@ -71,7 +71,7 @@ void rpl_timers_schedule_leaving(void);
 /**
  * Initialize rpl-timers module
 */
-void rpl_timers_init(uint16_t, fRadioEvtHndl);
+void rpl_timers_init(void);
 
 /**
  * Stop all timers related to the DAG

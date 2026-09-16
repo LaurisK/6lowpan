@@ -49,6 +49,7 @@
 #include "sicslowpan.h"
 #include "uipopt.h"
 #include "cmsis_os.h"
+#include "../lp-timer.h"
 #include "App/common.h"
 #include "../mac/framer/frame802154.h"
 
@@ -606,6 +607,8 @@ void tcpip_init(uint16_t evtOffset, fRadioEvtHndl packedEvtHndl) {
 	uip_ds6_addr_t *localLinkInfo;
 	tcpipEvtIdOffset = evtOffset;
 	tcpipEvtHndl = packedEvtHndl;
+	/* Before anything creates one: every 6LoWPAN timer callback runs on the radio task */
+	LpTimer_Init(evtOffset, packedEvtHndl);
 #if UIP_TCP
 	  periodicTim = xTimerCreate("tcpipPeriodicTimer", pdMS_TO_TICKS(500), pdTRUE, 0, HandleTcpipPeriodicTimer);
 	  xTimerStart(periodicTim, 0);
