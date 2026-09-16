@@ -50,6 +50,7 @@
 #include "uip-ds6.h"
 #include "uip-nd6.h"
 #include "uip-ds6-route.h"
+#include "link-stats.h"
 #include "../routing/routing.h"
 
 #if UIP_DS6_NBR_MULTI_IPV6_ADDRS
@@ -98,7 +99,7 @@ NBR_TABLE(uip_ds6_nbr_t, ds6_neighbors);
 
 /*---------------------------------------------------------------------------*/
 void uip_ds6_neighbors_init(void) {
-  //link_stats_init();
+  link_stats_init();
 #if UIP_DS6_NBR_MULTI_IPV6_ADDRS
   memb_init(&uip_ds6_nbr_memb);
   nbr_table_register("ds6 multi neighbors", uip_ds6_nbr_entries, (nbr_table_callback *)callback_nbr_entry_removal, LAYER_NET);

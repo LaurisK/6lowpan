@@ -34,6 +34,8 @@
 #define LINK_STATS_H_
 
 #include "../linkaddr.h"
+/* Every file must see the same LINK_STATS_CONF_* values: some of them change struct link_stats */
+#include "../project-conf.h"
 
 /* ETX fixed point divisor. 128 is the value used by RPL (RFC 6551 and RFC 6719) */
 #ifdef LINK_STATS_CONF_ETX_DIVISOR

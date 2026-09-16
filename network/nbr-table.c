@@ -35,6 +35,7 @@
 #include <stddef.h>
 #include <string.h>
 #include "nbr-table.h"
+#include "App/common.h"
 
 #define NBR_DEBUG 0
 #if NBR_DEBUG
@@ -121,12 +122,29 @@ static int index_from_lladdr(const linkaddr_t *lladdr) {
   return -1;
 }
 /*---------------------------------------------------------------------------*/
+/* A table's bit in used_map/locked_map is handed out by nbr_table_register(), and NBR_TABLE() starts
+ * every table at index 0, so an unregistered table reads and writes the bit of whichever table
+ * registered first. Link-stats did exactly that to the ds6 neighbour table for as long as its
+ * registration was commented out. Refuse such a table, and say so once. */
+static int table_usable(nbr_table_t *table) {
+  static uint8_t reported = 0;
+
+  if(nbr_table_is_registered(table)) {
+    return 1;
+  }
+  if((table != NULL) && !reported) {
+    reported = 1;
+    TRice("err:[NBR] table 0x%08X used without nbr_table_register() - refused\n", (uint32_t)(uintptr_t)table);
+  }
+  return 0;
+}
+/*---------------------------------------------------------------------------*/
 /* Get bit from "used" or "locked" bitmap */
 static int
 nbr_get_bit(uint8_t *bitmap, nbr_table_t *table, nbr_table_item_t *item)
 {
   int item_index = index_from_item(table, item);
-  if(table != NULL && item_index != -1) {
+  if(table_usable(table) && item_index != -1) {
     return (bitmap[item_index] & (1 << table->index)) != 0;
   } else {
     return 0;
@@ -138,7 +156,7 @@ nbr_get_bit(uint8_t *bitmap, nbr_table_t *table, nbr_table_item_t *item)
 static int nbr_set_bit(uint8_t *bitmap, nbr_table_t *table, nbr_table_item_t *item, int value) {
   int item_index = index_from_item(table, item);
 
-  if(table != NULL && item_index != -1) {
+  if(table_usable(table) && item_index != -1) {
     if(value) {
       bitmap[item_index] |= 1 << table->index;
     } else {
@@ -375,6 +393,11 @@ nbr_table_item_t * nbr_table_add_lladdr(nbr_table_t *table, const linkaddr_t *ll
     return NULL;
   }
 
+  /* Before a key is allocated for it */
+  if(!table_usable(table)) {
+    return NULL;
+  }
+
   /* Allow lladdr-free insertion, useful e.g. for IPv6 ND.
    * Only one such entry is possible at a time, indexed by linkaddr_null. */
   if(lladdr == NULL) {
@@ -433,9 +456,16 @@ void *nbr_table_get_from_lladdr(nbr_table_t *table, const linkaddr_t *lladdr) {
 /*---------------------------------------------------------------------------*/
 /* Removes a neighbor from the current table (unset "used" bit) */
 int nbr_table_remove(nbr_table_t *table, void *item) {
-  int ret = nbr_set_bit(used_map, table, item, 0);
-  int index = index_from_item(table, item);
+  int ret;
+  int index;
   uint8_t tbl = num_tables;
+
+  /* Past this point the item is cleared and the removal cascades to other tables' callbacks */
+  if(!table_usable(table)) {
+    return 0;
+  }
+  ret = nbr_set_bit(used_map, table, item, 0);
+  index = index_from_item(table, item);
 #if NBR_DEBUG
   TRice("msg:Neighbor remove %d\n", index);
 #endif

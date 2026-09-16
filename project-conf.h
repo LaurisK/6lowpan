@@ -38,6 +38,11 @@ extern "C" {
 #ifndef UIP_SR_CONF_LINK_NUM
 #define UIP_SR_CONF_LINK_NUM         NBR_TABLE_CONF_MAX_NEIGHBORS
 #endif
+/* Per-neighbour TX/ACK/RX counters. link-stats prints them every 15 min on the radio task, two lines
+ * per neighbour for up to NBR_TABLE_CONF_MAX_NEIGHBORS neighbours. Set to 1 while diagnosing links. */
+#ifndef LINK_STATS_CONF_PACKET_COUNTERS
+#define LINK_STATS_CONF_PACKET_COUNTERS 1
+#endif
 
 #define WATCHDOG_ENABLE 0
 #define RADIO_HW_CSMA 1
