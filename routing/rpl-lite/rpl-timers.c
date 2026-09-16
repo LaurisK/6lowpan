@@ -409,8 +409,12 @@ void rpl_timers_schedule_dao(void) {
 /*---------------------------------------------------------------------------*/
 /* DAOs arrive in bursts - after a global repair every lamp re-registers at once - and each ACK is
  * sent once the DAO that asked for it has been processed. A single slot would keep only the last of
- * a burst, and a lamp left without an ACK retransmits until it gives up and repairs locally. */
-#define DAO_ACK_QUEUE_LEN     8
+ * a burst, and a lamp left without an ACK retransmits until it gives up and repairs locally.
+ * Length: the DAOs of a burst reach us as radio events queued ahead of the post that sends the ACKs,
+ * so what can pile up before one dispatcher pass is bounded by that queue (RADIO_QUEUE_LENGTH, 10);
+ * 12 keeps a margin. An ACK dropped here is not lost work - the lamp retransmits - but it costs that
+ * lamp one of its 5 tries. */
+#define DAO_ACK_QUEUE_LEN     12
 
 static struct {
   uip_ipaddr_t target;
