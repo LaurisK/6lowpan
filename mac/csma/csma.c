@@ -125,11 +125,14 @@ static sNeighbor* GetNeighborForAddr(const linkaddr_t *addr) {
 	    neighborList = walker;
 	  } else {
 	    sNeighbor *neighborLast = (sNeighbor *)neighborList;
+	    sIrqObsTimestamp criticalStart = {0};
 	    taskENTER_CRITICAL();
+	    criticalStart = IrqObs_ReadTimestamp();
 	    while (NULL != neighborLast->next) {
 	  	  neighborLast = neighborLast->next;
 	    }
 	    neighborLast->next = walker;
+	    IrqObs_RecordElapsed(irqSrc_csmaGetNeighborForAddr, criticalStart);
 	    taskEXIT_CRITICAL();
 	  }
   }
@@ -175,6 +178,7 @@ static void KickTranferQueue(void* unused) {
  */
 static void HandleTransferEnd(uint8_t transfRes, uint8_t packetPos) {
 	sPacket *packet = neighborList->transmit[packetPos].packet;
+	sIrqObsTimestamp criticalStart = {0};
 	if(NULL == packet) {
 		TRice("err:packet sent: missing packet.\n");
 	    return;
@@ -187,6 +191,7 @@ static void HandleTransferEnd(uint8_t transfRes, uint8_t packetPos) {
 		neighborList->queuedTransmits &= ~(1 << packetPos);
 		neighborList->transfAttempt = 0;
 		taskENTER_CRITICAL();
+		criticalStart = IrqObs_ReadTimestamp();
 		if (0 == neighborList->queuedTransmits) {
 			sNeighbor *completedNeighbor = (sNeighbor *)neighborList;
 			neighborList = neighborList->next;
@@ -203,6 +208,7 @@ static void HandleTransferEnd(uint8_t transfRes, uint8_t packetPos) {
 			walker->next->next = NULL;
 			TRiceS("msg:[CSMA] - neighbor partly serviced. Next neighbor to be serviced - %s\n", (NULL != neighborList) ? (char*)linkaddr_printAddr((const linkaddr_t *)&neighborList->addr) : "<NULL>");
 		}
+		IrqObs_RecordElapsed(irqSrc_csmaHandleTransferEnd, criticalStart);
 		taskEXIT_CRITICAL();
 	}
 	if (NULL != neighborList) {

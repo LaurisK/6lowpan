@@ -39,9 +39,12 @@ static void RunPendingWork(void);
  * read and set in one go. */
 static bool MarkPending(struct sLpWork *work) {
   bool alreadyPending;
+  sIrqObsTimestamp criticalStart = {0};
   taskENTER_CRITICAL();
+  criticalStart = IrqObs_ReadTimestamp();
   alreadyPending = work->pending;
   work->pending = true;
+  IrqObs_RecordElapsed(irqSrc_lpTimerMarkPending, criticalStart);
   taskEXIT_CRITICAL();
   return alreadyPending;
 }
@@ -49,9 +52,12 @@ static bool MarkPending(struct sLpWork *work) {
 /* Clears pending work, returns whether there was any */
 static bool TakePending(struct sLpWork *work) {
   bool pending;
+  sIrqObsTimestamp criticalStart = {0};
   taskENTER_CRITICAL();
+  criticalStart = IrqObs_ReadTimestamp();
   pending = work->pending;
   work->pending = false;
+  IrqObs_RecordElapsed(irqSrc_lpTimerTakePending, criticalStart);
   taskEXIT_CRITICAL();
   return pending;
 }

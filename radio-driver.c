@@ -320,7 +320,7 @@ static int8_t RadioForceReady(void) {
 		/* Wait for the state to change rather than for READY: most legs of the ladder are
 		 * intermediate (WAIT_SLEEP -> SLEEP, SYNTH_SETUP -> STANDBY) and waiting for READY
 		 * would spend the whole step timeout on each of them. */
-		BUSYWAIT_UNTIL(state != (uint8_t)radio_refresh_status(), RADIO_STATE_STEP_TIMEOUT);
+		BUSYWAIT_UNTIL(state != (uint8_t)radio_refresh_status(), RADIO_STATE_STEP_TIMEOUT, irqSrc_radioForceReadyWait);
 	}
 
 	return (MC_STATE_READY == radio_refresh_status()) ? 0 : 1;
@@ -546,7 +546,7 @@ static int8_t Radio_off(void) {
     S2LP_CMD_StrobeReady();
 #endif /*RADIO_SNIFF_MODE*/
 		BUSYWAIT_UNTIL(radio_refresh_status() == MC_STATE_READY,
-				RADIO_WAIT_TIMEOUT);
+				RADIO_WAIT_TIMEOUT, irqSrc_radioOffReadyWait);
 
 		if (radio_refresh_status() != MC_STATE_READY) {
 			TRice("Radio: failed off->ready\n");
@@ -555,7 +555,7 @@ static int8_t Radio_off(void) {
 		/* Puts the Radio in STANDBY */
 		S2LP_CMD_StrobeStandby();
 		BUSYWAIT_UNTIL(radio_refresh_status() == MC_STATE_STANDBY,
-				RADIO_WAIT_TIMEOUT);
+				RADIO_WAIT_TIMEOUT, irqSrc_radioOffStandbyWait);
 
 		if (radio_refresh_status() != MC_STATE_STANDBY) {
 			TRice("err:Radio: failed off->stdby\n");
@@ -576,7 +576,7 @@ static void RadioApplyConfiguration(void) {
 	 * here - the 2ms Treset delay alone is explicitly called out as not sufficient. Without
 	 * this the EXT_REF write and the whole S2LP_RADIO_Init() sequence can land while the
 	 * part is still in reset and be silently lost. */
-	BUSYWAIT_UNTIL(MC_STATE_READY == radio_refresh_status(), RADIO_WAIT_TIMEOUT);
+	BUSYWAIT_UNTIL(MC_STATE_READY == radio_refresh_status(), RADIO_WAIT_TIMEOUT, irqSrc_radioApplyConfigurationWait);
 	if (MC_STATE_READY != radio_refresh_status()) {
 		TRice("err:[RADIO DRV] - not READY after SRES.\n");
 		radio_print_status(radio_refresh_status());
@@ -875,7 +875,7 @@ static void Exit_TX(void) {
 #if RADIO_SNIFF_MODE
                  || radio_refresh_status() == MC_STATE_SLEEP_NOFIFO
 #endif /*RADIO_SNIFF_MODE*/
-			,RADIO_WAIT_TIMEOUT);
+			,RADIO_WAIT_TIMEOUT, irqSrc_radioExitTxWait);
 
 #if !RADIO_SNIFF_MODE
 	if (MC_STATE_RX != radio_refresh_status()) {
@@ -933,7 +933,7 @@ static eTransmitRes Radio_transmit(uint16_t payloadLen) {
 	/* wait for TX done */
 		/*To be on the safe side we put a timeout. */
 	osDelay(1);
-	BUSYWAIT_UNTIL(xTxDoneFlag, 10 * RADIO_WAIT_TIMEOUT);
+	BUSYWAIT_UNTIL(xTxDoneFlag, 10 * RADIO_WAIT_TIMEOUT, irqSrc_radioTransmitWait);
 	if (transmitting_packet) {
 		S2LP_CMD_StrobeSabort();
 		radioStats.txFailures++;
